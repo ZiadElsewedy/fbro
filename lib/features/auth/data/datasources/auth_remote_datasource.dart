@@ -10,6 +10,7 @@ abstract class AuthRemoteDataSource {
     required String phoneNumber,
     required void Function(String verificationId) onCodeSent,
     required void Function(String error) onFailed,
+    void Function(UserModel user)? onAutoVerified,
   });
   Future<UserModel> signInWithOtp({required String verificationId, required String smsCode});
   Future<void> signOut();
@@ -67,10 +68,20 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String phoneNumber,
     required void Function(String verificationId) onCodeSent,
     required void Function(String error) onFailed,
+    void Function(UserModel user)? onAutoVerified,
   }) async {
     await _auth.verifyPhoneNumber(
       phoneNumber: phoneNumber,
-      verificationCompleted: (_) {},
+      verificationCompleted: (credential) async {
+        try {
+          final result = await _auth.signInWithCredential(credential);
+          if (result.user != null) {
+            onAutoVerified?.call(UserModel.fromFirebaseUser(result.user!));
+          }
+        } on FirebaseAuthException catch (e) {
+          onFailed(e.message ?? 'Auto-verification failed');
+        }
+      },
       verificationFailed: (e) => onFailed(e.message ?? 'Verification failed'),
       codeSent: (verificationId, _) => onCodeSent(verificationId),
       codeAutoRetrievalTimeout: (_) {},

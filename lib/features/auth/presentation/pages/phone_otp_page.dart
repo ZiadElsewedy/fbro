@@ -22,6 +22,7 @@ class _PhoneOtpPageState extends State<PhoneOtpPage> {
   final _phoneController = TextEditingController();
   String? _verificationId;
   String _otp = '';
+  int _resendCount = 0;
 
   // Resend timer
   Timer? _timer;
@@ -102,11 +103,16 @@ class _PhoneOtpPageState extends State<PhoneOtpPage> {
                   secondsLeft: _secondsLeft,
                   timerLabel: _timerLabel,
                   verificationId: _verificationId!,
-                  onOtpChanged: (v) => _otp = v,
+                  resendCount: _resendCount,
+                  onOtpChanged: (v) => setState(() => _otp = v),
                   onResend: () {
+                    setState(() {
+                      _otp = '';
+                      _resendCount++;
+                    });
                     context
                         .read<AuthCubit>()
-                        .verifyPhone(_phoneController.text.trim());
+                        .verifyPhone('+20${_phoneController.text.trim()}');
                   },
                   otp: _otp,
                   isDark: isDark,
@@ -223,9 +229,11 @@ class _PhoneStep extends StatelessWidget {
                   label: 'Continue',
                   isLoading: isLoading,
                   onPressed: () {
-                    final phone = controller.text.trim();
-                    if (phone.isEmpty) return;
-                    context.read<AuthCubit>().verifyPhone(phone);
+                    final digits = controller.text.trim();
+                    if (digits.isEmpty) return;
+                    // Combine the hardcoded country code with the typed number
+                    // in E.164 format required by Firebase (+20XXXXXXXXXX).
+                    context.read<AuthCubit>().verifyPhone('+20$digits');
                   },
                 );
               },
@@ -243,6 +251,7 @@ class _OtpStep extends StatelessWidget {
   final String timerLabel;
   final String verificationId;
   final String otp;
+  final int resendCount;
   final void Function(String) onOtpChanged;
   final VoidCallback onResend;
   final bool isDark;
@@ -254,6 +263,7 @@ class _OtpStep extends StatelessWidget {
     required this.timerLabel,
     required this.verificationId,
     required this.otp,
+    required this.resendCount,
     required this.onOtpChanged,
     required this.onResend,
     required this.isDark,
@@ -302,6 +312,7 @@ class _OtpStep extends StatelessWidget {
           FadeSlideTransition(
             delay: const Duration(milliseconds: 200),
             child: OtpInput(
+              key: ValueKey('otp_input_$resendCount'),
               onCompleted: onOtpChanged,
               onChanged: onOtpChanged,
             ),

@@ -17,6 +17,7 @@ abstract class AuthRepository {
     required String phoneNumber,
     required void Function(String verificationId) onCodeSent,
     required void Function(String error) onFailed,
+    void Function(UserEntity user)? onAutoVerified,
   });
 
   Future<UserEntity> signInWithOtp({

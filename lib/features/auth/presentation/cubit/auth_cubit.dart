@@ -67,6 +67,7 @@ class AuthCubit extends Cubit<AuthState> {
       phoneNumber: phoneNumber,
       onCodeSent: (verificationId) => emit(AuthState.otpSent(verificationId)),
       onFailed: (error) => emit(AuthState.error(error)),
+      onAutoVerified: (user) => emit(AuthState.authenticated(user)),
     );
   }
 

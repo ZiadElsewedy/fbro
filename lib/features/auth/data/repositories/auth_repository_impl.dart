@@ -46,11 +46,14 @@ class AuthRepositoryImpl implements AuthRepository {
     required String phoneNumber,
     required void Function(String verificationId) onCodeSent,
     required void Function(String error) onFailed,
+    void Function(UserEntity user)? onAutoVerified,
   }) =>
       _remote.verifyPhoneNumber(
         phoneNumber: phoneNumber,
         onCodeSent: onCodeSent,
         onFailed: onFailed,
+        onAutoVerified:
+            onAutoVerified != null ? (m) => onAutoVerified(m.toEntity()) : null,
       );
 
   @override
