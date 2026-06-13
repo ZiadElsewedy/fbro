@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "450092605249",
+    "project_id": "bazic-d9ad7",
+    "storage_bucket": "bazic-d9ad7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:450092605249:android:e462dcff08e47ca85a0bc0",
+        "android_client_info": {
+          "package_name": "com.example.fbro"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1-gKPtukj02sDdvhxo-fNnXBHwCEYkoY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
