@@ -130,7 +130,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   child: BlocBuilder<AuthCubit, AuthState>(
                     builder: (context, state) {
                       final isLoading = state.maybeWhen(
-                        loading: () => true,
+                        loading: (_) => true,
                         orElse: () => false,
                       );
                       return AppButton(

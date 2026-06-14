@@ -1,0 +1,89 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
+
+/// Firestore serialization for [ProfileEntity], stored in `users/{uid}`.
+///
+/// Reads are back-compat: documents created by the original auth flow only
+/// have `displayName`/`photoUrl`, so [fromMap] falls back to those when the
+/// newer `fullName`/`profileImage` keys are absent.
+class ProfileModel {
+  final ProfileEntity entity;
+
+  const ProfileModel(this.entity);
+
+  factory ProfileModel.fromMap(Map<String, dynamic> map) {
+    DateTime? ts(dynamic v) => v is Timestamp ? v.toDate() : null;
+    String? str(dynamic v) => (v is String && v.isNotEmpty) ? v : null;
+
+    return ProfileModel(ProfileEntity(
+      uid: map['uid'] as String,
+      email: (map['email'] as String?) ?? '',
+      phoneNumber: str(map['phoneNumber']),
+      authProvider: (map['authProvider'] as String?) ?? 'unknown',
+      // Prefer the new key, fall back to the legacy auth field.
+      fullName: str(map['fullName']) ?? str(map['displayName']),
+      username: str(map['username']),
+      profileImage: str(map['profileImage']) ?? str(map['photoUrl']),
+      coverImage: str(map['coverImage']),
+      bio: str(map['bio']),
+      gender: str(map['gender']),
+      birthDate: ts(map['birthDate']),
+      country: str(map['country']),
+      city: str(map['city']),
+      website: str(map['website']),
+      isVerified: (map['isVerified'] as bool?) ?? false,
+      accountStatus: (map['accountStatus'] as String?) ?? 'active',
+      createdAt: ts(map['createdAt']),
+      updatedAt: ts(map['updatedAt']),
+      followersCount: (map['followersCount'] as num?)?.toInt() ?? 0,
+      followingCount: (map['followingCount'] as num?)?.toInt() ?? 0,
+      postsCount: (map['postsCount'] as num?)?.toInt() ?? 0,
+      likesCount: (map['likesCount'] as num?)?.toInt() ?? 0,
+      isOnline: (map['isOnline'] as bool?) ?? false,
+      lastSeen: ts(map['lastSeen']),
+      isProfilePublic: (map['isProfilePublic'] as bool?) ?? true,
+      allowMessages: (map['allowMessages'] as bool?) ?? true,
+      allowNotifications: (map['allowNotifications'] as bool?) ?? true,
+    ));
+  }
+
+  ProfileEntity toEntity() => entity;
+
+  /// Builds a partial-update map from the editable fields. Only non-null
+  /// values are written (merge), so untouched fields are preserved. Keeps the
+  /// legacy `displayName`/`photoUrl` keys in sync so the auth/home layer that
+  /// still reads them stays correct.
+  static Map<String, dynamic> editMap({
+    String? fullName,
+    String? username,
+    String? bio,
+    String? phoneNumber,
+    String? country,
+    String? city,
+    String? website,
+    String? gender,
+    DateTime? birthDate,
+    String? profileImage,
+    String? coverImage,
+  }) {
+    final map = <String, dynamic>{'updatedAt': FieldValue.serverTimestamp()};
+    if (fullName != null) {
+      map['fullName'] = fullName;
+      map['displayName'] = fullName; // legacy sync
+    }
+    if (username != null) map['username'] = username;
+    if (bio != null) map['bio'] = bio;
+    if (phoneNumber != null) map['phoneNumber'] = phoneNumber;
+    if (country != null) map['country'] = country;
+    if (city != null) map['city'] = city;
+    if (website != null) map['website'] = website;
+    if (gender != null) map['gender'] = gender;
+    if (birthDate != null) map['birthDate'] = Timestamp.fromDate(birthDate);
+    if (profileImage != null) {
+      map['profileImage'] = profileImage;
+      map['photoUrl'] = profileImage; // legacy sync
+    }
+    if (coverImage != null) map['coverImage'] = coverImage;
+    return map;
+  }
+}

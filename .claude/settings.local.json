@@ -9,7 +9,11 @@
       "mcp__visualize__show_widget",
       "Bash(dart analyze *)",
       "Bash(cat android/app/build.gradle)",
-      "Bash(cat android/app/build.gradle.kts)"
+      "Bash(cat android/app/build.gradle.kts)",
+      "Bash(grep -E '\\\\.dart$')",
+      "Bash(grep -E 'md$')",
+      "Bash(cat .claude/settings.json)",
+      "Bash(cat .claude/settings.local.json)"
     ]
   }
 }

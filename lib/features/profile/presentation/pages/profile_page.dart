@@ -6,10 +6,12 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
+import 'package:fbro/core/widgets/skeleton.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
+import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
 import 'package:fbro/features/profile/presentation/cubit/profile_cubit.dart';
 import 'package:fbro/features/profile/presentation/cubit/profile_state.dart';
+import 'package:fbro/features/profile/presentation/widgets/profile_avatar.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -22,15 +24,15 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final user = context.read<AuthCubit>().state.maybeWhen(
-            authenticated: (u) => u,
-            orElse: () => null,
-          );
-      if (user != null) {
-        context.read<ProfileCubit>().loadProfile(user.uid);
-      }
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  void _load() {
+    final uid = context.read<AuthCubit>().state.maybeWhen(
+          authenticated: (u) => u.uid,
+          orElse: () => null,
+        );
+    if (uid != null) context.read<ProfileCubit>().loadProfile(uid);
   }
 
   @override
@@ -39,60 +41,29 @@ class _ProfilePageState extends State<ProfilePage> {
       backgroundColor: AppColors.darkBg,
       appBar: AppBar(
         backgroundColor: AppColors.darkBg,
-        elevation: 0,
+        surfaceTintColor: AppColors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textSecondary, size: 20),
+              color: AppColors.textPrimary, size: 20),
           onPressed: () => context.pop(),
         ),
         title: Text('Profile', style: AppTypography.h3),
-        actions: [
-          BlocBuilder<ProfileCubit, ProfileState>(
-            builder: (context, state) {
-              final user = state.maybeWhen(
-                loaded: (u) => u,
-                updated: (u) => u,
-                orElse: () => null,
-              );
-              if (user == null) return const SizedBox.shrink();
-              return IconButton(
-                icon: const Icon(Icons.edit_outlined,
-                    color: AppColors.primary, size: 20),
-                onPressed: () => context.push(RouteNames.editProfile),
-                tooltip: 'Edit Profile',
-              );
-            },
-          ),
-        ],
       ),
       body: BlocBuilder<ProfileCubit, ProfileState>(
-        builder: (context, profileState) {
-          return profileState.when(
-            initial: () => const SizedBox.shrink(),
-            loading: () => const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            ),
-            updating: () => const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            ),
-            loaded: (user) => _ProfileContent(user: user),
-            updated: (user) => _ProfileContent(user: user),
-            error: (msg) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.pagePadding),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline_rounded,
-                        color: AppColors.error, size: 40),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(msg,
-                        textAlign: TextAlign.center,
-                        style: AppTypography.body),
-                  ],
-                ),
-              ),
-            ),
+        builder: (context, state) {
+          return state.maybeWhen(
+            loading: () => const _ProfileSkeleton(),
+            error: (msg) => _ErrorState(message: msg, onRetry: _load),
+            orElse: () {
+              final profile = state.maybeWhen(
+                loaded: (p) => p,
+                saving: (p, _) => p,
+                saved: (p) => p,
+                orElse: () => null,
+              );
+              if (profile == null) return const _ProfileSkeleton();
+              return _ProfileContent(profile: profile);
+            },
           );
         },
       ),
@@ -101,274 +72,122 @@ class _ProfilePageState extends State<ProfilePage> {
 }
 
 class _ProfileContent extends StatelessWidget {
-  final UserEntity user;
-  const _ProfileContent({required this.user});
+  final ProfileEntity profile;
+  const _ProfileContent({required this.profile});
 
   @override
   Widget build(BuildContext context) {
-    final initials = _initials(user);
-
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.pagePadding),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.pagePadding, AppSpacing.sm, AppSpacing.pagePadding, AppSpacing.xxl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _Identity(profile: profile),
+          const SizedBox(height: AppSpacing.xl),
+          _Group(children: _infoRows(profile)),
           const SizedBox(height: AppSpacing.lg),
-
-          // Avatar + name
-          Center(
-            child: Column(
-              children: [
-                _Avatar(initials: initials, photoUrl: user.photoUrl),
-                const SizedBox(height: AppSpacing.lg),
-                Text(
-                  user.displayName?.isNotEmpty == true
-                      ? user.displayName!
-                      : 'No name set',
-                  style: AppTypography.h2,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(user.email, style: AppTypography.body),
-              ],
-            ),
+          _Group(
+            children: [
+              _ActionTile(
+                icon: Icons.edit_outlined,
+                label: 'Edit Profile',
+                onTap: () => context.push(RouteNames.editProfile),
+              ),
+              _ActionTile(
+                icon: Icons.settings_outlined,
+                label: 'Settings',
+                onTap: () => context.push(RouteNames.settings),
+              ),
+              _ActionTile(
+                icon: Icons.logout_rounded,
+                label: 'Sign Out',
+                destructive: true,
+                onTap: () => context.read<AuthCubit>().signOut(),
+              ),
+            ],
           ),
-
-          const SizedBox(height: AppSpacing.xxl),
-
-          _SectionLabel(label: 'Account Information'),
-          const SizedBox(height: AppSpacing.md),
-
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.darkSurface,
-              borderRadius: AppRadius.cardAll,
-              border: Border.all(color: AppColors.darkBorder),
-            ),
-            child: Column(
-              children: [
-                _InfoRow(
-                  icon: Icons.person_outline_rounded,
-                  label: 'Display Name',
-                  value: user.displayName?.isNotEmpty == true
-                      ? user.displayName!
-                      : '—',
-                  isFirst: true,
-                ),
-                _InfoRow(
-                  icon: Icons.alternate_email_rounded,
-                  label: 'Email',
-                  value: user.email.isNotEmpty ? user.email : '—',
-                ),
-                if (user.phoneNumber != null && user.phoneNumber!.isNotEmpty)
-                  _InfoRow(
-                    icon: Icons.phone_outlined,
-                    label: 'Phone Number',
-                    value: user.phoneNumber!,
-                  ),
-                _InfoRow(
-                  icon: Icons.shield_outlined,
-                  label: 'Sign-in Method',
-                  value: _providerLabel(user.authProvider),
-                ),
-                _InfoRow(
-                  icon: Icons.verified_outlined,
-                  label: 'Email Verified',
-                  value: user.isEmailVerified ? 'Verified' : 'Not verified',
-                  valueColor: user.isEmailVerified
-                      ? AppColors.success
-                      : AppColors.warning,
-                ),
-                if (user.createdAt != null)
-                  _InfoRow(
-                    icon: Icons.calendar_today_outlined,
-                    label: 'Member Since',
-                    value: _formatDate(user.createdAt!),
-                    isLast: true,
-                  )
-                else
-                  _InfoRow(
-                    icon: Icons.tag_rounded,
-                    label: 'User ID',
-                    value: '${user.uid.substring(0, 8)}…',
-                    isLast: true,
-                  ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: AppSpacing.xxl),
-
-          _SectionLabel(label: 'Actions'),
-          const SizedBox(height: AppSpacing.md),
-
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.darkSurface,
-              borderRadius: AppRadius.cardAll,
-              border: Border.all(color: AppColors.darkBorder),
-            ),
-            child: Column(
-              children: [
-                _ActionRow(
-                  icon: Icons.edit_outlined,
-                  label: 'Edit Profile',
-                  isFirst: true,
-                  onTap: () => context.push(RouteNames.editProfile),
-                ),
-                _ActionRow(
-                  icon: Icons.settings_outlined,
-                  label: 'Settings',
-                  isLast: true,
-                  onTap: () => context.push(RouteNames.settings),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: AppSpacing.xxl),
-
-          // Sign out
-          _ActionRow(
-            icon: Icons.logout_rounded,
-            label: 'Sign Out',
-            iconColor: AppColors.error,
-            labelColor: AppColors.error,
-            standalone: true,
-            onTap: () => context.read<AuthCubit>().signOut(),
-          ),
-
-          const SizedBox(height: AppSpacing.xxl),
         ],
       ),
     );
   }
 
-  String _initials(UserEntity user) {
-    if (user.displayName != null && user.displayName!.isNotEmpty) {
-      final parts = user.displayName!.trim().split(' ');
-      if (parts.length >= 2) {
-        return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
-      }
-      return parts.first[0].toUpperCase();
-    }
-    if (user.email.isNotEmpty) return user.email[0].toUpperCase();
-    return '?';
+  List<Widget> _infoRows(ProfileEntity p) {
+    return [
+      _InfoRow(label: 'Email', value: p.email.isNotEmpty ? p.email : '—'),
+      if (p.phoneNumber != null && p.phoneNumber!.isNotEmpty)
+        _InfoRow(label: 'Phone', value: p.phoneNumber!),
+      _InfoRow(label: 'Sign-in', value: _provider(p.authProvider)),
+      if (p.createdAt != null)
+        _InfoRow(label: 'Member since', value: _date(p.createdAt!)),
+    ];
   }
 
-  String _providerLabel(String provider) {
-    switch (provider) {
+  String _provider(String p) {
+    switch (p) {
       case 'email':
-        return 'Email & Password';
+        return 'Email';
       case 'phone':
-        return 'Phone Number';
+        return 'Phone';
       case 'google.com':
       case 'google':
         return 'Google';
       default:
-        return provider;
+        return p;
     }
   }
 
-  String _formatDate(DateTime date) {
-    const months = [
+  String _date(DateTime d) {
+    const m = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+    return '${m[d.month - 1]} ${d.day}, ${d.year}';
   }
 }
 
-class _Avatar extends StatelessWidget {
-  final String initials;
-  final String? photoUrl;
-
-  const _Avatar({required this.initials, this.photoUrl});
+class _Identity extends StatelessWidget {
+  final ProfileEntity profile;
+  const _Identity({required this.profile});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 88,
-      height: 88,
-      decoration: BoxDecoration(
-        gradient: AppColors.primaryGradient,
-        borderRadius: AppRadius.fullAll,
-      ),
-      child: photoUrl != null && photoUrl!.isNotEmpty
-          ? ClipRRect(
-              borderRadius: AppRadius.fullAll,
-              child: Image.network(
-                photoUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => _initialsWidget,
-              ),
-            )
-          : _initialsWidget,
-    );
-  }
-
-  Widget get _initialsWidget => Center(
-        child: Text(
-          initials,
-          style: AppTypography.h2.copyWith(color: AppColors.white),
-        ),
-      );
-}
-
-class _SectionLabel extends StatelessWidget {
-  final String label;
-  const _SectionLabel({required this.label});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(left: 4),
-        child: Text(label.toUpperCase(),
-            style: AppTypography.caption.copyWith(letterSpacing: 1.2)),
-      );
-}
-
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color? valueColor;
-  final bool isFirst;
-  final bool isLast;
-
-  const _InfoRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.valueColor,
-    this.isFirst = false,
-    this.isLast = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
+    final incomplete = !profile.isComplete;
+    return Row(
       children: [
-        if (!isFirst)
-          Divider(height: 1, thickness: 1, color: AppColors.darkBorder,
-              indent: AppSpacing.pagePadding, endIndent: AppSpacing.pagePadding),
-        Padding(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.pagePadding, vertical: AppSpacing.lg),
-          child: Row(
+        ProfileAvatar(
+          initials: _initials(profile),
+          imageUrl: profile.profileImage,
+          size: 64,
+          showRing: false,
+        ),
+        const SizedBox(width: AppSpacing.lg),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, size: 18, color: AppColors.primary),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: AppTypography.caption),
-                    const SizedBox(height: 2),
-                    Text(value,
-                        style: AppTypography.label.copyWith(
-                            color: valueColor)),
-                  ],
-                ),
+              Text(
+                profile.displayName,
+                style: AppTypography.h2,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
+              const SizedBox(height: 2),
+              if (profile.handle.isNotEmpty)
+                Text(profile.handle, style: AppTypography.body)
+              else if (incomplete)
+                GestureDetector(
+                  onTap: () => context.push(RouteNames.editProfile),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Complete your profile', style: AppTypography.body),
+                      const SizedBox(width: 2),
+                      const Icon(Icons.chevron_right_rounded,
+                          size: 16, color: AppColors.textTertiary),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -377,76 +196,173 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _ActionRow extends StatelessWidget {
+/// A single grouped, hair-line-bordered list. Children are auto-divided.
+class _Group extends StatelessWidget {
+  final List<Widget> children;
+  const _Group({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface,
+        borderRadius: AppRadius.lgAll,
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0)
+              const Divider(
+                  height: 1, thickness: 1, color: AppColors.darkBorder, indent: 16),
+            children[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _InfoRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Text(label, style: AppTypography.body),
+          const SizedBox(width: AppSpacing.lg),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.label.copyWith(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final Color? iconColor;
-  final Color? labelColor;
-  final bool isFirst;
-  final bool isLast;
-  final bool standalone;
-
-  const _ActionRow({
+  final bool destructive;
+  const _ActionTile({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.iconColor,
-    this.labelColor,
-    this.isFirst = false,
-    this.isLast = false,
-    this.standalone = false,
+    this.destructive = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final row = InkWell(
+    final color = destructive ? AppColors.error : AppColors.textPrimary;
+    return InkWell(
       onTap: onTap,
-      borderRadius: standalone
-          ? AppRadius.cardAll
-          : isFirst
-              ? const BorderRadius.vertical(top: Radius.circular(AppRadius.card))
-              : isLast
-                  ? const BorderRadius.vertical(
-                      bottom: Radius.circular(AppRadius.card))
-                  : BorderRadius.zero,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.pagePadding, vertical: AppSpacing.lg),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: iconColor ?? AppColors.primary),
+            Icon(icon, size: 19, color: destructive ? AppColors.error : AppColors.textSecondary),
             const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Text(label,
-                  style: AppTypography.label
-                      .copyWith(color: labelColor ?? AppColors.textPrimary)),
-            ),
-            Icon(Icons.chevron_right_rounded,
-                size: 18, color: AppColors.textTertiary),
+            Expanded(child: Text(label, style: AppTypography.label.copyWith(color: color))),
+            if (!destructive)
+              const Icon(Icons.chevron_right_rounded,
+                  size: 18, color: AppColors.textTertiary),
           ],
         ),
       ),
     );
+  }
+}
 
-    if (standalone) {
-      return Container(
-        decoration: BoxDecoration(
-          color: AppColors.darkSurface,
-          borderRadius: AppRadius.cardAll,
-          border: Border.all(color: AppColors.darkBorder),
-        ),
-        child: row,
-      );
+String _initials(ProfileEntity p) {
+  final name = p.fullName?.trim();
+  if (name != null && name.isNotEmpty) {
+    final parts = name.split(' ');
+    if (parts.length >= 2) {
+      return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
     }
+    return parts.first[0].toUpperCase();
+  }
+  if (p.email.isNotEmpty) return p.email[0].toUpperCase();
+  return '?';
+}
 
-    return Column(
-      children: [
-        if (!isFirst)
-          Divider(height: 1, thickness: 1, color: AppColors.darkBorder,
-              indent: AppSpacing.pagePadding, endIndent: AppSpacing.pagePadding),
-        row,
-      ],
+// ─── Loading / error states ────────────────────────────────────────────────
+
+class _ProfileSkeleton extends StatelessWidget {
+  const _ProfileSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.pagePadding, AppSpacing.sm, AppSpacing.pagePadding, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Row(
+            children: [
+              Skeleton(width: 64, height: 64, circle: true),
+              SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Skeleton(width: 160, height: 22),
+                    SizedBox(height: 8),
+                    Skeleton(width: 100, height: 14),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: AppSpacing.xl),
+          Skeleton(height: 150),
+          SizedBox(height: AppSpacing.lg),
+          Skeleton(height: 150),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _ErrorState({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.pagePadding),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_rounded,
+                color: AppColors.textTertiary, size: 40),
+            const SizedBox(height: AppSpacing.lg),
+            Text(message, textAlign: TextAlign.center, style: AppTypography.body),
+            const SizedBox(height: AppSpacing.lg),
+            TextButton(
+              onPressed: onRetry,
+              child: Text('Try again',
+                  style: AppTypography.label.copyWith(color: AppColors.primary)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

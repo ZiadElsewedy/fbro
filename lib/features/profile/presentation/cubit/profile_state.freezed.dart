@@ -21,27 +21,28 @@ mixin _$ProfileState {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(UserEntity user) loaded,
-    required TResult Function() updating,
-    required TResult Function(UserEntity user) updated,
+    required TResult Function(ProfileEntity profile) loaded,
+    required TResult Function(ProfileEntity profile, double? uploadProgress)
+    saving,
+    required TResult Function(ProfileEntity profile) saved,
     required TResult Function(String message) error,
   }) => throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(UserEntity user)? loaded,
-    TResult? Function()? updating,
-    TResult? Function(UserEntity user)? updated,
+    TResult? Function(ProfileEntity profile)? loaded,
+    TResult? Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult? Function(ProfileEntity profile)? saved,
     TResult? Function(String message)? error,
   }) => throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(UserEntity user)? loaded,
-    TResult Function()? updating,
-    TResult Function(UserEntity user)? updated,
+    TResult Function(ProfileEntity profile)? loaded,
+    TResult Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult Function(ProfileEntity profile)? saved,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) => throw _privateConstructorUsedError;
@@ -50,8 +51,8 @@ mixin _$ProfileState {
     required TResult Function(_Initial value) initial,
     required TResult Function(_Loading value) loading,
     required TResult Function(_Loaded value) loaded,
-    required TResult Function(_Updating value) updating,
-    required TResult Function(_Updated value) updated,
+    required TResult Function(_Saving value) saving,
+    required TResult Function(_Saved value) saved,
     required TResult Function(_Error value) error,
   }) => throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -59,8 +60,8 @@ mixin _$ProfileState {
     TResult? Function(_Initial value)? initial,
     TResult? Function(_Loading value)? loading,
     TResult? Function(_Loaded value)? loaded,
-    TResult? Function(_Updating value)? updating,
-    TResult? Function(_Updated value)? updated,
+    TResult? Function(_Saving value)? saving,
+    TResult? Function(_Saved value)? saved,
     TResult? Function(_Error value)? error,
   }) => throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -68,8 +69,8 @@ mixin _$ProfileState {
     TResult Function(_Initial value)? initial,
     TResult Function(_Loading value)? loading,
     TResult Function(_Loaded value)? loaded,
-    TResult Function(_Updating value)? updating,
-    TResult Function(_Updated value)? updated,
+    TResult Function(_Saving value)? saving,
+    TResult Function(_Saved value)? saved,
     TResult Function(_Error value)? error,
     required TResult orElse(),
   }) => throw _privateConstructorUsedError;
@@ -142,9 +143,10 @@ class _$InitialImpl implements _Initial {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(UserEntity user) loaded,
-    required TResult Function() updating,
-    required TResult Function(UserEntity user) updated,
+    required TResult Function(ProfileEntity profile) loaded,
+    required TResult Function(ProfileEntity profile, double? uploadProgress)
+    saving,
+    required TResult Function(ProfileEntity profile) saved,
     required TResult Function(String message) error,
   }) {
     return initial();
@@ -155,9 +157,9 @@ class _$InitialImpl implements _Initial {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(UserEntity user)? loaded,
-    TResult? Function()? updating,
-    TResult? Function(UserEntity user)? updated,
+    TResult? Function(ProfileEntity profile)? loaded,
+    TResult? Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult? Function(ProfileEntity profile)? saved,
     TResult? Function(String message)? error,
   }) {
     return initial?.call();
@@ -168,9 +170,9 @@ class _$InitialImpl implements _Initial {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(UserEntity user)? loaded,
-    TResult Function()? updating,
-    TResult Function(UserEntity user)? updated,
+    TResult Function(ProfileEntity profile)? loaded,
+    TResult Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult Function(ProfileEntity profile)? saved,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
@@ -186,8 +188,8 @@ class _$InitialImpl implements _Initial {
     required TResult Function(_Initial value) initial,
     required TResult Function(_Loading value) loading,
     required TResult Function(_Loaded value) loaded,
-    required TResult Function(_Updating value) updating,
-    required TResult Function(_Updated value) updated,
+    required TResult Function(_Saving value) saving,
+    required TResult Function(_Saved value) saved,
     required TResult Function(_Error value) error,
   }) {
     return initial(this);
@@ -199,8 +201,8 @@ class _$InitialImpl implements _Initial {
     TResult? Function(_Initial value)? initial,
     TResult? Function(_Loading value)? loading,
     TResult? Function(_Loaded value)? loaded,
-    TResult? Function(_Updating value)? updating,
-    TResult? Function(_Updated value)? updated,
+    TResult? Function(_Saving value)? saving,
+    TResult? Function(_Saved value)? saved,
     TResult? Function(_Error value)? error,
   }) {
     return initial?.call(this);
@@ -212,8 +214,8 @@ class _$InitialImpl implements _Initial {
     TResult Function(_Initial value)? initial,
     TResult Function(_Loading value)? loading,
     TResult Function(_Loaded value)? loaded,
-    TResult Function(_Updating value)? updating,
-    TResult Function(_Updated value)? updated,
+    TResult Function(_Saving value)? saving,
+    TResult Function(_Saved value)? saved,
     TResult Function(_Error value)? error,
     required TResult orElse(),
   }) {
@@ -273,9 +275,10 @@ class _$LoadingImpl implements _Loading {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(UserEntity user) loaded,
-    required TResult Function() updating,
-    required TResult Function(UserEntity user) updated,
+    required TResult Function(ProfileEntity profile) loaded,
+    required TResult Function(ProfileEntity profile, double? uploadProgress)
+    saving,
+    required TResult Function(ProfileEntity profile) saved,
     required TResult Function(String message) error,
   }) {
     return loading();
@@ -286,9 +289,9 @@ class _$LoadingImpl implements _Loading {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(UserEntity user)? loaded,
-    TResult? Function()? updating,
-    TResult? Function(UserEntity user)? updated,
+    TResult? Function(ProfileEntity profile)? loaded,
+    TResult? Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult? Function(ProfileEntity profile)? saved,
     TResult? Function(String message)? error,
   }) {
     return loading?.call();
@@ -299,9 +302,9 @@ class _$LoadingImpl implements _Loading {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(UserEntity user)? loaded,
-    TResult Function()? updating,
-    TResult Function(UserEntity user)? updated,
+    TResult Function(ProfileEntity profile)? loaded,
+    TResult Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult Function(ProfileEntity profile)? saved,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
@@ -317,8 +320,8 @@ class _$LoadingImpl implements _Loading {
     required TResult Function(_Initial value) initial,
     required TResult Function(_Loading value) loading,
     required TResult Function(_Loaded value) loaded,
-    required TResult Function(_Updating value) updating,
-    required TResult Function(_Updated value) updated,
+    required TResult Function(_Saving value) saving,
+    required TResult Function(_Saved value) saved,
     required TResult Function(_Error value) error,
   }) {
     return loading(this);
@@ -330,8 +333,8 @@ class _$LoadingImpl implements _Loading {
     TResult? Function(_Initial value)? initial,
     TResult? Function(_Loading value)? loading,
     TResult? Function(_Loaded value)? loaded,
-    TResult? Function(_Updating value)? updating,
-    TResult? Function(_Updated value)? updated,
+    TResult? Function(_Saving value)? saving,
+    TResult? Function(_Saved value)? saved,
     TResult? Function(_Error value)? error,
   }) {
     return loading?.call(this);
@@ -343,8 +346,8 @@ class _$LoadingImpl implements _Loading {
     TResult Function(_Initial value)? initial,
     TResult Function(_Loading value)? loading,
     TResult Function(_Loaded value)? loaded,
-    TResult Function(_Updating value)? updating,
-    TResult Function(_Updated value)? updated,
+    TResult Function(_Saving value)? saving,
+    TResult Function(_Saved value)? saved,
     TResult Function(_Error value)? error,
     required TResult orElse(),
   }) {
@@ -366,9 +369,9 @@ abstract class _$$LoadedImplCopyWith<$Res> {
     $Res Function(_$LoadedImpl) then,
   ) = __$$LoadedImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({UserEntity user});
+  $Res call({ProfileEntity profile});
 
-  $UserEntityCopyWith<$Res> get user;
+  $ProfileEntityCopyWith<$Res> get profile;
 }
 
 /// @nodoc
@@ -384,13 +387,13 @@ class __$$LoadedImplCopyWithImpl<$Res>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? user = null}) {
+  $Res call({Object? profile = null}) {
     return _then(
       _$LoadedImpl(
-        null == user
-            ? _value.user
-            : user // ignore: cast_nullable_to_non_nullable
-                  as UserEntity,
+        null == profile
+            ? _value.profile
+            : profile // ignore: cast_nullable_to_non_nullable
+                  as ProfileEntity,
       ),
     );
   }
@@ -399,9 +402,9 @@ class __$$LoadedImplCopyWithImpl<$Res>
   /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
-  $UserEntityCopyWith<$Res> get user {
-    return $UserEntityCopyWith<$Res>(_value.user, (value) {
-      return _then(_value.copyWith(user: value));
+  $ProfileEntityCopyWith<$Res> get profile {
+    return $ProfileEntityCopyWith<$Res>(_value.profile, (value) {
+      return _then(_value.copyWith(profile: value));
     });
   }
 }
@@ -409,14 +412,14 @@ class __$$LoadedImplCopyWithImpl<$Res>
 /// @nodoc
 
 class _$LoadedImpl implements _Loaded {
-  const _$LoadedImpl(this.user);
+  const _$LoadedImpl(this.profile);
 
   @override
-  final UserEntity user;
+  final ProfileEntity profile;
 
   @override
   String toString() {
-    return 'ProfileState.loaded(user: $user)';
+    return 'ProfileState.loaded(profile: $profile)';
   }
 
   @override
@@ -424,11 +427,11 @@ class _$LoadedImpl implements _Loaded {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$LoadedImpl &&
-            (identical(other.user, user) || other.user == user));
+            (identical(other.profile, profile) || other.profile == profile));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, user);
+  int get hashCode => Object.hash(runtimeType, profile);
 
   /// Create a copy of ProfileState
   /// with the given fields replaced by the non-null parameter values.
@@ -443,12 +446,13 @@ class _$LoadedImpl implements _Loaded {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(UserEntity user) loaded,
-    required TResult Function() updating,
-    required TResult Function(UserEntity user) updated,
+    required TResult Function(ProfileEntity profile) loaded,
+    required TResult Function(ProfileEntity profile, double? uploadProgress)
+    saving,
+    required TResult Function(ProfileEntity profile) saved,
     required TResult Function(String message) error,
   }) {
-    return loaded(user);
+    return loaded(profile);
   }
 
   @override
@@ -456,12 +460,12 @@ class _$LoadedImpl implements _Loaded {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(UserEntity user)? loaded,
-    TResult? Function()? updating,
-    TResult? Function(UserEntity user)? updated,
+    TResult? Function(ProfileEntity profile)? loaded,
+    TResult? Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult? Function(ProfileEntity profile)? saved,
     TResult? Function(String message)? error,
   }) {
-    return loaded?.call(user);
+    return loaded?.call(profile);
   }
 
   @override
@@ -469,14 +473,14 @@ class _$LoadedImpl implements _Loaded {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(UserEntity user)? loaded,
-    TResult Function()? updating,
-    TResult Function(UserEntity user)? updated,
+    TResult Function(ProfileEntity profile)? loaded,
+    TResult Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult Function(ProfileEntity profile)? saved,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
     if (loaded != null) {
-      return loaded(user);
+      return loaded(profile);
     }
     return orElse();
   }
@@ -487,8 +491,8 @@ class _$LoadedImpl implements _Loaded {
     required TResult Function(_Initial value) initial,
     required TResult Function(_Loading value) loading,
     required TResult Function(_Loaded value) loaded,
-    required TResult Function(_Updating value) updating,
-    required TResult Function(_Updated value) updated,
+    required TResult Function(_Saving value) saving,
+    required TResult Function(_Saved value) saved,
     required TResult Function(_Error value) error,
   }) {
     return loaded(this);
@@ -500,8 +504,8 @@ class _$LoadedImpl implements _Loaded {
     TResult? Function(_Initial value)? initial,
     TResult? Function(_Loading value)? loading,
     TResult? Function(_Loaded value)? loaded,
-    TResult? Function(_Updating value)? updating,
-    TResult? Function(_Updated value)? updated,
+    TResult? Function(_Saving value)? saving,
+    TResult? Function(_Saved value)? saved,
     TResult? Function(_Error value)? error,
   }) {
     return loaded?.call(this);
@@ -513,8 +517,8 @@ class _$LoadedImpl implements _Loaded {
     TResult Function(_Initial value)? initial,
     TResult Function(_Loading value)? loading,
     TResult Function(_Loaded value)? loaded,
-    TResult Function(_Updating value)? updating,
-    TResult Function(_Updated value)? updated,
+    TResult Function(_Saving value)? saving,
+    TResult Function(_Saved value)? saved,
     TResult Function(_Error value)? error,
     required TResult orElse(),
   }) {
@@ -526,9 +530,9 @@ class _$LoadedImpl implements _Loaded {
 }
 
 abstract class _Loaded implements ProfileState {
-  const factory _Loaded(final UserEntity user) = _$LoadedImpl;
+  const factory _Loaded(final ProfileEntity profile) = _$LoadedImpl;
 
-  UserEntity get user;
+  ProfileEntity get profile;
 
   /// Create a copy of ProfileState
   /// with the given fields replaced by the non-null parameter values.
@@ -538,168 +542,41 @@ abstract class _Loaded implements ProfileState {
 }
 
 /// @nodoc
-abstract class _$$UpdatingImplCopyWith<$Res> {
-  factory _$$UpdatingImplCopyWith(
-    _$UpdatingImpl value,
-    $Res Function(_$UpdatingImpl) then,
-  ) = __$$UpdatingImplCopyWithImpl<$Res>;
-}
-
-/// @nodoc
-class __$$UpdatingImplCopyWithImpl<$Res>
-    extends _$ProfileStateCopyWithImpl<$Res, _$UpdatingImpl>
-    implements _$$UpdatingImplCopyWith<$Res> {
-  __$$UpdatingImplCopyWithImpl(
-    _$UpdatingImpl _value,
-    $Res Function(_$UpdatingImpl) _then,
-  ) : super(_value, _then);
-
-  /// Create a copy of ProfileState
-  /// with the given fields replaced by the non-null parameter values.
-}
-
-/// @nodoc
-
-class _$UpdatingImpl implements _Updating {
-  const _$UpdatingImpl();
-
-  @override
-  String toString() {
-    return 'ProfileState.updating()';
-  }
-
-  @override
-  bool operator ==(Object other) {
-    return identical(this, other) ||
-        (other.runtimeType == runtimeType && other is _$UpdatingImpl);
-  }
-
-  @override
-  int get hashCode => runtimeType.hashCode;
-
-  @override
-  @optionalTypeArgs
-  TResult when<TResult extends Object?>({
-    required TResult Function() initial,
-    required TResult Function() loading,
-    required TResult Function(UserEntity user) loaded,
-    required TResult Function() updating,
-    required TResult Function(UserEntity user) updated,
-    required TResult Function(String message) error,
-  }) {
-    return updating();
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function()? initial,
-    TResult? Function()? loading,
-    TResult? Function(UserEntity user)? loaded,
-    TResult? Function()? updating,
-    TResult? Function(UserEntity user)? updated,
-    TResult? Function(String message)? error,
-  }) {
-    return updating?.call();
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeWhen<TResult extends Object?>({
-    TResult Function()? initial,
-    TResult Function()? loading,
-    TResult Function(UserEntity user)? loaded,
-    TResult Function()? updating,
-    TResult Function(UserEntity user)? updated,
-    TResult Function(String message)? error,
-    required TResult orElse(),
-  }) {
-    if (updating != null) {
-      return updating();
-    }
-    return orElse();
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult map<TResult extends Object?>({
-    required TResult Function(_Initial value) initial,
-    required TResult Function(_Loading value) loading,
-    required TResult Function(_Loaded value) loaded,
-    required TResult Function(_Updating value) updating,
-    required TResult Function(_Updated value) updated,
-    required TResult Function(_Error value) error,
-  }) {
-    return updating(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? mapOrNull<TResult extends Object?>({
-    TResult? Function(_Initial value)? initial,
-    TResult? Function(_Loading value)? loading,
-    TResult? Function(_Loaded value)? loaded,
-    TResult? Function(_Updating value)? updating,
-    TResult? Function(_Updated value)? updated,
-    TResult? Function(_Error value)? error,
-  }) {
-    return updating?.call(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeMap<TResult extends Object?>({
-    TResult Function(_Initial value)? initial,
-    TResult Function(_Loading value)? loading,
-    TResult Function(_Loaded value)? loaded,
-    TResult Function(_Updating value)? updating,
-    TResult Function(_Updated value)? updated,
-    TResult Function(_Error value)? error,
-    required TResult orElse(),
-  }) {
-    if (updating != null) {
-      return updating(this);
-    }
-    return orElse();
-  }
-}
-
-abstract class _Updating implements ProfileState {
-  const factory _Updating() = _$UpdatingImpl;
-}
-
-/// @nodoc
-abstract class _$$UpdatedImplCopyWith<$Res> {
-  factory _$$UpdatedImplCopyWith(
-    _$UpdatedImpl value,
-    $Res Function(_$UpdatedImpl) then,
-  ) = __$$UpdatedImplCopyWithImpl<$Res>;
+abstract class _$$SavingImplCopyWith<$Res> {
+  factory _$$SavingImplCopyWith(
+    _$SavingImpl value,
+    $Res Function(_$SavingImpl) then,
+  ) = __$$SavingImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({UserEntity user});
+  $Res call({ProfileEntity profile, double? uploadProgress});
 
-  $UserEntityCopyWith<$Res> get user;
+  $ProfileEntityCopyWith<$Res> get profile;
 }
 
 /// @nodoc
-class __$$UpdatedImplCopyWithImpl<$Res>
-    extends _$ProfileStateCopyWithImpl<$Res, _$UpdatedImpl>
-    implements _$$UpdatedImplCopyWith<$Res> {
-  __$$UpdatedImplCopyWithImpl(
-    _$UpdatedImpl _value,
-    $Res Function(_$UpdatedImpl) _then,
+class __$$SavingImplCopyWithImpl<$Res>
+    extends _$ProfileStateCopyWithImpl<$Res, _$SavingImpl>
+    implements _$$SavingImplCopyWith<$Res> {
+  __$$SavingImplCopyWithImpl(
+    _$SavingImpl _value,
+    $Res Function(_$SavingImpl) _then,
   ) : super(_value, _then);
 
   /// Create a copy of ProfileState
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? user = null}) {
+  $Res call({Object? profile = null, Object? uploadProgress = freezed}) {
     return _then(
-      _$UpdatedImpl(
-        null == user
-            ? _value.user
-            : user // ignore: cast_nullable_to_non_nullable
-                  as UserEntity,
+      _$SavingImpl(
+        null == profile
+            ? _value.profile
+            : profile // ignore: cast_nullable_to_non_nullable
+                  as ProfileEntity,
+        uploadProgress: freezed == uploadProgress
+            ? _value.uploadProgress
+            : uploadProgress // ignore: cast_nullable_to_non_nullable
+                  as double?,
       ),
     );
   }
@@ -708,56 +585,61 @@ class __$$UpdatedImplCopyWithImpl<$Res>
   /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
-  $UserEntityCopyWith<$Res> get user {
-    return $UserEntityCopyWith<$Res>(_value.user, (value) {
-      return _then(_value.copyWith(user: value));
+  $ProfileEntityCopyWith<$Res> get profile {
+    return $ProfileEntityCopyWith<$Res>(_value.profile, (value) {
+      return _then(_value.copyWith(profile: value));
     });
   }
 }
 
 /// @nodoc
 
-class _$UpdatedImpl implements _Updated {
-  const _$UpdatedImpl(this.user);
+class _$SavingImpl implements _Saving {
+  const _$SavingImpl(this.profile, {this.uploadProgress});
 
   @override
-  final UserEntity user;
+  final ProfileEntity profile;
+  @override
+  final double? uploadProgress;
 
   @override
   String toString() {
-    return 'ProfileState.updated(user: $user)';
+    return 'ProfileState.saving(profile: $profile, uploadProgress: $uploadProgress)';
   }
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$UpdatedImpl &&
-            (identical(other.user, user) || other.user == user));
+            other is _$SavingImpl &&
+            (identical(other.profile, profile) || other.profile == profile) &&
+            (identical(other.uploadProgress, uploadProgress) ||
+                other.uploadProgress == uploadProgress));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, user);
+  int get hashCode => Object.hash(runtimeType, profile, uploadProgress);
 
   /// Create a copy of ProfileState
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
-  _$$UpdatedImplCopyWith<_$UpdatedImpl> get copyWith =>
-      __$$UpdatedImplCopyWithImpl<_$UpdatedImpl>(this, _$identity);
+  _$$SavingImplCopyWith<_$SavingImpl> get copyWith =>
+      __$$SavingImplCopyWithImpl<_$SavingImpl>(this, _$identity);
 
   @override
   @optionalTypeArgs
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(UserEntity user) loaded,
-    required TResult Function() updating,
-    required TResult Function(UserEntity user) updated,
+    required TResult Function(ProfileEntity profile) loaded,
+    required TResult Function(ProfileEntity profile, double? uploadProgress)
+    saving,
+    required TResult Function(ProfileEntity profile) saved,
     required TResult Function(String message) error,
   }) {
-    return updated(user);
+    return saving(profile, uploadProgress);
   }
 
   @override
@@ -765,12 +647,12 @@ class _$UpdatedImpl implements _Updated {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(UserEntity user)? loaded,
-    TResult? Function()? updating,
-    TResult? Function(UserEntity user)? updated,
+    TResult? Function(ProfileEntity profile)? loaded,
+    TResult? Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult? Function(ProfileEntity profile)? saved,
     TResult? Function(String message)? error,
   }) {
-    return updated?.call(user);
+    return saving?.call(profile, uploadProgress);
   }
 
   @override
@@ -778,14 +660,14 @@ class _$UpdatedImpl implements _Updated {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(UserEntity user)? loaded,
-    TResult Function()? updating,
-    TResult Function(UserEntity user)? updated,
+    TResult Function(ProfileEntity profile)? loaded,
+    TResult Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult Function(ProfileEntity profile)? saved,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
-    if (updated != null) {
-      return updated(user);
+    if (saving != null) {
+      return saving(profile, uploadProgress);
     }
     return orElse();
   }
@@ -796,11 +678,11 @@ class _$UpdatedImpl implements _Updated {
     required TResult Function(_Initial value) initial,
     required TResult Function(_Loading value) loading,
     required TResult Function(_Loaded value) loaded,
-    required TResult Function(_Updating value) updating,
-    required TResult Function(_Updated value) updated,
+    required TResult Function(_Saving value) saving,
+    required TResult Function(_Saved value) saved,
     required TResult Function(_Error value) error,
   }) {
-    return updated(this);
+    return saving(this);
   }
 
   @override
@@ -809,11 +691,11 @@ class _$UpdatedImpl implements _Updated {
     TResult? Function(_Initial value)? initial,
     TResult? Function(_Loading value)? loading,
     TResult? Function(_Loaded value)? loaded,
-    TResult? Function(_Updating value)? updating,
-    TResult? Function(_Updated value)? updated,
+    TResult? Function(_Saving value)? saving,
+    TResult? Function(_Saved value)? saved,
     TResult? Function(_Error value)? error,
   }) {
-    return updated?.call(this);
+    return saving?.call(this);
   }
 
   @override
@@ -822,27 +704,210 @@ class _$UpdatedImpl implements _Updated {
     TResult Function(_Initial value)? initial,
     TResult Function(_Loading value)? loading,
     TResult Function(_Loaded value)? loaded,
-    TResult Function(_Updating value)? updating,
-    TResult Function(_Updated value)? updated,
+    TResult Function(_Saving value)? saving,
+    TResult Function(_Saved value)? saved,
     TResult Function(_Error value)? error,
     required TResult orElse(),
   }) {
-    if (updated != null) {
-      return updated(this);
+    if (saving != null) {
+      return saving(this);
     }
     return orElse();
   }
 }
 
-abstract class _Updated implements ProfileState {
-  const factory _Updated(final UserEntity user) = _$UpdatedImpl;
+abstract class _Saving implements ProfileState {
+  const factory _Saving(
+    final ProfileEntity profile, {
+    final double? uploadProgress,
+  }) = _$SavingImpl;
 
-  UserEntity get user;
+  ProfileEntity get profile;
+  double? get uploadProgress;
 
   /// Create a copy of ProfileState
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
-  _$$UpdatedImplCopyWith<_$UpdatedImpl> get copyWith =>
+  _$$SavingImplCopyWith<_$SavingImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$SavedImplCopyWith<$Res> {
+  factory _$$SavedImplCopyWith(
+    _$SavedImpl value,
+    $Res Function(_$SavedImpl) then,
+  ) = __$$SavedImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({ProfileEntity profile});
+
+  $ProfileEntityCopyWith<$Res> get profile;
+}
+
+/// @nodoc
+class __$$SavedImplCopyWithImpl<$Res>
+    extends _$ProfileStateCopyWithImpl<$Res, _$SavedImpl>
+    implements _$$SavedImplCopyWith<$Res> {
+  __$$SavedImplCopyWithImpl(
+    _$SavedImpl _value,
+    $Res Function(_$SavedImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of ProfileState
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({Object? profile = null}) {
+    return _then(
+      _$SavedImpl(
+        null == profile
+            ? _value.profile
+            : profile // ignore: cast_nullable_to_non_nullable
+                  as ProfileEntity,
+      ),
+    );
+  }
+
+  /// Create a copy of ProfileState
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @pragma('vm:prefer-inline')
+  $ProfileEntityCopyWith<$Res> get profile {
+    return $ProfileEntityCopyWith<$Res>(_value.profile, (value) {
+      return _then(_value.copyWith(profile: value));
+    });
+  }
+}
+
+/// @nodoc
+
+class _$SavedImpl implements _Saved {
+  const _$SavedImpl(this.profile);
+
+  @override
+  final ProfileEntity profile;
+
+  @override
+  String toString() {
+    return 'ProfileState.saved(profile: $profile)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$SavedImpl &&
+            (identical(other.profile, profile) || other.profile == profile));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, profile);
+
+  /// Create a copy of ProfileState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$SavedImplCopyWith<_$SavedImpl> get copyWith =>
+      __$$SavedImplCopyWithImpl<_$SavedImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() initial,
+    required TResult Function() loading,
+    required TResult Function(ProfileEntity profile) loaded,
+    required TResult Function(ProfileEntity profile, double? uploadProgress)
+    saving,
+    required TResult Function(ProfileEntity profile) saved,
+    required TResult Function(String message) error,
+  }) {
+    return saved(profile);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? initial,
+    TResult? Function()? loading,
+    TResult? Function(ProfileEntity profile)? loaded,
+    TResult? Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult? Function(ProfileEntity profile)? saved,
+    TResult? Function(String message)? error,
+  }) {
+    return saved?.call(profile);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? initial,
+    TResult Function()? loading,
+    TResult Function(ProfileEntity profile)? loaded,
+    TResult Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult Function(ProfileEntity profile)? saved,
+    TResult Function(String message)? error,
+    required TResult orElse(),
+  }) {
+    if (saved != null) {
+      return saved(profile);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(_Initial value) initial,
+    required TResult Function(_Loading value) loading,
+    required TResult Function(_Loaded value) loaded,
+    required TResult Function(_Saving value) saving,
+    required TResult Function(_Saved value) saved,
+    required TResult Function(_Error value) error,
+  }) {
+    return saved(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(_Initial value)? initial,
+    TResult? Function(_Loading value)? loading,
+    TResult? Function(_Loaded value)? loaded,
+    TResult? Function(_Saving value)? saving,
+    TResult? Function(_Saved value)? saved,
+    TResult? Function(_Error value)? error,
+  }) {
+    return saved?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(_Initial value)? initial,
+    TResult Function(_Loading value)? loading,
+    TResult Function(_Loaded value)? loaded,
+    TResult Function(_Saving value)? saving,
+    TResult Function(_Saved value)? saved,
+    TResult Function(_Error value)? error,
+    required TResult orElse(),
+  }) {
+    if (saved != null) {
+      return saved(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class _Saved implements ProfileState {
+  const factory _Saved(final ProfileEntity profile) = _$SavedImpl;
+
+  ProfileEntity get profile;
+
+  /// Create a copy of ProfileState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$SavedImplCopyWith<_$SavedImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
@@ -918,9 +983,10 @@ class _$ErrorImpl implements _Error {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(UserEntity user) loaded,
-    required TResult Function() updating,
-    required TResult Function(UserEntity user) updated,
+    required TResult Function(ProfileEntity profile) loaded,
+    required TResult Function(ProfileEntity profile, double? uploadProgress)
+    saving,
+    required TResult Function(ProfileEntity profile) saved,
     required TResult Function(String message) error,
   }) {
     return error(message);
@@ -931,9 +997,9 @@ class _$ErrorImpl implements _Error {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(UserEntity user)? loaded,
-    TResult? Function()? updating,
-    TResult? Function(UserEntity user)? updated,
+    TResult? Function(ProfileEntity profile)? loaded,
+    TResult? Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult? Function(ProfileEntity profile)? saved,
     TResult? Function(String message)? error,
   }) {
     return error?.call(message);
@@ -944,9 +1010,9 @@ class _$ErrorImpl implements _Error {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(UserEntity user)? loaded,
-    TResult Function()? updating,
-    TResult Function(UserEntity user)? updated,
+    TResult Function(ProfileEntity profile)? loaded,
+    TResult Function(ProfileEntity profile, double? uploadProgress)? saving,
+    TResult Function(ProfileEntity profile)? saved,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
@@ -962,8 +1028,8 @@ class _$ErrorImpl implements _Error {
     required TResult Function(_Initial value) initial,
     required TResult Function(_Loading value) loading,
     required TResult Function(_Loaded value) loaded,
-    required TResult Function(_Updating value) updating,
-    required TResult Function(_Updated value) updated,
+    required TResult Function(_Saving value) saving,
+    required TResult Function(_Saved value) saved,
     required TResult Function(_Error value) error,
   }) {
     return error(this);
@@ -975,8 +1041,8 @@ class _$ErrorImpl implements _Error {
     TResult? Function(_Initial value)? initial,
     TResult? Function(_Loading value)? loading,
     TResult? Function(_Loaded value)? loaded,
-    TResult? Function(_Updating value)? updating,
-    TResult? Function(_Updated value)? updated,
+    TResult? Function(_Saving value)? saving,
+    TResult? Function(_Saved value)? saved,
     TResult? Function(_Error value)? error,
   }) {
     return error?.call(this);
@@ -988,8 +1054,8 @@ class _$ErrorImpl implements _Error {
     TResult Function(_Initial value)? initial,
     TResult Function(_Loading value)? loading,
     TResult Function(_Loaded value)? loaded,
-    TResult Function(_Updating value)? updating,
-    TResult Function(_Updated value)? updated,
+    TResult Function(_Saving value)? saving,
+    TResult Function(_Saved value)? saved,
     TResult Function(_Error value)? error,
     required TResult orElse(),
   }) {

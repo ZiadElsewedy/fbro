@@ -27,9 +27,10 @@ class App extends StatelessWidget {
         builder: (context) {
           final router = createRouter(AppDependencies.authCubit);
           return MaterialApp.router(
-            title: 'Fbro',
-            theme: AppTheme.light,
+            title: 'FBRO',
+            theme: AppTheme.dark,
             darkTheme: AppTheme.dark,
+            themeMode: ThemeMode.dark,
             routerConfig: router,
             debugShowCheckedModeBanner: false,
           );

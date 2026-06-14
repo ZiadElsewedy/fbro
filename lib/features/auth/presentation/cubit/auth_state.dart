@@ -3,10 +3,27 @@ import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 
 part 'auth_state.freezed.dart';
 
+/// Identifies which authentication action is currently in flight.
+///
+/// Carried on [AuthState.loading] so the UI can show a spinner ONLY on the
+/// button that triggered the request, while disabling the others. This is what
+/// fixes the "every button spins on Google sign-in" bug.
+enum AuthAction {
+  emailSignIn,
+  register,
+  google,
+  phoneVerify,
+  otpVerify,
+  forgotPassword,
+  emailVerification,
+  changePassword,
+  deleteAccount,
+}
+
 @freezed
 class AuthState with _$AuthState {
   const factory AuthState.initial() = _Initial;
-  const factory AuthState.loading() = _Loading;
+  const factory AuthState.loading(AuthAction action) = _Loading;
   const factory AuthState.authenticated(UserEntity user) = _Authenticated;
   const factory AuthState.unauthenticated() = _Unauthenticated;
   const factory AuthState.otpSent(String verificationId) = _OtpSent;

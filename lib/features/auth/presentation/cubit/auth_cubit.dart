@@ -35,6 +35,10 @@ class AuthCubit extends Cubit<AuthState> {
 
   StreamSubscription? _authSub;
 
+  /// True while any auth action is in flight. Used to reject duplicate taps
+  /// and concurrent requests (e.g. tapping Sign In then Google rapidly).
+  bool get _busy => state.maybeWhen(loading: (_) => true, orElse: () => false);
+
   AuthCubit({
     required AuthRepository repository,
     required SignInWithEmail signInWithEmail,
@@ -98,7 +102,8 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> signInWithEmail(String email, String password) async {
-    emit(const AuthState.loading());
+    if (_busy) return;
+    emit(const AuthState.loading(AuthAction.emailSignIn));
     try {
       final user = await _signInWithEmail(email: email, password: password);
       if (!user.isEmailVerified) {
@@ -116,7 +121,8 @@ class AuthCubit extends Cubit<AuthState> {
     String password, {
     String? displayName,
   }) async {
-    emit(const AuthState.loading());
+    if (_busy) return;
+    emit(const AuthState.loading(AuthAction.register));
     try {
       var user = await _registerWithEmail(email: email, password: password);
       if (displayName != null && displayName.trim().isNotEmpty) {
@@ -132,7 +138,8 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> signInWithGoogle() async {
-    emit(const AuthState.loading());
+    if (_busy) return;
+    emit(const AuthState.loading(AuthAction.google));
     try {
       final user = await _signInWithGoogle();
       await _saveUser(user);
@@ -143,7 +150,8 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> verifyPhone(String phoneNumber) async {
-    emit(const AuthState.loading());
+    if (_busy) return;
+    emit(const AuthState.loading(AuthAction.phoneVerify));
     try {
       await _verifyPhoneNumber(
         phoneNumber: phoneNumber,
@@ -159,7 +167,8 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> verifyOtp(String verificationId, String smsCode) async {
-    emit(const AuthState.loading());
+    if (_busy) return;
+    emit(const AuthState.loading(AuthAction.otpVerify));
     try {
       final user = await _signInWithOtp(
         verificationId: verificationId,
@@ -173,7 +182,8 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> forgotPassword(String email) async {
-    emit(const AuthState.loading());
+    if (_busy) return;
+    emit(const AuthState.loading(AuthAction.forgotPassword));
     try {
       await _forgotPassword(email);
       emit(const AuthState.passwordResetSent());
@@ -208,7 +218,8 @@ class AuthCubit extends Cubit<AuthState> {
     required String currentPassword,
     required String newPassword,
   }) async {
-    emit(const AuthState.loading());
+    if (_busy) return;
+    emit(const AuthState.loading(AuthAction.changePassword));
     try {
       await _changePassword(
         currentPassword: currentPassword,
@@ -224,23 +235,18 @@ class AuthCubit extends Cubit<AuthState> {
     String? currentPassword,
     String? accessToken,
   }) async {
-    emit(const AuthState.loading());
+    if (_busy) return;
+    emit(const AuthState.loading(AuthAction.deleteAccount));
     try {
-      final uid = _repository.currentUser?.uid;
+      // Note: deleting the Firestore user document must happen *before* the
+      // Firebase account is removed — once the account is gone the user is
+      // signed out and security rules would reject the write. Proper cleanup
+      // of the document belongs in a Cloud Function (auth.user().onDelete);
+      // here we simply remove the auth account.
       await _deleteAccount(
         currentPassword: currentPassword,
         accessToken: accessToken,
       );
-      // Delete the Firestore document after the Firebase account is gone.
-      if (uid != null) {
-        try {
-          await _repository.saveUser(
-            // Overwrite with a tombstone — we let Firestore cleanup happen.
-            // In production use a Cloud Function for this; here we just delete.
-            _repository.currentUser!,
-          );
-        } catch (_) {}
-      }
       emit(const AuthState.unauthenticated());
     } on AuthFailure catch (e) {
       emit(AuthState.error(e.message));

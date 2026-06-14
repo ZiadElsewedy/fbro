@@ -1,8 +1,10 @@
+import 'dart:io';
+
 import 'package:fbro/core/errors/exceptions.dart';
 import 'package:fbro/core/errors/failures.dart';
 import 'package:fbro/features/auth/data/datasources/auth_remote_datasource.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/profile/data/datasources/profile_remote_datasource.dart';
+import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
 import 'package:fbro/features/profile/domain/repositories/profile_repository.dart';
 
 class ProfileRepositoryImpl implements ProfileRepository {
@@ -12,49 +14,93 @@ class ProfileRepositoryImpl implements ProfileRepository {
   ProfileRepositoryImpl(this._profileRemote, this._authRemote);
 
   @override
-  Future<UserEntity?> getProfile(String uid) async {
-    final model = await _profileRemote.getProfile(uid);
-    return model?.toEntity();
+  Future<ProfileEntity?> getProfile(String uid) async {
+    try {
+      final model = await _profileRemote.getProfile(uid);
+      return model?.toEntity();
+    } on AuthException catch (e) {
+      throw AuthFailure(e.message);
+    }
   }
 
   @override
-  Future<void> updateProfile({
+  Future<ProfileEntity> updateProfile({
     required String uid,
-    String? displayName,
-    String? photoUrl,
+    String? fullName,
+    String? username,
+    String? bio,
+    String? phoneNumber,
+    String? country,
+    String? city,
+    String? website,
+    String? gender,
+    DateTime? birthDate,
+    String? profileImage,
+    String? coverImage,
   }) async {
-    await _profileRemote.updateProfile(
-      uid: uid,
-      displayName: displayName,
-      photoUrl: photoUrl,
-    );
-  }
-
-  @override
-  Future<void> updateFirebaseDisplayName(String displayName) async {
     try {
-      await _authRemote.updateDisplayName(displayName);
+      await _profileRemote.updateProfile(
+        uid: uid,
+        fullName: fullName,
+        username: username?.toLowerCase(),
+        bio: bio,
+        phoneNumber: phoneNumber,
+        country: country,
+        city: city,
+        website: website,
+        gender: gender,
+        birthDate: birthDate,
+        profileImage: profileImage,
+        coverImage: coverImage,
+      );
+
+      // Keep the Firebase Auth profile in sync so the auth session / Home
+      // reflect the new name and avatar without a re-login. Best-effort:
+      // a sync failure shouldn't fail the whole save.
+      if (fullName != null && fullName.trim().isNotEmpty) {
+        try {
+          await _authRemote.updateDisplayName(fullName.trim());
+        } on AuthException {/* non-fatal */}
+      }
+      if (profileImage != null && profileImage.trim().isNotEmpty) {
+        try {
+          await _authRemote.updatePhotoUrl(profileImage.trim());
+        } on AuthException {/* non-fatal */}
+      }
+
+      final updated = await _profileRemote.getProfile(uid);
+      if (updated == null) {
+        throw const AuthFailure('Profile not found after update.');
+      }
+      return updated.toEntity();
     } on AuthException catch (e) {
       throw AuthFailure(e.message);
     }
   }
 
   @override
-  Future<void> updateFirebasePhotoUrl(String photoUrl) async {
+  Future<String> uploadProfileImage(String uid, File file,
+      {void Function(double progress)? onProgress}) async {
     try {
-      await _authRemote.updatePhotoUrl(photoUrl);
+      return await _profileRemote.uploadProfileImage(uid, file,
+          onProgress: onProgress);
     } on AuthException catch (e) {
       throw AuthFailure(e.message);
     }
   }
 
   @override
-  Future<UserEntity> reloadUser() async {
+  Future<String> uploadCoverImage(String uid, File file,
+      {void Function(double progress)? onProgress}) async {
     try {
-      final model = await _authRemote.reloadUser();
-      return model.toEntity();
+      return await _profileRemote.uploadCoverImage(uid, file,
+          onProgress: onProgress);
     } on AuthException catch (e) {
       throw AuthFailure(e.message);
     }
   }
+
+  @override
+  Future<bool> isUsernameAvailable(String username, {required String forUid}) =>
+      _profileRemote.isUsernameAvailable(username.toLowerCase(), forUid: forUid);
 }

@@ -155,7 +155,7 @@ class _FormView extends StatelessWidget {
               child: BlocBuilder<AuthCubit, AuthState>(
                 builder: (context, state) {
                   final isLoading =
-                      state.maybeWhen(loading: () => true, orElse: () => false);
+                      state.maybeWhen(loading: (_) => true, orElse: () => false);
                   return AppButton(
                     label: 'Send Reset Link',
                     isLoading: isLoading,

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:fbro/features/auth/data/datasources/auth_remote_datasource.dart';
 import 'package:fbro/features/auth/data/datasources/user_remote_datasource.dart';
 import 'package:fbro/features/auth/data/repositories/auth_repository_impl.dart';
@@ -23,6 +24,9 @@ import 'package:fbro/features/profile/data/repositories/profile_repository_impl.
 import 'package:fbro/features/profile/domain/repositories/profile_repository.dart';
 import 'package:fbro/features/profile/domain/usecases/get_profile.dart';
 import 'package:fbro/features/profile/domain/usecases/update_profile.dart';
+import 'package:fbro/features/profile/domain/usecases/upload_profile_image.dart';
+import 'package:fbro/features/profile/domain/usecases/upload_cover_image.dart';
+import 'package:fbro/features/profile/domain/usecases/check_username.dart';
 import 'package:fbro/features/profile/presentation/cubit/profile_cubit.dart';
 
 class AppDependencies {
@@ -34,7 +38,10 @@ class AppDependencies {
   static void init() {
     final authRemoteDataSource = AuthRemoteDataSourceImpl(FirebaseAuth.instance);
     final userRemoteDataSource = UserRemoteDataSourceImpl(FirebaseFirestore.instance);
-    final profileRemoteDataSource = ProfileRemoteDataSourceImpl(FirebaseFirestore.instance);
+    final profileRemoteDataSource = ProfileRemoteDataSourceImpl(
+      FirebaseFirestore.instance,
+      FirebaseStorage.instance,
+    );
 
     final AuthRepository authRepository =
         AuthRepositoryImpl(authRemoteDataSource, userRemoteDataSource);
@@ -62,6 +69,9 @@ class AppDependencies {
     profileCubit = ProfileCubit(
       getProfile: GetProfile(profileRepository),
       updateProfile: UpdateProfile(profileRepository),
+      uploadProfileImage: UploadProfileImage(profileRepository),
+      uploadCoverImage: UploadCoverImage(profileRepository),
+      checkUsername: CheckUsername(profileRepository),
     );
   }
 }

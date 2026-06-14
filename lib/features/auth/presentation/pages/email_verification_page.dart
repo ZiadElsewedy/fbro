@@ -79,7 +79,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               orElse: () => '',
             );
             final isLoading =
-                state.maybeWhen(loading: () => true, orElse: () => false);
+                state.maybeWhen(loading: (_) => true, orElse: () => false);
 
             return SafeArea(
               child: SingleChildScrollView(

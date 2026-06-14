@@ -23,6 +23,16 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
 
     if (!doc.exists) {
       data['createdAt'] = FieldValue.serverTimestamp();
+      // Seed the profile schema ONCE on first creation, with empty-string
+      // defaults. The model's displayName/photoUrl fallback still surfaces a
+      // provider-supplied name/avatar for display even though these start "".
+      data.addAll(const {
+        'fullName': '',
+        'username': '',
+        'bio': '',
+        'profileImage': '',
+        'coverImage': '',
+      });
     }
 
     await docRef.set(data, SetOptions(merge: true));

@@ -223,18 +223,21 @@ class _PhoneStep extends StatelessWidget {
             beginOffset: const Offset(0, 16),
             child: BlocBuilder<AuthCubit, AuthState>(
               builder: (context, state) {
-                final isLoading =
-                    state.maybeWhen(loading: () => true, orElse: () => false);
+                final action =
+                    state.maybeWhen(loading: (a) => a, orElse: () => null);
                 return AppButton(
                   label: 'Continue',
-                  isLoading: isLoading,
-                  onPressed: () {
-                    final digits = controller.text.trim();
-                    if (digits.isEmpty) return;
-                    // Combine the hardcoded country code with the typed number
-                    // in E.164 format required by Firebase (+20XXXXXXXXXX).
-                    context.read<AuthCubit>().verifyPhone('+20$digits');
-                  },
+                  isLoading: action == AuthAction.phoneVerify,
+                  onPressed: action != null
+                      ? null
+                      : () {
+                          final digits = controller.text.trim();
+                          if (digits.isEmpty) return;
+                          // Combine the hardcoded country code with the typed
+                          // number in E.164 format required by Firebase
+                          // (+20XXXXXXXXXX).
+                          context.read<AuthCubit>().verifyPhone('+20$digits');
+                        },
                 );
               },
             ),
@@ -348,12 +351,13 @@ class _OtpStep extends StatelessWidget {
             beginOffset: const Offset(0, 16),
             child: BlocBuilder<AuthCubit, AuthState>(
               builder: (context, state) {
-                final isLoading =
-                    state.maybeWhen(loading: () => true, orElse: () => false);
+                final action =
+                    state.maybeWhen(loading: (a) => a, orElse: () => null);
+                final canVerify = otp.length == 6 && action == null;
                 return AppButton(
                   label: 'Verify',
-                  isLoading: isLoading,
-                  onPressed: otp.length == 6
+                  isLoading: action == AuthAction.otpVerify,
+                  onPressed: canVerify
                       ? () => context
                           .read<AuthCubit>()
                           .verifyOtp(verificationId, otp)

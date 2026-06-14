@@ -167,16 +167,11 @@ class _Avatar extends StatelessWidget {
     return Container(
       width: 64,
       height: 64,
-      decoration: BoxDecoration(
-        gradient: AppColors.primaryGradient,
+      decoration: const BoxDecoration(
+        color: AppColors.darkSurfaceElevated,
         borderRadius: AppRadius.fullAll,
       ),
-      child: Center(
-        child: Text(
-          initials,
-          style: AppTypography.h2.copyWith(color: AppColors.white),
-        ),
-      ),
+      child: Center(child: Text(initials, style: AppTypography.h2)),
     );
   }
 }

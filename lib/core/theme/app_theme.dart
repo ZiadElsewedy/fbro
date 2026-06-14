@@ -14,7 +14,7 @@ class AppTheme {
         colorScheme: const ColorScheme.dark(
           primary: AppColors.primary,
           surface: AppColors.darkSurface,
-          onPrimary: AppColors.white,
+          onPrimary: AppColors.textDark,
           onSurface: AppColors.textPrimary,
           error: AppColors.error,
         ),
@@ -131,7 +131,7 @@ class AppTheme {
       ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.white,
+          foregroundColor: AppColors.textDark,
           minimumSize: const Size(double.infinity, 56),
           shape: const RoundedRectangleBorder(borderRadius: AppRadius.buttonAll),
           elevation: 0,

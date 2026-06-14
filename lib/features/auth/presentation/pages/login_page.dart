@@ -138,21 +138,24 @@ class _LoginPageState extends State<LoginPage> {
                   beginOffset: const Offset(0, 16),
                   child: BlocBuilder<AuthCubit, AuthState>(
                     builder: (context, state) {
-                      final isLoading = state.maybeWhen(
-                        loading: () => true,
-                        orElse: () => false,
+                      final action = state.maybeWhen(
+                        loading: (a) => a,
+                        orElse: () => null,
                       );
+                      final busy = action != null;
                       return AppButton(
                         label: 'Sign In',
-                        isLoading: isLoading,
-                        onPressed: () {
-                          if (_formKey.currentState!.validate()) {
-                            context.read<AuthCubit>().signInWithEmail(
-                                  _emailController.text.trim(),
-                                  _passwordController.text,
-                                );
-                          }
-                        },
+                        isLoading: action == AuthAction.emailSignIn,
+                        onPressed: busy
+                            ? null
+                            : () {
+                                if (_formKey.currentState!.validate()) {
+                                  context.read<AuthCubit>().signInWithEmail(
+                                        _emailController.text.trim(),
+                                        _passwordController.text,
+                                      );
+                                }
+                              },
                       );
                     },
                   ),
@@ -187,25 +190,23 @@ class _LoginPageState extends State<LoginPage> {
                   delay: const Duration(milliseconds: 420),
                   child: BlocBuilder<AuthCubit, AuthState>(
                     builder: (context, state) {
-                      final isLoading =
-                          state.maybeWhen(loading: () => true, orElse: () => false);
+                      final action = state.maybeWhen(
+                        loading: (a) => a,
+                        orElse: () => null,
+                      );
+                      final busy = action != null;
+                      final googleLoading = action == AuthAction.google;
                       return AppButton.secondary(
                         label: 'Continue with Google',
-                        isLoading: isLoading,
-                        icon: isLoading
+                        isLoading: googleLoading,
+                        icon: googleLoading
                             ? null
-                            : Image.asset(
-                                'assets/icons/google.png',
-                                width: 20,
-                                height: 20,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    const Icon(
-                                  Icons.g_mobiledata_rounded,
-                                  size: 22,
-                                  color: AppColors.primary,
-                                ),
+                            : const Icon(
+                                Icons.g_mobiledata_rounded,
+                                size: 24,
+                                color: AppColors.primary,
                               ),
-                        onPressed: isLoading
+                        onPressed: busy
                             ? null
                             : () => context.read<AuthCubit>().signInWithGoogle(),
                       );

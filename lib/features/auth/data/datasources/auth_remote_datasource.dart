@@ -71,7 +71,28 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       final user = credential.user!;
       return UserModel.fromFirebaseUser(user, authProvider: _resolveProvider(user));
     } on FirebaseAuthException catch (e) {
-      throw AuthException(e.message ?? 'Sign in failed');
+      throw AuthException(_resolveSignInError(e.code, e.message));
+    }
+  }
+
+  String _resolveSignInError(String code, String? message) {
+    switch (code) {
+      // Modern Firebase collapses wrong-password / user-not-found into the
+      // generic invalid-credential for email-enumeration protection.
+      case 'invalid-credential':
+      case 'wrong-password':
+      case 'user-not-found':
+        return 'Incorrect email or password. Please try again.';
+      case 'invalid-email':
+        return 'The email address is not valid.';
+      case 'user-disabled':
+        return 'This account has been disabled. Contact support.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait and try again.';
+      case 'network-request-failed':
+        return 'Network error. Check your connection and try again.';
+      default:
+        return message ?? 'Sign in failed. Please try again.';
     }
   }
 
@@ -88,7 +109,24 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       final user = credential.user!;
       return UserModel.fromFirebaseUser(user, authProvider: _resolveProvider(user));
     } on FirebaseAuthException catch (e) {
-      throw AuthException(e.message ?? 'Registration failed');
+      throw AuthException(_resolveRegisterError(e.code, e.message));
+    }
+  }
+
+  String _resolveRegisterError(String code, String? message) {
+    switch (code) {
+      case 'email-already-in-use':
+        return 'An account already exists with this email.';
+      case 'invalid-email':
+        return 'The email address is not valid.';
+      case 'weak-password':
+        return 'Password is too weak. Use at least 6 characters.';
+      case 'operation-not-allowed':
+        return 'Email sign-up is not enabled. Contact support.';
+      case 'network-request-failed':
+        return 'Network error. Check your connection and try again.';
+      default:
+        return message ?? 'Registration failed. Please try again.';
     }
   }
 
@@ -161,7 +199,23 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       final u = result.user!;
       return UserModel.fromFirebaseUser(u, authProvider: _resolveProvider(u));
     } on FirebaseAuthException catch (e) {
-      throw AuthException(e.message ?? 'OTP verification failed');
+      throw AuthException(_resolveOtpError(e.code, e.message));
+    }
+  }
+
+  String _resolveOtpError(String code, String? message) {
+    switch (code) {
+      case 'invalid-verification-code':
+        return 'The code you entered is incorrect. Please try again.';
+      case 'invalid-verification-id':
+      case 'session-expired':
+        return 'This code has expired. Please request a new one.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait and try again.';
+      case 'network-request-failed':
+        return 'Network error. Check your connection and try again.';
+      default:
+        return message ?? 'Verification failed. Please try again.';
     }
   }
 

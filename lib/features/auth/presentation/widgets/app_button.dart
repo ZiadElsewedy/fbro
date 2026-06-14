@@ -9,7 +9,6 @@ class AppButton extends StatefulWidget {
   final String label;
   final VoidCallback? onPressed;
   final bool isLoading;
-  final bool useGradient;
   final AppButtonVariant variant;
   final Widget? icon;
 
@@ -18,7 +17,6 @@ class AppButton extends StatefulWidget {
     required this.label,
     this.onPressed,
     this.isLoading = false,
-    this.useGradient = true,
     this.variant = AppButtonVariant.primary,
     this.icon,
   });
@@ -29,8 +27,7 @@ class AppButton extends StatefulWidget {
     this.onPressed,
     this.isLoading = false,
     this.icon,
-  })  : useGradient = false,
-        variant = AppButtonVariant.secondary;
+  }) : variant = AppButtonVariant.secondary;
 
   const AppButton.ghost({
     super.key,
@@ -38,8 +35,7 @@ class AppButton extends StatefulWidget {
     this.onPressed,
     this.isLoading = false,
     this.icon,
-  })  : useGradient = false,
-        variant = AppButtonVariant.ghost;
+  }) : variant = AppButtonVariant.ghost;
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -108,7 +104,6 @@ class _AppButtonState extends State<AppButton>
           label: widget.label,
           icon: widget.icon,
           isLoading: widget.isLoading,
-          useGradient: widget.useGradient,
         );
       case AppButtonVariant.secondary:
         return _SecondaryButton(
@@ -131,29 +126,19 @@ class _PrimaryButton extends StatelessWidget {
   final String label;
   final Widget? icon;
   final bool isLoading;
-  final bool useGradient;
 
   const _PrimaryButton({
     required this.label,
     required this.isLoading,
-    required this.useGradient,
     this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        gradient: useGradient ? AppColors.primaryGradient : null,
-        color: useGradient ? null : AppColors.primary,
+      decoration: const BoxDecoration(
+        color: AppColors.white,
         borderRadius: AppRadius.buttonAll,
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withAlpha(60),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Center(child: _buildChild()),
     );
@@ -166,21 +151,22 @@ class _PrimaryButton extends StatelessWidget {
         height: 22,
         child: CircularProgressIndicator(
           strokeWidth: 2.5,
-          color: AppColors.white,
+          color: AppColors.textDark,
         ),
       );
     }
+    final textStyle = AppTypography.labelLarge.copyWith(color: AppColors.textDark);
     if (icon != null) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           icon!,
           const SizedBox(width: 10),
-          Text(label, style: AppTypography.labelLarge),
+          Text(label, style: textStyle),
         ],
       );
     }
-    return Text(label, style: AppTypography.labelLarge);
+    return Text(label, style: textStyle);
   }
 }
 

@@ -4,6 +4,7 @@ import 'package:fbro/core/di/injection.dart';
 import 'package:fbro/core/routes/route_names.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/fbro_logo.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -59,7 +60,7 @@ class _SplashPageState extends State<SplashPage>
 
     AppDependencies.authCubit.state.when(
       initial: () => context.go(RouteNames.welcome),
-      loading: () => context.go(RouteNames.welcome),
+      loading: (_) => context.go(RouteNames.welcome),
       authenticated: (_) => context.go(RouteNames.home),
       unauthenticated: () => context.go(RouteNames.welcome),
       otpSent: (_) => context.go(RouteNames.welcome),
@@ -91,46 +92,10 @@ class _SplashPageState extends State<SplashPage>
                 opacity: _logoOpacity,
                 child: ScaleTransition(
                   scale: _logoScale,
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withAlpha(80),
-                          blurRadius: 30,
-                          offset: const Offset(0, 12),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'F',
-                        style: TextStyle(
-                          color: AppColors.white,
-                          fontSize: 36,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -1,
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: const FbroLogo(fontSize: 40),
                 ),
               ),
-              const SizedBox(height: 20),
-              FadeTransition(
-                opacity: _textOpacity,
-                child: Text(
-                  'FBRO',
-                  style: AppTypography.h2.copyWith(
-                    letterSpacing: 6,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               FadeTransition(
                 opacity: _textOpacity,
                 child: Text(
