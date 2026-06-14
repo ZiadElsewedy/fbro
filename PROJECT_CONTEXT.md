@@ -77,14 +77,16 @@ lib/
 ├── core/
 │   ├── constants/            # app_constants.dart (appName, collection names)
 │   ├── di/                   # injection.dart — AppDependencies service locator
-│   ├── enums/                # user_role.dart, approval_status.dart (pending/approved/rejected)
+│   ├── enums/                # user_role · approval_status · task_type · task_status · task_priority
 │   ├── errors/               # exceptions.dart (data layer) / failures.dart (domain)
 │   ├── routes/               # app_router.dart (role dispatch + guards), route_names.dart
 │   ├── theme/                # app_colors / typography / spacing / radius / app_theme
 │   └── widgets/              # app_snackbar, fbro_logo, skeleton, role_scaffold, role_placeholder
 └── features/
-    ├── auth/                 # Sign-in/up, phone OTP, Google, email verify, password, role
+    ├── auth/                 # Sign-in/up, phone OTP, Google, email verify, password, role, approval
     ├── profile/              # View + edit profile, image uploads, username checks
+    ├── shift/                # Shift data/domain (entity·model·repository·datasource) + role shift screens (Phase 2)
+    ├── task/                 # Task data/domain (entity·model·repository·datasource) + role task screens (Phase 3)
     ├── admin/                # AdminShell + AdminDashboardScreen (presentation only)
     ├── manager/              # ManagerShell + ManagerHomeScreen (presentation only)
     ├── employee/             # EmployeeShell + EmployeeHomeScreen (presentation only)
@@ -95,6 +97,13 @@ lib/
 > presentation-only — they reuse `auth`/`profile` cubits rather than owning
 > their own data/domain layers. Each user is dispatched to exactly one role
 > shell after login.
+>
+> The `shift` (Phase 2) and `task` (Phase 3) features each own a full **data +
+> domain** layer (`XEntity`/`XModel`/`XRepository`/`XRemoteDataSource`) but their
+> presentation is still **functional placeholders** — there are **no
+> `ShiftCubit`/`TaskCubit`/use cases yet**; the repositories are wired in DI
+> (`AppDependencies.shiftRepository` / `taskRepository`) ready for the real UI in
+> a later phase.
 
 ---
 
@@ -195,6 +204,60 @@ Firestore users/{uid}          FirebaseAuth
   it falls back to the legacy `displayName`/`photoUrl` keys, and `editMap`
   keeps those legacy keys in sync on write.
 
+### Shift chain (Phase 2 — foundation only)
+
+```
+ShiftManagementScreen / BranchShiftScreen / MyShiftScreen   (presentation/pages)
+  (functional placeholders — NO ShiftCubit/use cases yet)
+                              ⋮  (next phase wires a ShiftCubit + use cases here)
+ShiftRepository (abstract)                                   (domain/repositories)
+        ↓   AppDependencies.shiftRepository  (composed in injection.dart)
+ShiftRepositoryImpl                                          (data/repositories)
+        ↓
+ShiftRemoteDataSource                                        (data/datasources)
+        ↓
+Cloud Firestore  shifts/{shiftId}
+```
+
+- The shift **data + domain** layers are complete (`ShiftEntity`, `ShiftModel`,
+  `ShiftRepository(+Impl)`, `ShiftRemoteDataSource(+Impl)`) and exposed via
+  `AppDependencies.shiftRepository`. Datasources throw `ServerException`; the
+  repository converts to `ServerFailure` and maps `ShiftModel → ShiftEntity`.
+- **No presentation logic yet** — the three role screens are placeholders. The
+  branch/role access model is enforced server-side in `firestore.rules`
+  (`shifts/{shiftId}`): admin = all branches, manager = own branch, employee =
+  their own assigned shift (read-only). The user's `assignedShift` (Phase 1)
+  references the assigned `shiftId`; the shift's `employeeId` references back.
+
+### Task chain (Phase 3 — foundation only)
+
+```
+TaskManagementScreen / BranchTasksScreen / MyTasksScreen    (presentation/pages)
+  (functional placeholders — NO TaskCubit/use cases yet)
+                              ⋮  (next phase wires a TaskCubit + use cases here)
+TaskRepository (abstract)                                    (domain/repositories)
+        ↓   AppDependencies.taskRepository  (composed in injection.dart)
+TaskRepositoryImpl                                           (data/repositories)
+        ↓
+TaskRemoteDataSource                                         (data/datasources)
+        ↓
+Cloud Firestore  tasks/{taskId}
+```
+
+- The task **data + domain** layers are complete (`TaskEntity`, `TaskModel`,
+  `TaskRepository(+Impl)`, `TaskRemoteDataSource(+Impl)`) and exposed via
+  `AppDependencies.taskRepository`. Same error pattern as shifts
+  (`ServerException` → `ServerFailure`). Repository surface: list (all / by
+  branch / by employee), get, create, update, delete, `assignTask`
+  (employee + optional shift), and `updateStatus` (the workflow transitions).
+- **Core workflow:** a manager/admin creates + assigns a task; the employee
+  drives it `pending → started → completed → waitingReview`; a manager/admin
+  reviews → `approved` | `rejected`. `TaskType` (daily/special), `TaskStatus`
+  and `TaskPriority` are enums in `core/enums`. Access is enforced in
+  `firestore.rules` (`tasks/{taskId}`): admin all branches, manager own branch,
+  employee own assigned tasks with **limited writes** (may advance status / add
+  notes / proof but may not reassign, change branch, or approve/reject).
+
 ### Shared (core) dependencies
 
 Every layer may import `core/errors` (failures/exceptions). Presentation
@@ -219,6 +282,17 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Profile reads/writes / image uploads**  | `lib/features/profile/data/datasources/profile_remote_datasource.dart`   |
 | **Profile schema / serialization**        | `lib/features/profile/domain/entities/profile_entity.dart` + `data/models/profile_model.dart` (then run codegen) |
 | **Auth ⇄ Profile sync (name/avatar)**     | `lib/features/profile/data/repositories/profile_repository_impl.dart`    |
+| **Shift schema / serialization**          | `lib/features/shift/domain/entities/shift_entity.dart` + `data/models/shift_model.dart` (then run codegen) |
+| **Shift reads/writes (Firestore)**        | `lib/features/shift/data/datasources/shift_remote_datasource.dart`       |
+| **Shift repository contract / impl**      | `lib/features/shift/domain/repositories/shift_repository.dart` + `data/repositories/shift_repository_impl.dart` (wired in `core/di/injection.dart`) |
+| **Shift screens (admin/manager/employee)**| `lib/features/shift/presentation/pages/` (`shift_management_screen` · `branch_shift_screen` · `my_shift_screen`) |
+| **Shift routes / role entry point**       | `lib/core/routes/route_names.dart` (`adminShifts`/`managerShifts`/`myShift` + `shiftsForRole`) + `app_router.dart` + `role_scaffold.dart` (Shifts icon) |
+| **Task type/status/priority values**      | `lib/core/enums/task_type.dart` · `task_status.dart` · `task_priority.dart` |
+| **Task schema / serialization**           | `lib/features/task/domain/entities/task_entity.dart` + `data/models/task_model.dart` (then run codegen) |
+| **Task reads/writes (Firestore)**         | `lib/features/task/data/datasources/task_remote_datasource.dart`        |
+| **Task repository contract / impl**       | `lib/features/task/domain/repositories/task_repository.dart` + `data/repositories/task_repository_impl.dart` (wired in `core/di/injection.dart`) |
+| **Task screens (admin/manager/employee)** | `lib/features/task/presentation/pages/` (`task_management_screen` · `branch_tasks_screen` · `my_tasks_screen`) |
+| **Task routes / role entry point**        | `lib/core/routes/route_names.dart` (`adminTasks`/`managerTasks`/`myTasks` + `tasksForRole`) + `app_router.dart` + `role_scaffold.dart` (Tasks icon) |
 | **A role's home/dashboard screen**        | `lib/features/{employee,manager,admin}/presentation/pages/`              |
 | **Shared role chrome / placeholder**      | `lib/core/widgets/role_scaffold.dart` · `role_placeholder.dart`         |
 | **Roles enum / role values**              | `lib/core/enums/user_role.dart`                                         |
@@ -363,8 +437,13 @@ Patterns below are established across the codebase and **must be reused**.
   `firestore.rules`); an admin (or own-branch manager, for approval) may.
 - **Enforcement** lives in `firestore.rules`: reusable `isAdmin()`/`isManager()`/
   `selfBranch()`/`canReachBranch(branch)` helpers read the requester's own user
-  doc. New branch-scoped collections (branches, shifts, tasks) plug into
-  `canReachBranch()` — see the template at the bottom of the rules file.
+  doc. **`shifts/{shiftId}` (Phase 2)** and **`tasks/{taskId}` (Phase 3)** are
+  the branch-scoped collections wired to `canReachBranch()` (admin all · manager
+  own-branch · employee own assigned data). Shifts are employee read-only; tasks
+  additionally allow the **assigned employee a limited self-update** (advance
+  status / add notes / proof, but not reassign, move branch, or approve/reject).
+  Copy these as the pattern for future collections (branches); a commented
+  template remains at the bottom of the rules file.
 - Routes are role-guarded in the GoRouter `redirect`: admin areas are
   admin-only, manager areas admit **manager + admin** (the hierarchy), the
   employee home (`/`) is employee-only. Add a new role area as a path prefix

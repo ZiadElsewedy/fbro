@@ -28,6 +28,85 @@ and [Semantic Versioning](https://semver.org).
 
 ---
 
+## 2026-06-15 — Phase 3: Task Management foundation
+
+Adds the **core FBRO workflow** foundation — managers create/assign tasks,
+employees execute them, managers review them. Data + domain + rules + placeholder
+UI only; **no task Cubit / use cases / workflow UI yet** (minimal & extensible).
+
+### Added
+- **Task enums** in `core/enums`: `TaskType` (daily/special), `TaskStatus`
+  (pending→started→completed→waitingReview→approved/rejected) and `TaskPriority`
+  (low/normal/high), each with safe `fromString` defaults.
+- **`task` feature** with full data + domain layers:
+  - `TaskEntity` ([task_entity.dart](lib/features/task/domain/entities/task_entity.dart),
+    freezed): `id, title, description?, type, status, priority, branchId?,
+    assignedEmployeeId?, createdBy?, assignedShiftId?, deadline?, notes?,
+    proofImageUrl?, createdAt?, updatedAt?`.
+  - `TaskModel` ([task_model.dart](lib/features/task/data/models/task_model.dart))
+    — Firestore (de)serialization for `tasks/{taskId}`.
+  - `TaskRepository` (+ `TaskRepositoryImpl`) and `TaskRemoteDataSource`
+    (+ `Impl`): list (all / by branch / by employee), get, create, update,
+    delete, `assignTask` (employee + optional shift) and `updateStatus`
+    (workflow transitions). Datasource throws `ServerException` → `ServerFailure`.
+- **Firestore rules** for `tasks/{taskId}` — branch model (admin all · manager
+  own branch) **plus a limited employee self-update**: the assigned employee may
+  advance status / add notes / proof on their own task but may not reassign,
+  change branch/creator, or set the terminal approved/rejected status.
+- **Three role placeholder screens** (`task_management_screen` [admin],
+  `branch_tasks_screen` [manager], `my_tasks_screen` [employee]) at
+  `/admin/tasks`, `/manager/tasks`, `/my-tasks`, reachable via a **Tasks icon**
+  in the shared `RoleScaffold` (`RouteNames.tasksForRole`).
+- `AppConstants.tasksCollection`; `AppDependencies.taskRepository` (DI wiring).
+
+### Notes
+- Admin/manager task routes reuse the existing `_isAdminArea` / `_isManagerArea`
+  route guards; `/my-tasks` is self-scoped.
+- Screens are functional placeholders only. Proof-image **upload to Storage** is
+  not wired yet (`proofImageUrl` is a plain field); the workflow UI and
+  `users.assignedShift` sync land in the next phase.
+- **Notifications and analytics are intentionally not built** (out of scope).
+
+---
+
+## 2026-06-15 — Phase 2: Shift Management foundation
+
+Adds the shift system foundation (data + domain + rules + placeholder UI) that
+manager scheduling and, later, task management build on. Minimal and extensible
+by design — **no shift Cubit / use cases / CRUD UI yet**.
+
+### Added
+- **`shift` feature** with full Clean-Architecture data + domain layers:
+  - `ShiftEntity` ([shift_entity.dart](lib/features/shift/domain/entities/shift_entity.dart),
+    freezed): `id`, `name`, `startTime`, `endTime`, `branchId?`, `employeeId?`,
+    `isActive`, `createdAt?`, `updatedAt?` (V1 = Morning 08:30–16:30 / Night
+    16:30–23:00; strings keep it extensible for weekend/custom shifts).
+  - `ShiftModel` ([shift_model.dart](lib/features/shift/data/models/shift_model.dart))
+    — Firestore (de)serialization for `shifts/{shiftId}`.
+  - `ShiftRepository` (+ `ShiftRepositoryImpl`) and `ShiftRemoteDataSource`
+    (+ `Impl`): `getAllShifts`, `getShiftsByBranch`, `getShift`,
+    `getEmployeeShift`, `createShift`, `updateShift`, `deleteShift`,
+    `assignEmployee`. Datasource throws `ServerException`; repo → `ServerFailure`.
+- **Firestore rules** for `shifts/{shiftId}` using the existing
+  `canReachBranch()` helper — admin: all branches; manager: own branch;
+  employee: their own assigned shift (read-only). First branch-scoped collection.
+- **Three role placeholder screens** (`shift_management_screen` [admin],
+  `branch_shift_screen` [manager], `my_shift_screen` [employee]) at
+  `/admin/shifts`, `/manager/shifts`, `/my-shift`, reachable via a **Shifts icon**
+  in the shared `RoleScaffold` (`RouteNames.shiftsForRole`).
+- `AppConstants.shiftsCollection`; `AppDependencies.shiftRepository` (DI wiring,
+  ready for the shift UI to consume next phase).
+
+### Notes
+- Reuses the existing `users/{uid}.assignedShift` field (references the assigned
+  `shiftId`) — the user model was **not** redesigned.
+- Admin/manager shift routes are covered by the existing `_isAdminArea` /
+  `_isManagerArea` route guards; `/my-shift` is self-scoped.
+- The screens are functional placeholders only; the CRUD/assignment UI and the
+  `users.assignedShift` sync on assignment land in the next phase.
+
+---
+
 ## 2026-06-14 — Account approval flow & Welcome removal
 
 Reworks the authentication entry flow for an internal ops tool: no public
