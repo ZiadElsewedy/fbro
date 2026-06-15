@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
+import 'package:fbro/features/schedule/presentation/cubit/schedule_cubit.dart';
 import 'package:fbro/features/schedule/presentation/cubit/shift_swap_cubit.dart';
+import 'package:fbro/features/schedule/presentation/cubit/shift_swap_state.dart';
 import 'package:fbro/features/schedule/presentation/widgets/manager_schedule_view.dart';
 import 'package:fbro/features/schedule/presentation/widgets/swap_view.dart';
 
@@ -55,11 +57,21 @@ class _BranchScheduleScreenState extends State<BranchScheduleScreen> {
             ],
           ),
         ),
-        body: TabBarView(
-          children: [
-            const ManagerScheduleView(isAdmin: false),
-            SwapListView(isManager: true, currentUid: _uid),
-          ],
+        // A manager-approved swap rewrites the roster — refresh the Schedule tab
+        // the moment a swap action settles, so the manager never has to pull to
+        // refresh to see the change. Fires only after a mutation (busy → idle),
+        // not on first load.
+        body: BlocListener<ShiftSwapCubit, ShiftSwapState>(
+          listenWhen: (prev, curr) =>
+              prev.maybeWhen(loaded: (_, busy) => busy, orElse: () => false) &&
+              curr.maybeWhen(loaded: (_, busy) => !busy, orElse: () => false),
+          listener: (context, _) => context.read<ScheduleCubit>().refresh(),
+          child: TabBarView(
+            children: [
+              const ManagerScheduleView(isAdmin: false),
+              SwapListView(isManager: true, currentUid: _uid),
+            ],
+          ),
         ),
       ),
     );

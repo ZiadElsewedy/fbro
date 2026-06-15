@@ -1,11 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fbro/core/enums/approval_status.dart';
+import 'package:fbro/core/errors/exceptions.dart';
 import 'package:fbro/features/auth/data/models/user_model.dart';
 
 abstract class UserRemoteDataSource {
   Future<void> saveUser(UserModel user);
   Future<UserModel?> getUser(String uid);
   Future<List<UserModel>> getUsersByBranch(String branchId);
+
+  /// Live stream of a user's document (Phase: stabilization) — used to detect
+  /// approval/role changes in real time without polling.
+  Stream<UserModel?> watchUser(String uid);
 }
 
 class UserRemoteDataSourceImpl implements UserRemoteDataSource {
@@ -65,15 +70,29 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
 
   @override
   Future<List<UserModel>> getUsersByBranch(String branchId) async {
-    // Used by managers/admins to pick an assignee. Security rules let a manager
-    // read users in their own branch and an admin read any.
-    final snap = await _firestore
-        .collection('users')
-        .where('branchId', isEqualTo: branchId)
-        .get();
-    return snap.docs
-        .where((d) => d.data().isNotEmpty)
-        .map((d) => UserModel.fromMap(d.data()))
-        .toList();
+    // Used by managers/admins (assignee/roster pickers) and employees (their
+    // branch teammates + manager for the weekly schedule). Security rules let any
+    // member read users in their own branch; an admin reads any.
+    try {
+      final snap = await _firestore
+          .collection('users')
+          .where('branchId', isEqualTo: branchId)
+          .get();
+      return snap.docs
+          .where((d) => d.data().isNotEmpty)
+          .map((d) => UserModel.fromMap(d.data()))
+          .toList();
+    } on FirebaseException catch (e) {
+      throw AuthException(e.message ?? 'Failed to load branch members.');
+    }
+  }
+
+  @override
+  Stream<UserModel?> watchUser(String uid) {
+    return _firestore.collection('users').doc(uid).snapshots().map(
+          (doc) => (!doc.exists || doc.data() == null)
+              ? null
+              : UserModel.fromMap(doc.data()!),
+        );
   }
 }

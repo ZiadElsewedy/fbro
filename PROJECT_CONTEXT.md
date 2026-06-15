@@ -196,9 +196,12 @@ an area that isn't theirs is bounced to their own home. `/profile` & `/settings`
 are shared across roles. `SplashPage` calls `AuthCubit.restoreSession()` once on
 cold start and dispatches by approval + role. Because Firebase sign-ins don't
 know the role/approval, `AuthCubit` re-reads the Firestore user after
-email/Google/OTP sign-in (and on `refreshUser()`, which the Pending Approval
-screen polls) so the emitted `authenticated` state carries the authoritative
-role/branch/approval.
+email/Google/OTP sign-in so the emitted `authenticated` state carries the
+authoritative role/branch/approval. The **Pending Approval** screen uses
+`AuthCubit.watchCurrentUser()` — a **real-time** `users/{uid}` snapshot listener
+(`AuthRepository.watchUser`) — so an admin's approval redirects the user to their
+role shell instantly (no polling; a manual `refreshUser()` button remains a
+fallback).
 
 ### Profile chain
 
@@ -381,6 +384,9 @@ Cloud Firestore  weekly_schedules/{branchId_yyyy-MM-dd}    Cloud Firestore  shif
   (or `rejected`); on `managerApproveSwap` the repo flips the status **and**
   rewrites the schedule slot (requester removed, target added). The flow order is
   validated in `ShiftSwapCubit`; `firestore.rules` enforce who may write.
+  `BranchScheduleScreen` carries a `BlocListener` that refreshes `ScheduleCubit`
+  whenever a swap action settles, so an approved swap updates the Schedule tab
+  with no manual refresh (Phase 8).
 - **Dashboards reuse this data:** the `statistics` datasource reads
   `weekly_schedules` for the current week to compute the employee current/upcoming
   shift, the manager scheduled/morning/night-today counts, and the admin schedule
@@ -437,7 +443,7 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Schedule screens (admin/manager/employee)** | `lib/features/schedule/presentation/pages/` (`schedule_management_screen` admin · `branch_schedule_screen` manager · `my_schedule_screen` employee) → shared `widgets/manager_schedule_view.dart` · `swap_view.dart` · `schedule_helpers.dart` |
 | **Schedule routes / role entry point**    | `lib/core/routes/route_names.dart` (`adminSchedule`/`managerSchedule`/`mySchedule` + `scheduleForRole`) + `app_router.dart` + `role_scaffold.dart` (calendar icon → Schedule) |
 | **Schedule/swap DI wiring**               | `lib/core/di/injection.dart` (`scheduleCubit`/`shiftSwapCubit`) + `main.dart` providers |
-| **Dashboard screens (live stats)**        | `lib/features/admin/presentation/pages/admin_dashboard_screen.dart` · `manager/.../manager_home_screen.dart` · `employee/.../employee_home_screen.dart` (+ shared `statistics/presentation/widgets/stat_grid.dart`) |
+| **Dashboard screens (live stats)**        | `lib/features/admin/presentation/pages/admin_dashboard_screen.dart` · `manager/.../manager_home_screen.dart` · `employee/.../employee_home_screen.dart` (+ shared `statistics/presentation/widgets/stat_grid.dart` — `StatGrid` + `StatGridSkeleton` loading placeholder) |
 | **Push notifications (FCM)**              | `lib/core/services/notification_service.dart` + `core/enums/notification_type.dart`; wired in `main.dart` (background handler, init, token register on auth, foreground snackbar) |
 | **Admin routes**                          | `lib/core/routes/route_names.dart` (`adminBranches`/`adminManagers`/`adminEmployees`/`adminApprovals`) + `app_router.dart` (under `_isAdminArea`) |
 | **Admin/branch DI wiring**                | `lib/core/di/injection.dart` (`branchCubit`/`adminUsersCubit`/`adminStatsCubit`) + `main.dart` providers |
@@ -566,7 +572,11 @@ Patterns below are established across the codebase and **must be reused**.
     manager can, across every branch (**admin ⊇ manager**).
   - **manager** — belongs to exactly one branch; limited to data where
     `resource.branchId == manager.branchId`.
-  - **employee** — limited to their own assigned data and profile.
+  - **employee** — limited to their own assigned data and profile. **Exception
+    (read-only):** any branch member (employee included) may **read** other
+    `users` in their own branch — needed so the weekly schedule can show the
+    coworkers on a shift and the branch manager (`selfBranch() != '' &&
+    branchId == selfBranch()`). Writes to user docs stay admin-only.
 - **Account approval (activation gate).** A new sign-up is **not** usable: it is
   seeded as a `pending` + `isActive: false` employee with no branch and is
   confined to the **Pending Approval** screen. A manager/admin approves it

@@ -28,6 +28,138 @@ and [Semantic Versioning](https://semver.org).
 
 ---
 
+## 2026-06-16 — Phase 8: QA, Hardening & UI Polish
+
+Stabilization + polish pass to make the app feel like a production operations
+system. **No new business features, no redesign.** Reuses existing widgets and
+architecture; diffs kept focused. Produced [`QA_CHECKLIST.md`](QA_CHECKLIST.md)
+(on-device manual QA sheet for the Employee / Manager / Admin workflows + real-time
+/ offline / UI checks).
+
+### Added / Improved (UI)
+- **Dashboard loading skeletons** — the admin / manager / employee dashboards now
+  show a shimmering `StatGridSkeleton` (new, in `statistics/.../stat_grid.dart`,
+  reusing the existing `Skeleton` widget) while stats load, instead of a single
+  spinner card — no layout jump when data arrives. The employee dashboard also
+  skeletons its shift card.
+- **Dashboard error state** is now an icon + message row (clearer than bare red
+  text); pull-to-refresh still recovers it.
+
+### Changed (real-time)
+- **Manager swap approval refreshes the schedule automatically.** On
+  `BranchScheduleScreen`, a `BlocListener` on `ShiftSwapCubit` refreshes
+  `ScheduleCubit` the moment a swap action settles — so an approved swap (which
+  rewrites the roster) shows on the Schedule tab without a manual pull-to-refresh.
+  Fires only after a mutation, not on first load.
+
+### Verified (by code audit — see Honest limitations)
+- Full Employee / Manager / Admin workflows trace cleanly end-to-end; routing,
+  role guards, DI (all 8 cubits + repos/datasources registered & provided),
+  Firestore/Storage rules, FCM token foundation, offline persistence, and session
+  restore are consistent. `flutter analyze` clean (2 pre-existing infos only).
+- Pull-to-refresh confirmed present on **every** list screen already.
+
+### Notes
+- UI changes were deliberately limited to **safe, deterministic** improvements
+  (skeletons, error rows, an auto-refresh) — broader visual restyling was **not**
+  done blind, since Flutter mobile UI can't be visually verified in this
+  environment. A prioritized visual-polish spec is in the final report / docs.
+- The orphaned Phase 2 `shift` feature remains documented dead code (see prior
+  entries) — kept per "remove only if safe, otherwise document."
+
+---
+
+## 2026-06-16 — Integration Audit (workflow verification)
+
+End-to-end verification of the Employee / Manager / Admin business workflows and
+the seams between features. One integration bug fixed; no new features.
+
+### Fixed
+- **Promoting an employee to manager wiped their branch.**
+  `AdminUsersCubit.promoteToManager` called `changeUserBranch(uid, null)`
+  unconditionally, so a promoted manager was left **branch-less** — unable to
+  manage any schedule/tasks until a second "Assign Branch" step, and silently
+  discarding the employee's existing branch. It now **preserves the existing
+  branch** unless a new one is explicitly passed (admins can still reassign from
+  the manager list). Updated the "Add manager" sheet copy to match.
+
+### Verified (works end-to-end, by code audit)
+- **Employee:** register → pending (real-time approval) → login → view schedule
+  (team + manager resolve after the stabilization rule fix) → assigned task →
+  start → complete (+ notes/proof to Storage) → submit for review.
+- **Manager:** create/edit weekly schedule, assign/remove shift employees, create
+  + assign tasks, review (approve/reject), and handle shift swaps (coworker →
+  manager approval rewrites the schedule). All branch-scoped reads/writes pass the
+  rules.
+- **Admin:** create branches, manage managers (promote/assign-branch/activate/
+  demote), manage employees (change-branch/activate/details), view analytics,
+  device-token persistence for push.
+
+### Notes / honest findings (not bugs — by design or out of scope)
+- **Managers do not approve users** — approval is **admin-only** (Phase 6 design),
+  so the brief's "Manager → Approve employee" is intentionally unsupported.
+- **Rejected users** see the generic "Pending Approval" screen (access is correctly
+  blocked; the message just doesn't distinguish rejected from pending).
+- **Admin task creation** uses a free-text branch field (mistyping orphans the
+  task); managers — the primary task creators — use their fixed branch and are
+  safe. Pre-existing (Phase 4).
+- **Cross-client updates** are not push: another user's open list / the dashboards
+  reflect a change on refresh, and within the manager schedule screen approving a
+  swap doesn't auto-refresh the schedule tab. Data is consistent after refresh;
+  only the approval gate is stream-driven (see the stabilization entry).
+
+---
+
+## 2026-06-16 — Stabilization & Production Hardening
+
+A production-readiness audit pass — verification, integration fixes, real-time
+and offline hardening. **No new business features.** Reuses existing systems;
+changes kept minimal and focused.
+
+### Fixed
+- **Employees could not load their weekly schedule (critical).** The Phase 7
+  employee "My Schedule" resolves teammate + manager names via
+  `getUsersByBranch`, but the `users` read rule only allowed **managers/admins**
+  to read same-branch users — an employee's query was denied, so the whole
+  schedule view errored. `firestore.rules` now lets **any branch member** read
+  users in their **own** branch (`selfBranch() != '' && branchId == selfBranch()`),
+  which is exactly what the schedule's "team working with me" + "current manager"
+  needs. Managers/admins are unchanged; cross-branch reads stay blocked.
+- **`getUsersByBranch` now fails gracefully** — the datasource wraps Firestore
+  errors as `AuthException` (→ `AuthFailure`), so a permission/network error
+  surfaces as a clean error state instead of an unhandled exception.
+
+### Added
+- **Firestore offline persistence** (`main.dart`) — `Settings(persistenceEnabled:
+  true, cacheSizeBytes: CACHE_SIZE_UNLIMITED)`. Cached reads, writes queued and
+  synced on reconnect, and no crashes when the connection drops. Reuses Firebase's
+  built-in cache (no custom offline engine).
+- **Real-time user-doc watch** — `AuthRepository.watchUser` /
+  `UserRemoteDataSource.watchUser` (Firestore `snapshots()`) +
+  `AuthCubit.watchCurrentUser` / `stopWatchingUser`.
+
+### Changed
+- **Pending Approval is now real-time, not polled.** `PendingApprovalPage`
+  replaced its 6-second `Timer.periodic(refreshUser)` poll with
+  `AuthCubit.watchCurrentUser` (a live `users/{uid}` listener): the instant an
+  admin approves the account it redirects to the role shell — no delay, fewer
+  reads. The manual "Check Approval Status" button remains as a fallback.
+
+### Notes / honest state
+- **Real-time scope:** the approval flow is now stream-driven. Task / schedule /
+  branch lists still use **reload-after-mutation** (instant for the acting user)
+  + pull-to-refresh; full cross-client streaming for those would convert the
+  Future-based repositories to streams — a deliberate non-goal for a stabilization
+  pass (it would redesign the data layer).
+- **Orphaned Phase 2 shift placeholders remain** (`features/shift/...`,
+  `/admin|manager/shifts`, `/my-shift`, `AppDependencies.shiftRepository`,
+  `RouteNames.shiftsForRole`): unreachable from the UI and unused since the weekly
+  Schedule (Phase 7) superseded them. Left intact this pass (deleting a feature is
+  out of a minimal stabilization scope); recommended for removal in a focused
+  cleanup. The shift-visibility requirement is met by the Weekly Schedule.
+
+---
+
 ## 2026-06-16 — Phase 7: Weekly Schedule & Shift Swap
 
 Replaces the Excel / WhatsApp shift roster with an in-app **weekly schedule**:

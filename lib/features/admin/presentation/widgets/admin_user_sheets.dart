@@ -291,8 +291,8 @@ class _PromoteManagerSheetState extends State<_PromoteManagerSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _Title('Add manager'),
-        Text('Promote an approved employee to manager. Assign their branch '
-            'afterwards from the manager list.',
+        Text('Promote an approved employee to manager. Their current branch is '
+            'kept — reassign it from the manager list if needed.',
             style: AppTypography.caption),
         const SizedBox(height: AppSpacing.md),
         FutureBuilder<List<UserEntity>>(

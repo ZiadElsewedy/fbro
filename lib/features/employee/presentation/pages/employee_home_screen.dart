@@ -4,6 +4,7 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/skeleton.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:fbro/features/statistics/domain/entities/statistics_entity.dart';
@@ -55,8 +56,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           BlocBuilder<StatisticsCubit, StatisticsState>(
             builder: (context, state) => state.maybeWhen(
               loaded: (s) => _content(s),
-              error: (m) => _message(m),
-              orElse: () => _message(null),
+              error: (m) => _errorCard(m),
+              orElse: () => _loadingSkeleton(),
             ),
           ),
         ],
@@ -116,7 +117,18 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     );
   }
 
-  Widget _message(String? error) {
+  Widget _loadingSkeleton() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const [
+        Skeleton(height: 72, borderRadius: BorderRadius.all(Radius.circular(16))),
+        SizedBox(height: AppSpacing.lg),
+        StatGridSkeleton(count: 4),
+      ],
+    );
+  }
+
+  Widget _errorCard(String message) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -125,17 +137,17 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         borderRadius: AppRadius.cardAll,
         border: Border.all(color: AppColors.darkBorder),
       ),
-      child: error == null
-          ? Row(children: [
-              const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-              const SizedBox(width: AppSpacing.md),
-              Text('Loading…', style: AppTypography.body),
-            ])
-          : Text(error,
-              style: AppTypography.bodySmall.copyWith(color: AppColors.error)),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded,
+              size: 18, color: AppColors.error),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(message,
+                style: AppTypography.bodySmall.copyWith(color: AppColors.error)),
+          ),
+        ],
+      ),
     );
   }
 }

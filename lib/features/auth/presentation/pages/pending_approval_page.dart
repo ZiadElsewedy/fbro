@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fbro/core/theme/app_colors.dart';
@@ -14,9 +13,10 @@ import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
 /// approved (or has been deactivated). FBRO is an internal ops system: a new
 /// account cannot use the app until a manager/admin approves it.
 ///
-/// The screen polls [AuthCubit.refreshUser] so the moment a manager/admin
-/// approves the account (`approvalStatus` → approved, `isActive` → true) the
-/// router redirects the user straight into their role shell — no re-login.
+/// The screen live-watches the user's document via [AuthCubit.watchCurrentUser]
+/// so the moment a manager/admin approves the account (`approvalStatus` →
+/// approved, `isActive` → true) the router redirects the user straight into
+/// their role shell — in real time, no polling and no re-login.
 class PendingApprovalPage extends StatefulWidget {
   const PendingApprovalPage({super.key});
 
@@ -25,25 +25,19 @@ class PendingApprovalPage extends StatefulWidget {
 }
 
 class _PendingApprovalPageState extends State<PendingApprovalPage> {
-  Timer? _pollTimer;
+  // Captured in initState so dispose never touches `context`.
+  late final AuthCubit _auth = context.read<AuthCubit>();
 
   @override
   void initState() {
     super.initState();
-    _startPolling();
+    _auth.watchCurrentUser();
   }
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
+    _auth.stopWatchingUser();
     super.dispose();
-  }
-
-  void _startPolling() {
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (mounted) context.read<AuthCubit>().refreshUser();
-    });
   }
 
   @override

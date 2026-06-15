@@ -35,6 +35,7 @@ class AuthCubit extends Cubit<AuthState> {
   final DeleteAccount _deleteAccount;
 
   StreamSubscription? _authSub;
+  StreamSubscription? _userWatchSub;
 
   /// True while any auth action is in flight. Used to reject duplicate taps
   /// and concurrent requests (e.g. tapping Sign In then Google rapidly).
@@ -105,6 +106,31 @@ class AuthCubit extends Cubit<AuthState> {
       return;
     }
     emit(AuthState.authenticated(await _withStoredProfile(firebaseUser)));
+  }
+
+  /// Live-watches the signed-in user's Firestore document and re-emits
+  /// [AuthState.authenticated] on every change — the real-time replacement for
+  /// polling on the Pending Approval screen: the instant an admin approves the
+  /// account (`approvalStatus` → approved, `isActive` → true), the router
+  /// redirects to the role shell with no re-login. Idempotent; pair with
+  /// [stopWatchingUser]. Backed by Firestore's offline cache, so it also serves
+  /// the last-known doc when offline.
+  void watchCurrentUser() {
+    final firebaseUser = _repository.currentUser;
+    if (firebaseUser == null) return;
+    _userWatchSub?.cancel();
+    _userWatchSub = _repository.watchUser(firebaseUser.uid).listen(
+      (user) {
+        if (user != null) emit(AuthState.authenticated(user));
+      },
+      onError: (_) {/* transient; the manual refresh button remains available */},
+    );
+  }
+
+  /// Stops the [watchCurrentUser] subscription (call on leaving the screen).
+  void stopWatchingUser() {
+    _userWatchSub?.cancel();
+    _userWatchSub = null;
   }
 
   void _listenToAuthChanges() {
@@ -281,6 +307,7 @@ class AuthCubit extends Cubit<AuthState> {
   @override
   Future<void> close() {
     _authSub?.cancel();
+    _userWatchSub?.cancel();
     return super.close();
   }
 }

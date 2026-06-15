@@ -10,7 +10,7 @@
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
 **Last updated:** 2026-06-16
-**Version:** 1.0.0+1 · **Branch:** `feature/weekly-schedule-and-shift-swap`
+**Version:** 1.0.0+1 · **Branch:** `stabilization-and-optimization`
 
 ---
 
@@ -160,7 +160,11 @@ landing is **Login** (the social Welcome page was removed).
 ## Backend / Firebase status
 
 - **Firebase Auth** — configured & working: Email/Password, Phone, Google.
-- **Cloud Firestore** — in use (`users/{uid}`).
+- **Cloud Firestore** — in use. **Offline persistence enabled** (stabilization):
+  `Settings(persistenceEnabled: true, cacheSizeBytes: CACHE_SIZE_UNLIMITED)` set
+  in `main.dart` — cached reads, writes queued + synced on reconnect, no crashes
+  when the connection drops. The Pending Approval screen uses a **real-time**
+  `users/{uid}` listener (`AuthCubit.watchCurrentUser`) instead of polling.
 - **Firebase Storage** — code uploads to `users/{uid}/avatar.jpg` &
   `cover.jpg`. ⚠️ **Storage must be enabled** in the Firebase console for
   uploads to work in production.
@@ -169,9 +173,12 @@ landing is **Login** (the social Welcome page was removed).
   Firestore rules encode the role/branch + **approval** access model: **self
   registration** is allowed only as a `pending`, **inactive** employee;
   **admin** reads/writes any user (approve/reject, promotions, branch moves,
-  (de)activation) — **account approval is admin-only (Phase 6)**; **manager**
-  **reads** users in their **own branch** (their team) but does **not** write
-  user docs; **employee** reads/edits only their own doc and may **not** change
+  (de)activation) — **account approval is admin-only (Phase 6)**; **any branch
+  member** (manager **or** employee) **reads** users in their **own branch** —
+  managers see their team, employees see the coworkers on their shift + their
+  manager for the weekly schedule (stabilization fix; `selfBranch() != '' &&
+  branchId == selfBranch()`) but only an **admin** writes user docs; **employee**
+  edits only their own doc and may **not** change
   the privileged fields (`role`, `branchId`, `isActive`, `assignedShift`,
   `approvalStatus`) — non-privileged fields (profile, `fcmToken`) are allowed. **`shifts/{shiftId}` (Phase 2)** is the
   first branch-scoped collection wired to `canReachBranch()`: admin = all
@@ -362,14 +369,34 @@ week's Sunday), so a week is addressed directly without a query.
   `EmployeeHomeScreen`) are still functional placeholders — their shifts/tasks
   live behind the Shifts/Tasks icons in the role chrome. The **Admin** shell is
   the full admin module (Phase 5).
-- **Weekly scheduling is live (Phase 7)** — the `schedule` feature is the
-  production roster (managers build the week, employees view + swap, admins
-  override). The Phase 2 `shift` data/domain layer + `shifts/{shiftId}` rules
-  remain in place but are **superseded** for scheduling: the three Phase 2 shift
-  placeholder screens (`/admin/shifts`, `/manager/shifts`, `/my-shift`) still
-  exist as routes but are no longer linked from the role chrome (the calendar icon
-  now opens the weekly Schedule). A future cleanup could retire the placeholder
-  shift screens and/or fold `users/{uid}.assignedShift` into the schedule.
+- **Orphaned Phase 2 shift placeholders (recommended cleanup).** The `shift`
+  feature is now fully **dead code**: the 3 placeholder screens (`/admin/shifts`,
+  `/manager/shifts`, `/my-shift`) are unreachable from the UI (the role-chrome
+  calendar icon opens the weekly Schedule), `AppDependencies.shiftRepository` is
+  registered but never consumed (stats moved to `weekly_schedules` in Phase 7),
+  and `RouteNames.shiftsForRole` is unused. They still contain "arrives in a later
+  phase" prototype text and are reachable by manual deep-link. **Left intact in the
+  stabilization pass** (deleting a whole feature exceeds a minimal audit's scope);
+  recommended for removal in a focused cleanup PR. The shift-visibility requirement
+  is fully met by the Weekly Schedule (employee My Week · manager branch schedule ·
+  admin all branches).
+- **Real-time is approval-only by design.** Pending-approval is now stream-driven
+  (instant). Task / schedule / branch / swap lists use **reload-after-mutation**
+  (instant for the user who made the change) + pull-to-refresh; another user's
+  open list reflects a change on next refresh, not push. Full cross-client
+  streaming would convert the Future-based repositories to streams — a larger
+  follow-up deliberately out of the stabilization scope (it would redesign the
+  data layer). Firestore offline persistence does back every read with the local
+  cache. **(Phase 8)** Within the manager schedule screen, approving a swap now
+  **auto-refreshes** the Schedule tab via a `BlocListener` (no manual refresh
+  needed).
+- **Integration-audit findings (not bugs).** (1) **Managers do not approve users**
+  — approval is admin-only (Phase 6 design); any "manager approves employee"
+  expectation is intentionally unsupported. (2) **Rejected users** land on the
+  generic "Pending Approval" screen — access is correctly blocked, but the copy
+  doesn't distinguish *rejected* from *pending*. (3) **Admin task creation** uses a
+  free-text branch field — mistyping orphans the task; managers (the primary task
+  creators) use their own fixed branch and are safe.
 - **Shift-swap status flow is validated client-side** (`ShiftSwapCubit`), like the
   task transitions — `firestore.rules` enforce *who* may write a swap, not the
   exact order. Hardening the transition matrix server-side is a follow-up.
@@ -398,7 +425,10 @@ week's Sunday), so a week is addressed directly without a query.
 ## Testing
 
 - Only `test/widget_test.dart` exists and is an **empty placeholder**
-  (`void main() {}`). No real test coverage yet.
+  (`void main() {}`). No automated test coverage yet.
+- **Manual QA:** [`QA_CHECKLIST.md`](QA_CHECKLIST.md) — an executable, on-device
+  checklist covering the Employee / Manager / Admin workflows, real-time, offline,
+  and UI/branding, with the deploy/Storage preconditions a tester must do first.
 
 ---
 

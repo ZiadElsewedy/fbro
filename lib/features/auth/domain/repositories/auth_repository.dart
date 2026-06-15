@@ -19,6 +19,10 @@ abstract class AuthRepository {
   Future<void> saveUser(UserEntity user);
   Future<UserEntity?> getUser(String uid);
   Future<List<UserEntity>> getUsersByBranch(String branchId);
+
+  /// Live stream of a user's document — emits on every change so callers (e.g.
+  /// the Pending Approval screen) react to approval/role changes in real time.
+  Stream<UserEntity?> watchUser(String uid);
   Future<UserEntity> reloadUser();
 
   Future<void> sendPasswordResetEmail(String email);

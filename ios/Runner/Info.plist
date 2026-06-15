@@ -22,8 +22,6 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
-	<key>CFBundleVersion</key>
-	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -31,19 +29,18 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<!-- REVERSED_CLIENT_ID from GoogleService-Info.plist.
-				     Required by Google Sign-In and Firebase Phone Auth (reCAPTCHA
-				     fallback) to redirect back into the app on iOS. -->
 				<string>com.googleusercontent.apps.450092605249-o0nlpkiot7t8mlpatiauss38rrnad780</string>
 			</array>
 		</dict>
 	</array>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>FBRO needs access to your photos so you can set a profile picture and cover image.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>FBRO needs access to your camera so you can take a profile picture.</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>D R O P needs access to your camera so you can take a profile picture.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>D R O P needs access to your photos so you can set a profile picture and cover image.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

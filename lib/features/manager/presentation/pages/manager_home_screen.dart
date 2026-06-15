@@ -46,8 +46,8 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
           BlocBuilder<StatisticsCubit, StatisticsState>(
             builder: (context, state) => state.maybeWhen(
               loaded: (s) => StatGrid(items: _items(s)),
-              error: (m) => _message(m),
-              orElse: () => _message(null),
+              error: (m) => _errorCard(m),
+              orElse: () => const StatGridSkeleton(count: 10),
             ),
           ),
         ],
@@ -73,7 +73,7 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
         StatItem('Special tasks', '${s.specialTasks}', Icons.star_outline_rounded),
       ];
 
-  Widget _message(String? error) {
+  Widget _errorCard(String message) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -82,17 +82,17 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
         borderRadius: AppRadius.cardAll,
         border: Border.all(color: AppColors.darkBorder),
       ),
-      child: error == null
-          ? Row(children: [
-              const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-              const SizedBox(width: AppSpacing.md),
-              Text('Loading stats…', style: AppTypography.body),
-            ])
-          : Text(error,
-              style: AppTypography.bodySmall.copyWith(color: AppColors.error)),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded,
+              size: 18, color: AppColors.error),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(message,
+                style: AppTypography.bodySmall.copyWith(color: AppColors.error)),
+          ),
+        ],
+      ),
     );
   }
 }

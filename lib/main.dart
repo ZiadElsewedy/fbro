@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,17 @@ final GlobalKey<ScaffoldMessengerState> _messengerKey =
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Offline-first: enable Firestore local persistence with an unlimited cache so
+  // the app survives unstable connections — cached reads, queued writes that
+  // sync on reconnect, and no crashes when the network drops. Mobile enables
+  // persistence by default; we set it explicitly (and lift the cache cap) for
+  // production. Must run before any Firestore operation.
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+
   AppDependencies.init();
 
   // FCM foundation (best-effort; never blocks startup).

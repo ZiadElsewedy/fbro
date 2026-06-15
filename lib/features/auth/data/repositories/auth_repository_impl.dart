@@ -111,6 +111,10 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Stream<UserEntity?> watchUser(String uid) =>
+      _userRemote.watchUser(uid).map((model) => model?.toEntity());
+
+  @override
   Future<UserEntity> reloadUser() async {
     try {
       final model = await _remote.reloadUser();

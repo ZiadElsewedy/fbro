@@ -74,12 +74,17 @@ class AdminUsersCubit extends Cubit<AdminUsersState> {
   Future<void> changeRole(UserEntity user, UserRole role) =>
       _mutate(() => _users.changeUserRole(user.uid, role));
 
-  /// Promote an employee to manager of [branchId] (the no-Auth-account-creation
-  /// path: managers are promoted from existing approved users).
+  /// Promote an employee to manager (the no-Auth-account-creation path: managers
+  /// are promoted from existing approved users). Pass [branchId] to move them to a
+  /// branch; when omitted the employee's **existing** branch is preserved — so a
+  /// promoted manager is never left branch-less (which would block all branch
+  /// schedule/task management). Admins can still reassign from the manager list.
   Future<void> promoteToManager(UserEntity user, {String? branchId}) =>
       _mutate(() async {
         await _users.changeUserRole(user.uid, UserRole.manager);
-        await _users.changeUserBranch(user.uid, branchId);
+        if (branchId != null) {
+          await _users.changeUserBranch(user.uid, branchId);
+        }
       });
 
   // ─── Picker data ───────────────────────────────────────────────

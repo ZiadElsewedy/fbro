@@ -31,14 +31,17 @@ service cloud.firestore {
     // ── Users ──────────────────────────────────────────────────────
     // Self: read own doc + limited self-update (cannot touch privileged fields,
     //   but may write non-privileged fields like the FCM token).
-    // Manager: read users in their own branch (their team) — read only; managers
-    //   do NOT manage user accounts.
+    // Branch members: read users in their OWN branch — their team. Managers see
+    //   their team; employees (Phase 7) see the coworkers on their shift + their
+    //   manager (the weekly schedule stores uids, resolved to names here). Read
+    //   only — only an admin writes user accounts.
     // Admin: read/write everything — approvals, promotions, branch moves,
     //   (de)activation. **Account approval is admin-only (Phase 6).**
     match /users/{uid} {
       allow read: if isOwner(uid)
         || isAdmin()
-        || (isManager() && resource.data.get('branchId', '') == selfBranch());
+        || (selfBranch() != ''
+            && resource.data.get('branchId', '') == selfBranch());
 
       // Self-registration only — always as a PENDING, INACTIVE employee. A new
       // account cannot use the app until an ADMIN approves it (update below).
