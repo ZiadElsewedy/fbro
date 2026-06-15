@@ -6,6 +6,7 @@ import 'package:fbro/core/routes/route_names.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/drop_logo.dart';
 import 'package:fbro/features/auth/presentation/animations/fade_slide_transition.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_state.dart';
@@ -63,7 +64,14 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: AppSpacing.xl),
+                const SizedBox(height: AppSpacing.lg),
+
+                const FadeSlideTransition(
+                  delay: Duration(milliseconds: 30),
+                  child: DropLogo(height: 52),
+                ),
+
+                const SizedBox(height: AppSpacing.xxl),
 
                 FadeSlideTransition(
                   delay: const Duration(milliseconds: 50),

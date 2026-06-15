@@ -4,7 +4,7 @@ import 'package:fbro/core/di/injection.dart';
 import 'package:fbro/core/routes/route_names.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/fbro_logo.dart';
+import 'package:fbro/core/widgets/drop_logo.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -96,7 +96,7 @@ class _SplashPageState extends State<SplashPage>
                 opacity: _logoOpacity,
                 child: ScaleTransition(
                   scale: _logoScale,
-                  child: const FbroLogo(fontSize: 40),
+                  child: const DropLogo(height: 96),
                 ),
               ),
               const SizedBox(height: 16),

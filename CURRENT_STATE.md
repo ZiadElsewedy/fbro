@@ -26,7 +26,7 @@
 | Profile          | ✅ Complete    | View/edit, avatar+cover upload, username checks                |
 | Settings         | ✅ Complete    | Settings page + change password + delete account              |
 | Role shells      | 🟡 Scaffolded | Employee / Manager / Admin shells + screens (functional placeholders) |
-| Design system    | ✅ Complete    | Monochrome B&W, **dark-mode only**                            |
+| Design system    | ✅ Complete    | Monochrome B&W, **dark-mode only**; branded **DROP** (`DropLogo` wordmark, FBRO removed) |
 | Security rules   | ✅ In repo     | `firestore.rules` + `storage.rules` — committed, need deploy   |
 | Social fields    | ⛔ Legacy      | Counter/presence fields linger in schema but are unused — **FBRO is not a social app** |
 

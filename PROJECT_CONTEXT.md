@@ -84,7 +84,7 @@ lib/
 │   ├── errors/               # exceptions.dart (data layer) / failures.dart (domain)
 │   ├── routes/               # app_router.dart (role dispatch + guards), route_names.dart
 │   ├── theme/                # app_colors / typography / spacing / radius / app_theme
-│   └── widgets/              # app_snackbar, fbro_logo, skeleton, role_scaffold, role_placeholder
+│   └── widgets/              # app_snackbar, drop_logo, skeleton, role_scaffold, role_placeholder
 └── features/
     ├── auth/                 # Sign-in/up, phone OTP, Google, email verify, password, role, approval
     ├── profile/              # View + edit profile, image uploads, username checks
@@ -327,6 +327,7 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Colors / typography / spacing / radius**| `lib/core/theme/app_colors.dart` · `app_typography.dart` · `app_spacing.dart` · `app_radius.dart` |
 | **Global ThemeData (inputs, buttons…)**   | `lib/core/theme/app_theme.dart`                                          |
 | **Cross-feature widgets (snackbar, logo, skeleton)** | `lib/core/widgets/`                                            |
+| **App brand / logo (the DROP wordmark)**  | artwork `assets/drop_logo.png` (registered in `pubspec.yaml`) rendered by `lib/core/widgets/drop_logo.dart` (`DropLogo`, white-tinted via `srcIn`, sized by `height`) — used on splash, login, register, pending-approval; app name in `main.dart` (`title`) + `AppConstants.appName` |
 | **Error / failure types**                 | `lib/core/errors/exceptions.dart` (data) · `failures.dart` (domain)      |
 | **Constants (collection names, app name)**| `lib/core/constants/app_constants.dart`                                  |
 | **App bootstrap / providers**             | `lib/main.dart`                                                          |

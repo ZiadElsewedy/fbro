@@ -5,7 +5,7 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/fbro_logo.dart';
+import 'package:fbro/core/widgets/drop_logo.dart';
 import 'package:fbro/features/auth/presentation/animations/fade_slide_transition.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
@@ -69,7 +69,7 @@ class _PendingApprovalPageState extends State<PendingApprovalPage> {
 
               const FadeSlideTransition(
                 delay: Duration(milliseconds: 50),
-                child: FbroLogo(fontSize: 28),
+                child: DropLogo(height: 64),
               ),
 
               const SizedBox(height: AppSpacing.xxxl),

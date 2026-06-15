@@ -28,6 +28,34 @@ and [Semantic Versioning](https://semver.org).
 
 ---
 
+## 2026-06-15 — Rebrand to DROP
+
+Replaces the **FBRO** visual identity with **DROP** across the app.
+
+### Added
+- `DropLogo` ([drop_logo.dart](lib/core/widgets/drop_logo.dart)) — renders the
+  **DROP wordmark artwork** at `assets/drop_logo.png` (the brand's "DROP" + down
+  arrow). The PNG is transparent-background with white-filled glyphs; `DropLogo`
+  tints it to the theme color (white) via `BlendMode.srcIn` so it stays crisp on
+  the near-black UI, sized by `height`.
+- `assets/drop_logo.png` registered in `pubspec.yaml` (`flutter: assets:`).
+- The logo now appears on the **splash / loading screen**, **Login** and
+  **Register** headers, and the **Pending Approval** screen.
+
+### Changed / Removed
+- Removed `FbroLogo` (`fbro_logo.dart`) and all its usages.
+- App display name → **DROP** (`MaterialApp.title`, `AppConstants.appName`).
+
+### Notes
+- This is a **visual** rebrand. The Dart package name (`fbro`, `package:fbro/…`)
+  and the iOS bundle id (`com.example.fbro`) are unchanged — renaming those is a
+  separate, higher-risk refactor (every import + native config) and is not
+  required for the user-facing brand.
+- The logo is tinted **white** for the dark-only UI; if a light theme is wired up
+  later, the tint should adapt (or ship a dark-on-light variant).
+
+---
+
 ## 2026-06-15 — Phase 4: Task Workflow & Review System
 
 Activates the Phase 3 task foundation into the **real operations workflow** —
