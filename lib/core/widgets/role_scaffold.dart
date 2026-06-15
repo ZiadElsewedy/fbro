@@ -42,18 +42,18 @@ class RoleScaffold extends StatelessWidget {
             tooltip: 'Tasks',
           ),
           IconButton(
-            icon: const Icon(Icons.calendar_month_outlined,
+            icon: const Icon(Icons.calendar_view_week_outlined,
                 color: AppColors.textSecondary),
             onPressed: () {
-              // Dispatch to the caller's role-appropriate shift screen (admin:
-              // all branches · manager: own branch · employee: own shift).
+              // Dispatch to the caller's role-appropriate weekly-schedule screen
+              // (admin: any branch · manager: own branch · employee: own branch).
               final role = context.read<AuthCubit>().state.maybeWhen(
                     authenticated: (u) => u.role,
                     orElse: () => null,
                   );
-              if (role != null) context.push(RouteNames.shiftsForRole(role));
+              if (role != null) context.push(RouteNames.scheduleForRole(role));
             },
-            tooltip: 'Shifts',
+            tooltip: 'Schedule',
           ),
           IconButton(
             icon: const Icon(Icons.person_outline_rounded,

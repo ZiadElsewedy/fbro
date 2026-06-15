@@ -39,6 +39,14 @@ class RouteNames {
   static const String managerTasks = '/manager/tasks';
   static const String myTasks = '/my-tasks';
 
+  // ─── Weekly schedule (Phase 7) ──────────────────────────────
+  // Admin/manager schedule screens live under their role area so the existing
+  // `_isAdminArea` / `_isManagerArea` guards cover them; the employee schedule
+  // screen is self-scoped (the caller's own branch, read-only).
+  static const String adminSchedule = '/admin/schedule';
+  static const String managerSchedule = '/manager/schedule';
+  static const String mySchedule = '/my-schedule';
+
   // ─── Admin module (Phase 5) ─────────────────────────────────
   // All under the admin area, so the existing `_isAdminArea` guard covers them.
   static const String adminBranches = '/admin/branches';
@@ -82,6 +90,19 @@ class RouteNames {
         return managerTasks;
       case UserRole.employee:
         return myTasks;
+    }
+  }
+
+  /// The weekly-schedule screen for a given role (admin: any branch, manager:
+  /// own branch, employee: own branch read-only). Used by the shared role chrome.
+  static String scheduleForRole(UserRole role) {
+    switch (role) {
+      case UserRole.admin:
+        return adminSchedule;
+      case UserRole.manager:
+        return managerSchedule;
+      case UserRole.employee:
+        return mySchedule;
     }
   }
 }

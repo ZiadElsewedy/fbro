@@ -129,5 +129,44 @@ service cloud.firestore {
       allow create, update: if isAdmin();
       allow delete: if false;
     }
+
+    // ── Weekly schedules (Phase 7) ─────────────────────────────────
+    // The in-app weekly roster, one doc per (branch, week). Branch-scoped:
+    //   read   — admin/own-branch manager, OR any employee of that branch (so
+    //            they can see their own schedule + today's team).
+    //   write  — admin/own-branch manager only (employees never edit; swaps are
+    //            applied by the manager on approval).
+    match /weekly_schedules/{scheduleId} {
+      // `resource == null` first: a `get()` on a not-yet-created week's doc must
+      // return an empty snapshot (no schedule), not a permission error — the app
+      // reads a deterministic week id that often doesn't exist yet. For existing
+      // docs, scope by branch (admin/own-branch manager, or any branch employee).
+      allow read: if resource == null
+        || canReachBranch(resource.data.get('branchId', ''))
+        || resource.data.get('branchId', '') == selfBranch();
+      allow create: if canReachBranch(request.resource.data.get('branchId', ''));
+      allow update, delete: if canReachBranch(resource.data.get('branchId', ''));
+    }
+
+    // ── Shift swaps (Phase 7) ──────────────────────────────────────
+    // A swap request between two employees, approved by the branch manager.
+    //   read   — admin/own-branch manager, OR the requester/target employee.
+    //   create — the requester themself, for a swap in their own branch.
+    //   update — admin/own-branch manager (approve/reject), OR either involved
+    //            employee (coworker approve / requester cancel / decline). The
+    //            exact status flow is validated client-side (ShiftSwapCubit).
+    //   delete — admin/own-branch manager only.
+    match /shift_swaps/{swapId} {
+      allow read: if canReachBranch(resource.data.get('branchId', ''))
+        || resource.data.get('requesterId', '') == request.auth.uid
+        || resource.data.get('targetId', '') == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.get('requesterId', '') == request.auth.uid
+        && request.resource.data.get('branchId', '') == selfBranch();
+      allow update: if canReachBranch(resource.data.get('branchId', ''))
+        || resource.data.get('requesterId', '') == request.auth.uid
+        || resource.data.get('targetId', '') == request.auth.uid;
+      allow delete: if canReachBranch(resource.data.get('branchId', ''));
+    }
   }
 }

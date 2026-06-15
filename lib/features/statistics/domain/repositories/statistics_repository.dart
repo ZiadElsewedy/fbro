@@ -5,5 +5,8 @@ import 'package:fbro/features/statistics/domain/entities/statistics_entity.dart'
 abstract class StatisticsRepository {
   Future<StatisticsEntity> adminStats();
   Future<StatisticsEntity> managerStats(String branchId);
-  Future<StatisticsEntity> employeeStats(String uid);
+
+  /// Employee stats. [branchId] (the employee's branch) is needed to read their
+  /// current/upcoming shift from the weekly schedule (Phase 7).
+  Future<StatisticsEntity> employeeStats(String uid, String? branchId);
 }

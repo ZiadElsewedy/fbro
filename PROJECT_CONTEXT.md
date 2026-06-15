@@ -28,7 +28,11 @@ reject); an **admin management module** (Phase 5): branch CRUD, manager /
 employee management, **admin-only** pending-user approval, and branch assignment;
 and **operational dashboards + a Firebase Cloud Messaging foundation** (Phase 6):
 live role-scoped statistics (admin / manager / employee) and device-token
-registration for push. All dressed in a custom monochrome (black & white)
+registration for push; and a **weekly schedule + shift-swap system** (Phase 7):
+managers build their branch's weekly roster (Day → Morning / Night → Employees),
+employees view their week / today's team / manager and request shift swaps
+(coworker approves → manager approves → schedule updates automatically), and
+admins override any branch. All dressed in a custom monochrome (black & white)
 design system.
 
 > **DROP THE SHOP operations system** — focused on daily store operations
@@ -89,7 +93,7 @@ lib/
 ├── core/
 │   ├── constants/            # app_constants.dart (appName, collection names)
 │   ├── di/                   # injection.dart — AppDependencies service locator
-│   ├── enums/                # user_role · approval_status · task_type · task_status · task_priority · notification_type
+│   ├── enums/                # user_role · approval_status · task_* · notification_type · schedule_day · schedule_shift · swap_status
 │   ├── services/             # notification_service.dart (FCM foundation, Phase 6)
 │   ├── errors/               # exceptions.dart (data layer) / failures.dart (domain)
 │   ├── routes/               # app_router.dart (role dispatch + guards), route_names.dart
@@ -102,7 +106,8 @@ lib/
     ├── task/                 # Task feature — data/domain + use cases + TaskCubit + functional role screens (Phase 3–4)
     ├── branch/               # Branch feature — data/domain + BranchCubit + branch management (Phase 5)
     ├── admin/                # Admin module — user-admin data/domain + AdminUsersCubit + dashboard/managers/employees/approvals (Phase 5)
-    ├── statistics/           # Statistics feature — entity/model/repo/datasource + StatisticsCubit; powers all 3 dashboards (Phase 6)
+    ├── statistics/           # Statistics feature — entity/model/repo/datasource + StatisticsCubit; powers all 3 dashboards (Phase 6, +Phase 7 schedule figures)
+    ├── schedule/             # Weekly schedule + shift swaps (Phase 7) — full slice + ScheduleCubit & ShiftSwapCubit; weekly_schedules + shift_swaps
     ├── manager/              # ManagerShell + ManagerHomeScreen (live branch dashboard, Phase 6)
     ├── employee/             # EmployeeShell + EmployeeHomeScreen (live own dashboard, Phase 6)
     └── settings/             # Settings + change password (presentation only)
@@ -113,15 +118,17 @@ lib/
 > dashboards are now live** (Phase 6) — they read role-scoped counts from the
 > shared `StatisticsCubit` (admin: global · manager: own branch · employee: own).
 >
-> The `task` (Phase 3–4), `branch` + `admin` (Phase 5) and `statistics`
-> (Phase 6) features are full vertical slices. The `shift` feature (Phase 2)
-> still owns only data + domain with **placeholder screens** — no `ShiftCubit`.
+> The `task` (Phase 3–4), `branch` + `admin` (Phase 5), `statistics` (Phase 6)
+> and `schedule` (Phase 7) features are full vertical slices. The `shift` feature
+> (Phase 2) owns only data + domain with **placeholder screens** (no `ShiftCubit`)
+> and is **superseded** by `schedule` for production scheduling.
 >
 > **Cubit→repository convention varies by feature:** `auth`/`profile`/`task`
-> cubits go through **use cases**; `branch`/`admin`/`statistics` cubits call their
-> **repositories directly** (no use-case layer) — a deliberate scope choice. All
-> app-wide cubits are provided in `main.dart`
-> (`auth`/`profile`/`task`/`branch`/`adminUsers`/`statistics`).
+> cubits go through **use cases**; `branch`/`admin`/`statistics`/`schedule` cubits
+> call their **repositories directly** (no use-case layer) — a deliberate scope
+> choice (the `schedule` cubits reuse the auth `GetUsersByBranch` use case for the
+> member/assignee list). All app-wide cubits are provided in `main.dart`
+> (`auth`/`profile`/`task`/`branch`/`adminUsers`/`statistics`/`schedule`/`shiftSwap`).
 
 ---
 
@@ -344,6 +351,41 @@ Firestore branches/{id}   Firestore users/{uid}     aggregates users/tasks/shift
   Cloud Functions / Node.js); this is the client foundation only. No history /
   inbox / chat.
 
+### Schedule chain (Phase 7 — full vertical slice)
+
+```
+BranchScheduleScreen (manager, tabs)   ScheduleManagementScreen (admin)   MyScheduleScreen (employee, tabs)
+  └─ ManagerScheduleView (shared editor) ─┘   + SwapListView / showSwapRequestSheet      (presentation/pages + widgets)
+        ↓  context.read<ScheduleCubit>() / context.read<ShiftSwapCubit>()  (both app-wide in main.dart)
+ScheduleCubit (+ ScheduleState)        ShiftSwapCubit (+ ShiftSwapState)              (presentation/cubit)
+  load/create/assign/remove,             loadMine/loadBranch, requestSwap,
+  week + branch navigation               coworkerApprove/reject/managerApprove
+        ↓  (repo-direct; ScheduleCubit also uses auth GetUsersByBranch for members)
+ScheduleRepository (abstract)                                                          (domain/repositories)
+        ↓   AppDependencies.scheduleCubit / shiftSwapCubit  (composed in injection.dart)
+ScheduleRepositoryImpl                                                                 (data/repositories)
+        ↓                          (managerApproveSwap writes the swap AND the schedule)
+ScheduleRemoteDataSource                                                              (data/datasources)
+        ↓                          ↓
+Cloud Firestore  weekly_schedules/{branchId_yyyy-MM-dd}    Cloud Firestore  shift_swaps/{id}
+```
+
+- **Weekly schedule** = one doc per (branch, week) at a deterministic id
+  (`ScheduleWeek.docId` = `<branchId>_<yyyy-MM-dd>` of the week's Sunday), so a
+  week is read directly without a query. The roster is a nested map
+  `assignments.<day>.<shift> = [uid…]`; assign/remove use Firestore nested
+  `arrayUnion`/`arrayRemove` (no read-modify-write). `ScheduleDay` (Sun→Sat),
+  `ScheduleShift` (morning/night) and `SwapStatus` are enums in `core/enums`.
+- **Shift swap** = a single-slot handover: the requester gives up one (week, day,
+  shift) cell to a target coworker. `pending → employeeApproved → managerApproved`
+  (or `rejected`); on `managerApproveSwap` the repo flips the status **and**
+  rewrites the schedule slot (requester removed, target added). The flow order is
+  validated in `ShiftSwapCubit`; `firestore.rules` enforce who may write.
+- **Dashboards reuse this data:** the `statistics` datasource reads
+  `weekly_schedules` for the current week to compute the employee current/upcoming
+  shift, the manager scheduled/morning/night-today counts, and the admin schedule
+  coverage (`ScheduleWeek` + `ScheduleDay` imported into statistics).
+
 ### Shared (core) dependencies
 
 Every layer may import `core/errors` (failures/exceptions). Presentation
@@ -387,7 +429,14 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Branch logic / repo / UI**              | `lib/features/branch/domain/repositories/branch_repository.dart` (+impl) · `presentation/cubit/branch_cubit.dart` · `presentation/pages/branch_management_screen.dart` · `widgets/branch_form_sheet.dart` |
 | **Admin user administration (data)**      | `lib/features/admin/data/datasources/user_admin_remote_datasource.dart` + `domain/repositories/user_admin_repository.dart` (+impl) — operates on `users/{uid}`, reuses auth `UserModel` |
 | **Admin user lists / actions (pending·managers·employees)** | `lib/features/admin/presentation/cubit/admin_users_cubit.dart` (`AdminUserFilter`) + `presentation/pages/{manager,employee}_management_screen.dart` · `pending_approvals_screen.dart` · `widgets/admin_user_card.dart` · `admin_user_sheets.dart` · `admin_users_list_view.dart` |
-| **Operational stats / dashboard data**    | `lib/features/statistics/` (entity·model·repository·datasource + `StatisticsCubit`) — branch-scoped counts for all 3 dashboards |
+| **Operational stats / dashboard data**    | `lib/features/statistics/` (entity·model·repository·datasource + `StatisticsCubit`) — branch-scoped counts for all 3 dashboards; **schedule figures (Phase 7)** read `weekly_schedules` in the statistics datasource |
+| **Weekly schedule schema / serialization**| `lib/features/schedule/domain/entities/weekly_schedule_entity.dart` + `data/models/weekly_schedule_model.dart` (then run codegen); week math in `domain/schedule_week.dart`; day/shift/swap enums in `lib/core/enums/schedule_day.dart` · `schedule_shift.dart` · `swap_status.dart` |
+| **Schedule/swap reads/writes (Firestore)**| `lib/features/schedule/data/datasources/schedule_remote_datasource.dart` (`weekly_schedules` + `shift_swaps`) + `data/repositories/schedule_repository_impl.dart` (+ `domain/repositories/schedule_repository.dart`) |
+| **Schedule logic / week+branch nav / assign-remove** | `lib/features/schedule/presentation/cubit/schedule_cubit.dart` + `schedule_state.dart` |
+| **Shift-swap workflow / status transitions** | `lib/features/schedule/presentation/cubit/shift_swap_cubit.dart` + `shift_swap_state.dart` |
+| **Schedule screens (admin/manager/employee)** | `lib/features/schedule/presentation/pages/` (`schedule_management_screen` admin · `branch_schedule_screen` manager · `my_schedule_screen` employee) → shared `widgets/manager_schedule_view.dart` · `swap_view.dart` · `schedule_helpers.dart` |
+| **Schedule routes / role entry point**    | `lib/core/routes/route_names.dart` (`adminSchedule`/`managerSchedule`/`mySchedule` + `scheduleForRole`) + `app_router.dart` + `role_scaffold.dart` (calendar icon → Schedule) |
+| **Schedule/swap DI wiring**               | `lib/core/di/injection.dart` (`scheduleCubit`/`shiftSwapCubit`) + `main.dart` providers |
 | **Dashboard screens (live stats)**        | `lib/features/admin/presentation/pages/admin_dashboard_screen.dart` · `manager/.../manager_home_screen.dart` · `employee/.../employee_home_screen.dart` (+ shared `statistics/presentation/widgets/stat_grid.dart`) |
 | **Push notifications (FCM)**              | `lib/core/services/notification_service.dart` + `core/enums/notification_type.dart`; wired in `main.dart` (background handler, init, token register on auth, foreground snackbar) |
 | **Admin routes**                          | `lib/core/routes/route_names.dart` (`adminBranches`/`adminManagers`/`adminEmployees`/`adminApprovals`) + `app_router.dart` (under `_isAdminArea`) |
@@ -547,7 +596,13 @@ Patterns below are established across the codebase and **must be reused**.
   **`branches/{branchId}` (Phase 5)** is admin-write / any-signed-in-read (a
   branch isn't branch-scoped *data* — it defines the branches), with "delete" as
   a soft delete (admin update). Admin user-administration writes go through the
-  existing `users` admin-update rule (`isAdmin()`).
+  existing `users` admin-update rule (`isAdmin()`). **`weekly_schedules/{id}` and
+  `shift_swaps/{id}` (Phase 7)** are branch-scoped via `canReachBranch()`: a
+  schedule is **admin / own-branch-manager write** and **readable by any employee
+  of the branch** (`branchId == selfBranch()`, so they see their roster + today's
+  team); a swap is read/written by the two involved employees and the branch
+  manager/admin, with **create** restricted to the requester in their own branch
+  (the status order is validated client-side in `ShiftSwapCubit`).
 - Routes are role-guarded in the GoRouter `redirect`: admin areas are
   admin-only, manager areas admit **manager + admin** (the hierarchy), the
   employee home (`/`) is employee-only. Add a new role area as a path prefix

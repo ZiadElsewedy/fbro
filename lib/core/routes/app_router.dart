@@ -17,6 +17,9 @@ import 'package:fbro/features/shift/presentation/pages/my_shift_screen.dart';
 import 'package:fbro/features/task/presentation/pages/task_management_screen.dart';
 import 'package:fbro/features/task/presentation/pages/branch_tasks_screen.dart';
 import 'package:fbro/features/task/presentation/pages/my_tasks_screen.dart';
+import 'package:fbro/features/schedule/presentation/pages/schedule_management_screen.dart';
+import 'package:fbro/features/schedule/presentation/pages/branch_schedule_screen.dart';
+import 'package:fbro/features/schedule/presentation/pages/my_schedule_screen.dart';
 import 'package:fbro/features/branch/presentation/pages/branch_management_screen.dart';
 import 'package:fbro/features/admin/presentation/pages/manager_management_screen.dart';
 import 'package:fbro/features/admin/presentation/pages/employee_management_screen.dart';
@@ -186,6 +189,30 @@ GoRouter createRouter(AuthCubit authCubit) {
         pageBuilder: (context, state) => _slideTransition(
           state,
           const MyTasksScreen(),
+        ),
+      ),
+      // ─── Weekly schedule (Phase 7) ─────────────────────────────
+      // Guarded like tasks: /admin/schedule is admin-only, /manager/schedule
+      // admits manager + admin; /my-schedule is self-scoped (own branch).
+      GoRoute(
+        path: RouteNames.adminSchedule,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const ScheduleManagementScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.managerSchedule,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const BranchScheduleScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.mySchedule,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const MyScheduleScreen(),
         ),
       ),
       // ─── Admin module (Phase 5) ────────────────────────────────

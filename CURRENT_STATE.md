@@ -9,8 +9,8 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-14
-**Version:** 1.0.0+1 · **Branch:** `feature/roles-and-foundation`
+**Last updated:** 2026-06-16
+**Version:** 1.0.0+1 · **Branch:** `feature/weekly-schedule-and-shift-swap`
 
 ---
 
@@ -21,12 +21,14 @@
 | Authentication   | ✅ Complete    | Email, phone OTP, Google, verify, forgot/change pw, delete; landing = **Login** (social Welcome page removed) |
 | Account approval | ✅ Complete*   | New sign-ups seeded `pending` + inactive → **Pending Approval** screen; gate in router (`hasAppAccess`). *In-app approval UI (manager/admin) still pending — approve out of band (console) until Phase 5 |
 | Roles & routing  | ✅ Complete    | `UserRole` enum, role dispatch + guards; **admin ⊇ manager** hierarchy + branch-scoped access model (admin global · manager own-branch · employee self) |
-| Shifts (Phase 2) | 🟡 Foundation | `ShiftEntity`/`ShiftModel`/`ShiftRepository`/`ShiftRemoteDataSource` + `shifts/{shiftId}` rules + 3 role placeholder screens. **No `ShiftCubit`/use cases or real UI yet** — data layer ready, wired in DI |
+| Shifts (Phase 2) | 🟡 Foundation | `ShiftEntity`/`ShiftModel`/`ShiftRepository`/`ShiftRemoteDataSource` + `shifts/{shiftId}` rules. Data layer only; **superseded by the Weekly Schedule** (Phase 7) for production scheduling — placeholder shift screens no longer linked from the role chrome |
+| Weekly Schedule (Phase 7) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit` + manager editor / admin override / employee my-week view. Roster `day → morning/night → employees`; `weekly_schedules/{id}` rules. Reuses Role/Branch systems |
+| Shift Swap (Phase 7) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected |
 | Tasks (Phase 3–4) | ✅ Workflow   | Full vertical slice: `TaskCubit` + 10 use cases, functional employee/manager/admin screens (create·assign·start·complete+notes/proof·submit·review approve/reject), client-side status-transition rules, audit fields, proof upload to Storage |
 | Branches (Phase 5) | ✅ Complete   | `BranchEntity`/`Model`/`Repository`/`RemoteDataSource` + `BranchCubit`; admin CRUD + activate/deactivate + soft delete; `branches/{id}` rules |
 | Admin module (Phase 5) | ✅ Complete | Branch / manager / employee management + **admin-only** pending-user approval + branch assignment. `AdminUsersCubit`, `UserAdminRepository` over `users/{uid}` |
-| Dashboards / Statistics (Phase 6) | ✅ Complete | `statistics` feature (`StatisticsCubit`) drives **live** admin / manager / employee dashboards (branch-scoped counts; no analytics engine) |
-| Notifications (Phase 6) | 🟡 Foundation | FCM client foundation: permission + device-token persistence + foreground snackbars. **Sending** the events needs a server trigger (out of scope) |
+| Dashboards / Statistics (Phase 6, +Phase 7) | ✅ Complete | `statistics` feature (`StatisticsCubit`) drives **live** admin / manager / employee dashboards. **Phase 7:** shift/coverage figures now read the weekly schedule (employee current+upcoming shift · manager scheduled/morning/night today · admin schedule coverage) |
+| Notifications (Phase 6, +Phase 7) | 🟡 Foundation | FCM client foundation: permission + device-token persistence + foreground snackbars. `NotificationType` extended with Phase 7 swap/schedule events. **Sending** the events needs a server trigger (out of scope) |
 | Profile          | ✅ Complete    | View/edit, avatar+cover upload, username checks                |
 | Settings         | ✅ Complete    | Settings page + change password + delete account              |
 | Role shells      | ✅ Live        | All three role dashboards show live operational stats (Phase 6); Admin shell hosts the full admin module (Phase 5) |
@@ -91,6 +93,21 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
   `users/{uid}.fcmToken`, foreground snackbars, wired in `main.dart`. **Approval
   made admin-only** — the manager user-write path was removed from
   `firestore.rules`. Replaced the Phase 5 `AdminStatsCubit` with `StatisticsCubit`.
+- **Phase 7 — Weekly Schedule & Shift Swap** — new `schedule` feature (full
+  vertical slice; repo-direct cubits like branch/admin). `WeeklyScheduleEntity`
+  (nested `day → morning/night → [uid]` roster) + `ShiftSwapEntity`,
+  `ScheduleRepository(+Impl)`/`ScheduleRemoteDataSource`, `ScheduleCubit` +
+  `ShiftSwapCubit`. Managers build/edit their branch's weekly schedule (assign /
+  remove employees, navigate weeks); admins pick any branch and override; employees
+  see **My Week** (today's shift + team + manager) and request **shift swaps**
+  (coworker approves → manager approves → schedule updates automatically). Routes
+  `/admin/schedule`, `/manager/schedule`, `/my-schedule` (role chrome calendar
+  icon → weekly Schedule). New collections `weekly_schedules` / `shift_swaps` with
+  branch-scoped Firestore rules. `ScheduleDay` / `ScheduleShift` / `SwapStatus`
+  enums + `ScheduleWeek` (deterministic doc id `<branchId>_<yyyy-MM-dd>`).
+  **Dashboards integrated** — shift/coverage stats now come from the weekly
+  schedule. `NotificationType` extended (swap + schedule events). `flutter analyze`
+  clean.
 - **Action needed:** commit; deploy `firestore.rules` / `storage.rules` and
   enable Firebase Storage; bootstrap the first admin (set
   `role/approvalStatus/isActive` in the console) before production.
@@ -111,6 +128,9 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
 | adminTasks          | `/admin/tasks`               | `TaskManagementScreen`  | **admin**     |
 | managerTasks        | `/manager/tasks`             | `BranchTasksScreen`     | **manager** (+admin) |
 | myTasks             | `/my-tasks`                  | `MyTasksScreen`         | any approved auth (self) |
+| adminSchedule       | `/admin/schedule`            | `ScheduleManagementScreen` | **admin**  |
+| managerSchedule     | `/manager/schedule`          | `BranchScheduleScreen`  | **manager** (+admin) |
+| mySchedule          | `/my-schedule`               | `MyScheduleScreen`      | any approved auth (self) |
 | adminBranches       | `/admin/branches`            | `BranchManagementScreen`| **admin**     |
 | adminManagers       | `/admin/managers`            | `ManagerManagementScreen`| **admin**    |
 | adminEmployees      | `/admin/employees`           | `EmployeeManagementScreen`| **admin**   |
@@ -164,9 +184,15 @@ landing is **Login** (the social Welcome page was removed).
   user read/write; the meaningful gate is the Firestore `proofImageUrl` write).
   **`branches/{branchId}` (Phase 5)** is admin-write / any-signed-in-read with
   hard delete denied (soft delete only); admin user-administration uses the
-  existing `users` admin-update rule. Reusable `isAdmin()` / `isManager()` /
-  `canReachBranch()` helpers remain for future collections. ⚠️ Still need to be
-  **deployed** (`firebase deploy --only firestore:rules,storage`).
+  existing `users` admin-update rule. **`weekly_schedules/{id}` (Phase 7)** is
+  branch-scoped: admin/own-branch manager write, and **any employee of the
+  branch** reads (their schedule + today's team) via `branchId == selfBranch()`.
+  **`shift_swaps/{id}` (Phase 7)**: read/act = the two involved employees + the
+  branch manager/admin; create requires the requester to be self and the swap to
+  be in their own branch (the exact status flow is validated client-side in
+  `ShiftSwapCubit`). Reusable `isAdmin()` / `isManager()` / `canReachBranch()`
+  helpers remain for future collections. ⚠️ Still need to be **deployed**
+  (`firebase deploy --only firestore:rules,storage`).
 
 ### Firestore schema — `users/{uid}`
 
@@ -256,6 +282,48 @@ Shared by the auth (`UserModel`) and profile (`ProfileModel`) layers.
 > (`tasks/{taskId}`). The employee cannot reassign, change branch, or set the
 > terminal approved/rejected status.
 
+### Firestore schema — `weekly_schedules/{id}` (Phase 7)
+
+One document per (branch, week). Deterministic id `<branchId>_<yyyy-MM-dd>` (the
+week's Sunday), so a week is addressed directly without a query.
+
+| Field         | Type       | Notes                                                       |
+| ------------- | ---------- | ---------------------------------------------------------- |
+| `id`          | string     | mirrors the doc id                                         |
+| `branchId`    | string     | owning branch                                              |
+| `weekStart`   | Timestamp  | Sunday 00:00 that starts the week                          |
+| `assignments` | map        | `{ <day>: { <shift>: [uid, …] } }` — `day` = `sunday`…`saturday`, `shift` = `morning`/`night` |
+| `createdBy`   | string?    | uid of the manager/admin who created it                    |
+| `createdAt`, `updatedAt` | Timestamp | server timestamps; assign/remove use nested `arrayUnion`/`arrayRemove` |
+
+> The roster is intentionally a nested map so an employee can appear on any mix
+> of morning/night slots across the week. Branch/role access is enforced by
+> `firestore.rules` (`weekly_schedules/{id}`): admin all · own-branch manager
+> write · branch employees read.
+
+### Firestore schema — `shift_swaps/{id}` (Phase 7)
+
+| Field          | Type       | Notes                                                       |
+| -------------- | ---------- | ---------------------------------------------------------- |
+| `id`           | string     | mirrors the doc id (set on create)                         |
+| `branchId`     | string     | branch the swap belongs to (= requester's branch)          |
+| `weekStart`    | Timestamp  | week of the slot (addresses the schedule doc on approval)  |
+| `day`          | string     | `sunday`…`saturday`                                        |
+| `shift`        | string     | `morning` / `night`                                        |
+| `requesterId`  | string     | employee giving up the slot                                |
+| `requesterName`| string?    | denormalized for display                                   |
+| `targetId`     | string     | coworker asked to take the slot                            |
+| `targetName`   | string?    | denormalized for display                                   |
+| `status`       | string     | `pending`→`employeeApproved`→`managerApproved` / `rejected`|
+| `note`         | string?    | optional note from the requester                           |
+| `createdAt`, `updatedAt` | Timestamp | server timestamps                              |
+
+> Workflow: requester creates (`pending`) → target coworker approves
+> (`employeeApproved`) → branch manager approves (`managerApproved`), which
+> **removes the requester and adds the target** on that schedule slot. Any party
+> may reject. Status order is validated client-side (`ShiftSwapCubit`); WHO may
+> write is enforced by `firestore.rules` (`shift_swaps/{id}`).
+
 ### Storage schema
 
 | Path                       | Content                            |
@@ -294,12 +362,17 @@ Shared by the auth (`UserModel`) and profile (`ProfileModel`) layers.
   `EmployeeHomeScreen`) are still functional placeholders — their shifts/tasks
   live behind the Shifts/Tasks icons in the role chrome. The **Admin** shell is
   the full admin module (Phase 5).
-- **Shift UI is a placeholder** — the `shift` data/domain layer + Firestore rules
-  are done and DI-wired (`AppDependencies.shiftRepository`), but there is **no
-  `ShiftCubit`/use cases** and the three shift screens don't read/write yet. The
-  real CRUD/assignment UI (admin) + branch scheduling (manager) + my-shift view
-  (employee) is the next phase. The `assignEmployee` foundation updates the shift
-  side only; syncing `users/{uid}.assignedShift` lands with the assignment UI.
+- **Weekly scheduling is live (Phase 7)** — the `schedule` feature is the
+  production roster (managers build the week, employees view + swap, admins
+  override). The Phase 2 `shift` data/domain layer + `shifts/{shiftId}` rules
+  remain in place but are **superseded** for scheduling: the three Phase 2 shift
+  placeholder screens (`/admin/shifts`, `/manager/shifts`, `/my-shift`) still
+  exist as routes but are no longer linked from the role chrome (the calendar icon
+  now opens the weekly Schedule). A future cleanup could retire the placeholder
+  shift screens and/or fold `users/{uid}.assignedShift` into the schedule.
+- **Shift-swap status flow is validated client-side** (`ShiftSwapCubit`), like the
+  task transitions — `firestore.rules` enforce *who* may write a swap, not the
+  exact order. Hardening the transition matrix server-side is a follow-up.
 - **Task workflow is live** (Phase 4) but a few deliberate simplifications remain:
   - **Status transitions are validated client-side** (`TaskCubit._canTransition`),
     not in `firestore.rules` — the rules enforce *who* can write, not the exact

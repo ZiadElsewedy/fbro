@@ -18,7 +18,7 @@ class StatisticsCubit extends Cubit<StatisticsState> {
           ? await _repository.adminStats()
           : user.role.isManager
               ? await _repository.managerStats(user.branchId ?? '')
-              : await _repository.employeeStats(user.uid);
+              : await _repository.employeeStats(user.uid, user.branchId);
       emit(StatisticsState.loaded(stats));
     } on Failure catch (e) {
       emit(StatisticsState.error(e.message));

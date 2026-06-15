@@ -14,16 +14,25 @@ enum NotificationType {
   taskRejected,
   shiftChanged,
   managerNote,
+  // ── Employee · weekly schedule + swaps (Phase 7) ──
+  tomorrowShiftReminder,
+  swapApproved,
+  swapRejected,
   // ── Manager ──
   taskWaitingReview,
   employeeCompletedTask,
   newEmployeePendingApproval,
   shiftWithoutEmployees,
+  // ── Manager · shift swaps (Phase 7) ──
+  newSwapRequest,
+  swapPendingApproval,
   // ── Admin ──
   newEmployeeRegistration,
   branchWithoutManager,
   manyRejectedTasks,
-  branchWithoutActiveEmployees;
+  branchWithoutActiveEmployees,
+  // ── Admin · weekly schedule (Phase 7) ──
+  branchWithoutSchedule;
 
   String get value => name;
 

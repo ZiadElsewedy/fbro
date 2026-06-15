@@ -60,6 +60,11 @@ import 'package:fbro/features/statistics/data/datasources/statistics_remote_data
 import 'package:fbro/features/statistics/data/repositories/statistics_repository_impl.dart';
 import 'package:fbro/features/statistics/domain/repositories/statistics_repository.dart';
 import 'package:fbro/features/statistics/presentation/cubit/statistics_cubit.dart';
+import 'package:fbro/features/schedule/data/datasources/schedule_remote_datasource.dart';
+import 'package:fbro/features/schedule/data/repositories/schedule_repository_impl.dart';
+import 'package:fbro/features/schedule/domain/repositories/schedule_repository.dart';
+import 'package:fbro/features/schedule/presentation/cubit/schedule_cubit.dart';
+import 'package:fbro/features/schedule/presentation/cubit/shift_swap_cubit.dart';
 
 class AppDependencies {
   AppDependencies._();
@@ -74,6 +79,10 @@ class AppDependencies {
 
   // ─── Statistics / dashboards (Phase 6) ──────────────────────
   static late final StatisticsCubit statisticsCubit;
+
+  // ─── Weekly schedule + shift swaps (Phase 7) ────────────────
+  static late final ScheduleCubit scheduleCubit;
+  static late final ShiftSwapCubit shiftSwapCubit;
 
   /// FCM foundation (Phase 6) — token registration + foreground handling.
   static late final NotificationService notificationService;
@@ -166,6 +175,14 @@ class AppDependencies {
       StatisticsRemoteDataSourceImpl(FirebaseFirestore.instance),
     );
     statisticsCubit = StatisticsCubit(statisticsRepository);
+
+    // ─── Weekly schedule + shift swaps (Phase 7) ──────────────
+    final ScheduleRepository scheduleRepository = ScheduleRepositoryImpl(
+      ScheduleRemoteDataSourceImpl(FirebaseFirestore.instance),
+    );
+    scheduleCubit =
+        ScheduleCubit(scheduleRepository, GetUsersByBranch(authRepository));
+    shiftSwapCubit = ShiftSwapCubit(scheduleRepository);
 
     notificationService = NotificationService(
       FirebaseMessaging.instance,

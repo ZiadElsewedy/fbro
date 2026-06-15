@@ -68,7 +68,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _shiftCard(s.currentShiftName),
+        _shiftCard(s.currentShiftName, s.upcomingShiftName),
         const SizedBox(height: AppSpacing.lg),
         StatGrid(items: [
           StatItem('Assigned', '${s.assignedTasks}', Icons.assignment_outlined),
@@ -81,9 +81,9 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     );
   }
 
-  Widget _shiftCard(String? shiftName) {
+  Widget _shiftCard(String? shiftName, String? upcoming) {
     final label = (shiftName == null || shiftName.isEmpty)
-        ? 'No shift assigned'
+        ? 'Off today'
         : '${shiftName[0].toUpperCase()}${shiftName.substring(1)} shift';
     return Container(
       width: double.infinity,
@@ -97,13 +97,19 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         children: [
           const Icon(Icons.schedule_outlined, color: AppColors.primary),
           const SizedBox(width: AppSpacing.md),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Current shift', style: AppTypography.caption),
-              const SizedBox(height: 2),
-              Text(label, style: AppTypography.label),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Current shift', style: AppTypography.caption),
+                const SizedBox(height: 2),
+                Text(label, style: AppTypography.label),
+                if (upcoming != null && upcoming.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text('Next: $upcoming', style: AppTypography.bodySmall),
+                ],
+              ],
+            ),
           ),
         ],
       ),

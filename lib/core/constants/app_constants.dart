@@ -6,4 +6,6 @@ class AppConstants {
   static const String shiftsCollection = 'shifts';
   static const String tasksCollection = 'tasks';
   static const String branchesCollection = 'branches';
+  static const String weeklySchedulesCollection = 'weekly_schedules';
+  static const String shiftSwapsCollection = 'shift_swaps';
 }

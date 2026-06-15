@@ -22,9 +22,18 @@ mixin _$StatisticsEntity {
   int get totalManagers => throw _privateConstructorUsedError;
   int get totalEmployees => throw _privateConstructorUsedError;
   int get pendingApprovals => throw _privateConstructorUsedError;
-  int get branchesWithoutManagers =>
+  int get branchesWithoutManagers => throw _privateConstructorUsedError;
+
+  /// Branches with a weekly schedule published for the current week (Phase 7
+  /// schedule coverage — read against [totalBranches]).
+  int get branchesWithSchedule =>
       throw _privateConstructorUsedError; // ── Manager (own branch) ──
   int get employeesInBranch => throw _privateConstructorUsedError;
+
+  /// Employees scheduled today (Phase 7 — from this week's weekly schedule).
+  int get scheduledToday => throw _privateConstructorUsedError;
+
+  /// Employees on today's morning / night shift (Phase 7 — weekly schedule).
   int get morningShiftEmployees => throw _privateConstructorUsedError;
   int get nightShiftEmployees => throw _privateConstructorUsedError;
   int get dailyTasks => throw _privateConstructorUsedError;
@@ -40,8 +49,13 @@ mixin _$StatisticsEntity {
   int get assignedTasks => throw _privateConstructorUsedError;
   int get pendingTasks => throw _privateConstructorUsedError;
 
-  /// Name of the employee's current assigned shift (e.g. `morning`), if any.
+  /// The employee's shift today, from this week's weekly schedule (e.g.
+  /// `morning` / `night`), or null when they're off / unscheduled (Phase 7).
   String? get currentShiftName => throw _privateConstructorUsedError;
+
+  /// The employee's next scheduled slot later this week, formatted for display
+  /// (e.g. `Tue · Morning`), or null if none (Phase 7).
+  String? get upcomingShiftName => throw _privateConstructorUsedError;
 
   /// Create a copy of StatisticsEntity
   /// with the given fields replaced by the non-null parameter values.
@@ -63,7 +77,9 @@ abstract class $StatisticsEntityCopyWith<$Res> {
     int totalEmployees,
     int pendingApprovals,
     int branchesWithoutManagers,
+    int branchesWithSchedule,
     int employeesInBranch,
+    int scheduledToday,
     int morningShiftEmployees,
     int nightShiftEmployees,
     int dailyTasks,
@@ -77,6 +93,7 @@ abstract class $StatisticsEntityCopyWith<$Res> {
     int assignedTasks,
     int pendingTasks,
     String? currentShiftName,
+    String? upcomingShiftName,
   });
 }
 
@@ -100,7 +117,9 @@ class _$StatisticsEntityCopyWithImpl<$Res, $Val extends StatisticsEntity>
     Object? totalEmployees = null,
     Object? pendingApprovals = null,
     Object? branchesWithoutManagers = null,
+    Object? branchesWithSchedule = null,
     Object? employeesInBranch = null,
+    Object? scheduledToday = null,
     Object? morningShiftEmployees = null,
     Object? nightShiftEmployees = null,
     Object? dailyTasks = null,
@@ -114,6 +133,7 @@ class _$StatisticsEntityCopyWithImpl<$Res, $Val extends StatisticsEntity>
     Object? assignedTasks = null,
     Object? pendingTasks = null,
     Object? currentShiftName = freezed,
+    Object? upcomingShiftName = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -137,9 +157,17 @@ class _$StatisticsEntityCopyWithImpl<$Res, $Val extends StatisticsEntity>
                 ? _value.branchesWithoutManagers
                 : branchesWithoutManagers // ignore: cast_nullable_to_non_nullable
                       as int,
+            branchesWithSchedule: null == branchesWithSchedule
+                ? _value.branchesWithSchedule
+                : branchesWithSchedule // ignore: cast_nullable_to_non_nullable
+                      as int,
             employeesInBranch: null == employeesInBranch
                 ? _value.employeesInBranch
                 : employeesInBranch // ignore: cast_nullable_to_non_nullable
+                      as int,
+            scheduledToday: null == scheduledToday
+                ? _value.scheduledToday
+                : scheduledToday // ignore: cast_nullable_to_non_nullable
                       as int,
             morningShiftEmployees: null == morningShiftEmployees
                 ? _value.morningShiftEmployees
@@ -193,6 +221,10 @@ class _$StatisticsEntityCopyWithImpl<$Res, $Val extends StatisticsEntity>
                 ? _value.currentShiftName
                 : currentShiftName // ignore: cast_nullable_to_non_nullable
                       as String?,
+            upcomingShiftName: freezed == upcomingShiftName
+                ? _value.upcomingShiftName
+                : upcomingShiftName // ignore: cast_nullable_to_non_nullable
+                      as String?,
           )
           as $Val,
     );
@@ -214,7 +246,9 @@ abstract class _$$StatisticsEntityImplCopyWith<$Res>
     int totalEmployees,
     int pendingApprovals,
     int branchesWithoutManagers,
+    int branchesWithSchedule,
     int employeesInBranch,
+    int scheduledToday,
     int morningShiftEmployees,
     int nightShiftEmployees,
     int dailyTasks,
@@ -228,6 +262,7 @@ abstract class _$$StatisticsEntityImplCopyWith<$Res>
     int assignedTasks,
     int pendingTasks,
     String? currentShiftName,
+    String? upcomingShiftName,
   });
 }
 
@@ -250,7 +285,9 @@ class __$$StatisticsEntityImplCopyWithImpl<$Res>
     Object? totalEmployees = null,
     Object? pendingApprovals = null,
     Object? branchesWithoutManagers = null,
+    Object? branchesWithSchedule = null,
     Object? employeesInBranch = null,
+    Object? scheduledToday = null,
     Object? morningShiftEmployees = null,
     Object? nightShiftEmployees = null,
     Object? dailyTasks = null,
@@ -264,6 +301,7 @@ class __$$StatisticsEntityImplCopyWithImpl<$Res>
     Object? assignedTasks = null,
     Object? pendingTasks = null,
     Object? currentShiftName = freezed,
+    Object? upcomingShiftName = freezed,
   }) {
     return _then(
       _$StatisticsEntityImpl(
@@ -287,9 +325,17 @@ class __$$StatisticsEntityImplCopyWithImpl<$Res>
             ? _value.branchesWithoutManagers
             : branchesWithoutManagers // ignore: cast_nullable_to_non_nullable
                   as int,
+        branchesWithSchedule: null == branchesWithSchedule
+            ? _value.branchesWithSchedule
+            : branchesWithSchedule // ignore: cast_nullable_to_non_nullable
+                  as int,
         employeesInBranch: null == employeesInBranch
             ? _value.employeesInBranch
             : employeesInBranch // ignore: cast_nullable_to_non_nullable
+                  as int,
+        scheduledToday: null == scheduledToday
+            ? _value.scheduledToday
+            : scheduledToday // ignore: cast_nullable_to_non_nullable
                   as int,
         morningShiftEmployees: null == morningShiftEmployees
             ? _value.morningShiftEmployees
@@ -343,6 +389,10 @@ class __$$StatisticsEntityImplCopyWithImpl<$Res>
             ? _value.currentShiftName
             : currentShiftName // ignore: cast_nullable_to_non_nullable
                   as String?,
+        upcomingShiftName: freezed == upcomingShiftName
+            ? _value.upcomingShiftName
+            : upcomingShiftName // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -357,7 +407,9 @@ class _$StatisticsEntityImpl implements _StatisticsEntity {
     this.totalEmployees = 0,
     this.pendingApprovals = 0,
     this.branchesWithoutManagers = 0,
+    this.branchesWithSchedule = 0,
     this.employeesInBranch = 0,
+    this.scheduledToday = 0,
     this.morningShiftEmployees = 0,
     this.nightShiftEmployees = 0,
     this.dailyTasks = 0,
@@ -371,6 +423,7 @@ class _$StatisticsEntityImpl implements _StatisticsEntity {
     this.assignedTasks = 0,
     this.pendingTasks = 0,
     this.currentShiftName,
+    this.upcomingShiftName,
   });
 
   // ── Admin (global) ──
@@ -389,10 +442,23 @@ class _$StatisticsEntityImpl implements _StatisticsEntity {
   @override
   @JsonKey()
   final int branchesWithoutManagers;
+
+  /// Branches with a weekly schedule published for the current week (Phase 7
+  /// schedule coverage — read against [totalBranches]).
+  @override
+  @JsonKey()
+  final int branchesWithSchedule;
   // ── Manager (own branch) ──
   @override
   @JsonKey()
   final int employeesInBranch;
+
+  /// Employees scheduled today (Phase 7 — from this week's weekly schedule).
+  @override
+  @JsonKey()
+  final int scheduledToday;
+
+  /// Employees on today's morning / night shift (Phase 7 — weekly schedule).
   @override
   @JsonKey()
   final int morningShiftEmployees;
@@ -432,13 +498,19 @@ class _$StatisticsEntityImpl implements _StatisticsEntity {
   @JsonKey()
   final int pendingTasks;
 
-  /// Name of the employee's current assigned shift (e.g. `morning`), if any.
+  /// The employee's shift today, from this week's weekly schedule (e.g.
+  /// `morning` / `night`), or null when they're off / unscheduled (Phase 7).
   @override
   final String? currentShiftName;
 
+  /// The employee's next scheduled slot later this week, formatted for display
+  /// (e.g. `Tue · Morning`), or null if none (Phase 7).
+  @override
+  final String? upcomingShiftName;
+
   @override
   String toString() {
-    return 'StatisticsEntity(totalBranches: $totalBranches, totalManagers: $totalManagers, totalEmployees: $totalEmployees, pendingApprovals: $pendingApprovals, branchesWithoutManagers: $branchesWithoutManagers, employeesInBranch: $employeesInBranch, morningShiftEmployees: $morningShiftEmployees, nightShiftEmployees: $nightShiftEmployees, dailyTasks: $dailyTasks, specialTasks: $specialTasks, activeTasks: $activeTasks, completedTasks: $completedTasks, completedTasksToday: $completedTasksToday, waitingReviews: $waitingReviews, rejectedTasks: $rejectedTasks, rejectedTasksToday: $rejectedTasksToday, assignedTasks: $assignedTasks, pendingTasks: $pendingTasks, currentShiftName: $currentShiftName)';
+    return 'StatisticsEntity(totalBranches: $totalBranches, totalManagers: $totalManagers, totalEmployees: $totalEmployees, pendingApprovals: $pendingApprovals, branchesWithoutManagers: $branchesWithoutManagers, branchesWithSchedule: $branchesWithSchedule, employeesInBranch: $employeesInBranch, scheduledToday: $scheduledToday, morningShiftEmployees: $morningShiftEmployees, nightShiftEmployees: $nightShiftEmployees, dailyTasks: $dailyTasks, specialTasks: $specialTasks, activeTasks: $activeTasks, completedTasks: $completedTasks, completedTasksToday: $completedTasksToday, waitingReviews: $waitingReviews, rejectedTasks: $rejectedTasks, rejectedTasksToday: $rejectedTasksToday, assignedTasks: $assignedTasks, pendingTasks: $pendingTasks, currentShiftName: $currentShiftName, upcomingShiftName: $upcomingShiftName)';
   }
 
   @override
@@ -459,8 +531,12 @@ class _$StatisticsEntityImpl implements _StatisticsEntity {
                   branchesWithoutManagers,
                 ) ||
                 other.branchesWithoutManagers == branchesWithoutManagers) &&
+            (identical(other.branchesWithSchedule, branchesWithSchedule) ||
+                other.branchesWithSchedule == branchesWithSchedule) &&
             (identical(other.employeesInBranch, employeesInBranch) ||
                 other.employeesInBranch == employeesInBranch) &&
+            (identical(other.scheduledToday, scheduledToday) ||
+                other.scheduledToday == scheduledToday) &&
             (identical(other.morningShiftEmployees, morningShiftEmployees) ||
                 other.morningShiftEmployees == morningShiftEmployees) &&
             (identical(other.nightShiftEmployees, nightShiftEmployees) ||
@@ -486,7 +562,9 @@ class _$StatisticsEntityImpl implements _StatisticsEntity {
             (identical(other.pendingTasks, pendingTasks) ||
                 other.pendingTasks == pendingTasks) &&
             (identical(other.currentShiftName, currentShiftName) ||
-                other.currentShiftName == currentShiftName));
+                other.currentShiftName == currentShiftName) &&
+            (identical(other.upcomingShiftName, upcomingShiftName) ||
+                other.upcomingShiftName == upcomingShiftName));
   }
 
   @override
@@ -497,7 +575,9 @@ class _$StatisticsEntityImpl implements _StatisticsEntity {
     totalEmployees,
     pendingApprovals,
     branchesWithoutManagers,
+    branchesWithSchedule,
     employeesInBranch,
+    scheduledToday,
     morningShiftEmployees,
     nightShiftEmployees,
     dailyTasks,
@@ -511,6 +591,7 @@ class _$StatisticsEntityImpl implements _StatisticsEntity {
     assignedTasks,
     pendingTasks,
     currentShiftName,
+    upcomingShiftName,
   ]);
 
   /// Create a copy of StatisticsEntity
@@ -532,7 +613,9 @@ abstract class _StatisticsEntity implements StatisticsEntity {
     final int totalEmployees,
     final int pendingApprovals,
     final int branchesWithoutManagers,
+    final int branchesWithSchedule,
     final int employeesInBranch,
+    final int scheduledToday,
     final int morningShiftEmployees,
     final int nightShiftEmployees,
     final int dailyTasks,
@@ -546,6 +629,7 @@ abstract class _StatisticsEntity implements StatisticsEntity {
     final int assignedTasks,
     final int pendingTasks,
     final String? currentShiftName,
+    final String? upcomingShiftName,
   }) = _$StatisticsEntityImpl;
 
   // ── Admin (global) ──
@@ -558,9 +642,20 @@ abstract class _StatisticsEntity implements StatisticsEntity {
   @override
   int get pendingApprovals;
   @override
-  int get branchesWithoutManagers; // ── Manager (own branch) ──
+  int get branchesWithoutManagers;
+
+  /// Branches with a weekly schedule published for the current week (Phase 7
+  /// schedule coverage — read against [totalBranches]).
+  @override
+  int get branchesWithSchedule; // ── Manager (own branch) ──
   @override
   int get employeesInBranch;
+
+  /// Employees scheduled today (Phase 7 — from this week's weekly schedule).
+  @override
+  int get scheduledToday;
+
+  /// Employees on today's morning / night shift (Phase 7 — weekly schedule).
   @override
   int get morningShiftEmployees;
   @override
@@ -586,9 +681,15 @@ abstract class _StatisticsEntity implements StatisticsEntity {
   @override
   int get pendingTasks;
 
-  /// Name of the employee's current assigned shift (e.g. `morning`), if any.
+  /// The employee's shift today, from this week's weekly schedule (e.g.
+  /// `morning` / `night`), or null when they're off / unscheduled (Phase 7).
   @override
   String? get currentShiftName;
+
+  /// The employee's next scheduled slot later this week, formatted for display
+  /// (e.g. `Tue · Morning`), or null if none (Phase 7).
+  @override
+  String? get upcomingShiftName;
 
   /// Create a copy of StatisticsEntity
   /// with the given fields replaced by the non-null parameter values.

@@ -18,8 +18,8 @@ class StatisticsRepositoryImpl implements StatisticsRepository {
       _run(_remote.managerStats(branchId));
 
   @override
-  Future<StatisticsEntity> employeeStats(String uid) =>
-      _run(_remote.employeeStats(uid));
+  Future<StatisticsEntity> employeeStats(String uid, String? branchId) =>
+      _run(_remote.employeeStats(uid, branchId));
 
   Future<StatisticsEntity> _run(Future<StatisticsModel> future) async {
     try {

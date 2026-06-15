@@ -28,6 +28,74 @@ and [Semantic Versioning](https://semver.org).
 
 ---
 
+## 2026-06-16 — Phase 7: Weekly Schedule & Shift Swap
+
+Replaces the Excel / WhatsApp shift roster with an in-app **weekly schedule**:
+managers build their branch's week (Day → Morning / Night → Employees), employees
+see their week + today's team + manager, and coworkers trade shifts through a
+**swap workflow** (coworker approves → manager approves → schedule updates
+automatically). Reuses the existing Clean Architecture, Role/Branch systems, and
+the FCM contract; no Node.js, no working systems rewritten.
+
+### Added
+- **`schedule` feature** (full vertical slice, repo-direct cubits — like
+  branch/admin):
+  - **Enums** (`core/enums`): `ScheduleDay` (Sun→Sat, `fromDate`/`today`),
+    `ScheduleShift` (`morning`/`night`), `SwapStatus`
+    (`pending`/`employeeApproved`/`managerApproved`/`rejected`).
+  - **Domain**: `ScheduleWeek` (week-start math + deterministic doc id
+    `<branchId>_<yyyy-MM-dd>`), `WeeklyScheduleEntity` (nested
+    `day → shift → [uid]` roster + helpers), `ShiftSwapEntity`, and
+    `ScheduleRepository`.
+  - **Data**: `WeeklyScheduleModel` / `ShiftSwapModel`, `ScheduleRemoteDataSource`
+    (`weekly_schedules` + `shift_swaps`; nested `arrayUnion`/`arrayRemove` for
+    assign/remove; merge-two-queries for an employee's swaps) and
+    `ScheduleRepositoryImpl` (`managerApproveSwap` updates the swap **and** the
+    schedule).
+  - **Cubits** (provided app-wide): `ScheduleCubit` (loads a (branch, week) view
+    + branch members; create/assign/remove; week + branch navigation) and
+    `ShiftSwapCubit` (employee `loadMine` / manager `loadBranch`; request /
+    coworker-approve / reject / manager-approve).
+  - **Screens**: manager `BranchScheduleScreen` (tabs: editor + swap queue),
+    admin `ScheduleManagementScreen` (branch picker + editor, override any
+    branch), employee `MyScheduleScreen` (tabs: My Week — today's shift, team,
+    manager, per-slot "Request swap" — + Swaps). Shared `ManagerScheduleView`,
+    `SwapListView` + `showSwapRequestSheet`, `schedule_helpers`.
+  - **Routes** `/admin/schedule`, `/manager/schedule`, `/my-schedule`
+    (`RouteNames.scheduleForRole`, role-guarded like tasks). The role-chrome
+    calendar icon now opens the **weekly Schedule** (was the Phase 2 shift
+    placeholder).
+  - **DI** `scheduleCubit` / `shiftSwapCubit` wired in `injection.dart` + provided
+    in `main.dart`. `AppConstants.weeklySchedulesCollection` / `shiftSwapsCollection`.
+- **Firestore rules** for `weekly_schedules/{id}` (branch-scoped: admin/own-branch
+  manager write · any employee of the branch reads) and `shift_swaps/{id}`
+  (read/act = the two employees + branch manager/admin; create = requester in own
+  branch). Exact swap flow validated client-side (`ShiftSwapCubit`).
+- **Notification contract** (`NotificationType`): `tomorrowShiftReminder`,
+  `swapApproved`, `swapRejected` (employee), `newSwapRequest`,
+  `swapPendingApproval` (manager), `branchWithoutSchedule` (admin) — the sender is
+  still out of scope (no Cloud Functions).
+
+### Changed
+- **Dashboards now read the weekly schedule** (Phase 7), not the Phase 2 `shifts`
+  placeholder: employee — **current + upcoming shift**; manager — **scheduled /
+  morning / night today**; admin — **schedule coverage** (`branchesWithSchedule`/
+  `totalBranches`). New `StatisticsEntity` fields (`branchesWithSchedule`,
+  `scheduledToday`, `upcomingShiftName`); `morningShiftEmployees`/
+  `nightShiftEmployees`/`currentShiftName` now mean "today, per the weekly
+  schedule." `StatisticsRepository.employeeStats` gained a `branchId` arg.
+
+### Notes
+- **Swap = single-slot handover**: the requester gives up one (week, day, shift)
+  cell; on manager approval they're removed and the target is added. Status-flow
+  order is enforced client-side (`ShiftSwapCubit`); the rules enforce *who* writes.
+- The Phase 2 `shift` foundation (`shifts/{shiftId}`) is **untouched** — the
+  weekly schedule is the production roster and supersedes the placeholder shift
+  screens for navigation. No notifications sender, no analytics engine (out of
+  scope).
+
+---
+
 ## 2026-06-15 — Phase 6: Operations Dashboards & Notifications
 
 Makes the app feel like a DROP THE SHOP operations center: live role-scoped

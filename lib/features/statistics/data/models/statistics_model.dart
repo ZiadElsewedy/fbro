@@ -8,7 +8,9 @@ class StatisticsModel {
   final int totalEmployees;
   final int pendingApprovals;
   final int branchesWithoutManagers;
+  final int branchesWithSchedule;
   final int employeesInBranch;
+  final int scheduledToday;
   final int morningShiftEmployees;
   final int nightShiftEmployees;
   final int dailyTasks;
@@ -22,6 +24,7 @@ class StatisticsModel {
   final int assignedTasks;
   final int pendingTasks;
   final String? currentShiftName;
+  final String? upcomingShiftName;
 
   const StatisticsModel({
     this.totalBranches = 0,
@@ -29,7 +32,9 @@ class StatisticsModel {
     this.totalEmployees = 0,
     this.pendingApprovals = 0,
     this.branchesWithoutManagers = 0,
+    this.branchesWithSchedule = 0,
     this.employeesInBranch = 0,
+    this.scheduledToday = 0,
     this.morningShiftEmployees = 0,
     this.nightShiftEmployees = 0,
     this.dailyTasks = 0,
@@ -43,6 +48,7 @@ class StatisticsModel {
     this.assignedTasks = 0,
     this.pendingTasks = 0,
     this.currentShiftName,
+    this.upcomingShiftName,
   });
 
   StatisticsEntity toEntity() => StatisticsEntity(
@@ -51,7 +57,9 @@ class StatisticsModel {
         totalEmployees: totalEmployees,
         pendingApprovals: pendingApprovals,
         branchesWithoutManagers: branchesWithoutManagers,
+        branchesWithSchedule: branchesWithSchedule,
         employeesInBranch: employeesInBranch,
+        scheduledToday: scheduledToday,
         morningShiftEmployees: morningShiftEmployees,
         nightShiftEmployees: nightShiftEmployees,
         dailyTasks: dailyTasks,
@@ -65,5 +73,6 @@ class StatisticsModel {
         assignedTasks: assignedTasks,
         pendingTasks: pendingTasks,
         currentShiftName: currentShiftName,
+        upcomingShiftName: upcomingShiftName,
       );
 }

@@ -1,0 +1,121 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fbro/core/enums/schedule_day.dart';
+import 'package:fbro/core/enums/schedule_shift.dart';
+import 'package:fbro/core/enums/swap_status.dart';
+import 'package:fbro/features/schedule/domain/entities/shift_swap_entity.dart';
+
+/// Firestore (de)serialization for [ShiftSwapEntity] — collection
+/// `shift_swaps/{id}`.
+class ShiftSwapModel {
+  final String id;
+  final String branchId;
+  final DateTime weekStart;
+  final ScheduleDay day;
+  final ScheduleShift shift;
+  final String requesterId;
+  final String? requesterName;
+  final String targetId;
+  final String? targetName;
+  final SwapStatus status;
+  final String? note;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const ShiftSwapModel({
+    required this.id,
+    required this.branchId,
+    required this.weekStart,
+    required this.day,
+    required this.shift,
+    required this.requesterId,
+    this.requesterName,
+    required this.targetId,
+    this.targetName,
+    this.status = SwapStatus.pending,
+    this.note,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory ShiftSwapModel.fromMap(Map<String, dynamic> map, {String? id}) =>
+      ShiftSwapModel(
+        id: id ?? map['id'] as String? ?? '',
+        branchId: map['branchId'] as String? ?? '',
+        weekStart:
+            (map['weekStart'] as Timestamp?)?.toDate() ?? DateTime(1970),
+        day: ScheduleDay.fromString(map['day'] as String?),
+        shift: ScheduleShift.fromString(map['shift'] as String?),
+        requesterId: map['requesterId'] as String? ?? '',
+        requesterName: map['requesterName'] as String?,
+        targetId: map['targetId'] as String? ?? '',
+        targetName: map['targetName'] as String?,
+        status: SwapStatus.fromString(map['status'] as String?),
+        note: map['note'] as String?,
+        createdAt: (map['createdAt'] as Timestamp?)?.toDate(),
+        updatedAt: (map['updatedAt'] as Timestamp?)?.toDate(),
+      );
+
+  factory ShiftSwapModel.fromEntity(ShiftSwapEntity e) => ShiftSwapModel(
+        id: e.id,
+        branchId: e.branchId,
+        weekStart: e.weekStart,
+        day: e.day,
+        shift: e.shift,
+        requesterId: e.requesterId,
+        requesterName: e.requesterName,
+        targetId: e.targetId,
+        targetName: e.targetName,
+        status: e.status,
+        note: e.note,
+        createdAt: e.createdAt,
+        updatedAt: e.updatedAt,
+      );
+
+  /// Persisted fields. `createdAt`/`updatedAt` are written by the datasource as
+  /// server timestamps, so they're intentionally not included here.
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'branchId': branchId,
+        'weekStart': Timestamp.fromDate(weekStart),
+        'day': day.value,
+        'shift': shift.value,
+        'requesterId': requesterId,
+        'requesterName': requesterName,
+        'targetId': targetId,
+        'targetName': targetName,
+        'status': status.value,
+        'note': note,
+      };
+
+  ShiftSwapModel copyWithId(String id) => ShiftSwapModel(
+        id: id,
+        branchId: branchId,
+        weekStart: weekStart,
+        day: day,
+        shift: shift,
+        requesterId: requesterId,
+        requesterName: requesterName,
+        targetId: targetId,
+        targetName: targetName,
+        status: status,
+        note: note,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      );
+
+  ShiftSwapEntity toEntity() => ShiftSwapEntity(
+        id: id,
+        branchId: branchId,
+        weekStart: weekStart,
+        day: day,
+        shift: shift,
+        requesterId: requesterId,
+        requesterName: requesterName,
+        targetId: targetId,
+        targetName: targetName,
+        status: status,
+        note: note,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      );
+}
