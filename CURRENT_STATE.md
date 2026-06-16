@@ -21,7 +21,7 @@
 | Authentication   | ✅ Complete    | Email, phone OTP, Google, verify, forgot/change pw, delete; landing = **Login** (social Welcome page removed) |
 | Account approval | ✅ Complete*   | New sign-ups seeded `pending` + inactive → **Pending Approval** screen; gate in router (`hasAppAccess`). *In-app approval UI (manager/admin) still pending — approve out of band (console) until Phase 5 |
 | Roles & routing  | ✅ Complete    | `UserRole` enum, role dispatch + guards; **admin ⊇ manager** hierarchy + branch-scoped access model (admin global · manager own-branch · employee self) |
-| Shifts (Phase 2) | 🟡 Foundation | `ShiftEntity`/`ShiftModel`/`ShiftRepository`/`ShiftRemoteDataSource` + `shifts/{shiftId}` rules. Data layer only; **superseded by the Weekly Schedule** (Phase 7) for production scheduling — placeholder shift screens no longer linked from the role chrome |
+| Shifts (Phase 2) | ❌ Removed (Phase 10) | The unused `shift` foundation (data/domain + placeholder screens + `shifts/{shiftId}` rules + `/admin\|manager/shifts`·`/my-shift` routes + DI) was **deleted** as dead code. The **Weekly Schedule** (Phase 7) is the production roster |
 | Weekly Schedule (Phase 7) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit` + manager editor / admin override / employee my-week view. Roster `day → morning/night → employees`; `weekly_schedules/{id}` rules. Reuses Role/Branch systems |
 | Shift Swap (Phase 7) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected |
 | Tasks (Phase 3–4, +Stabilization, +Phase 9) | ✅ Workflow + realtime + multi-assignee | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens (create·assign·start·complete+notes/proof·submit·review approve/reject), client-side status-transition rules, audit fields, proof upload, **live Firestore streams**, admin **branch dropdown**. **Phase 9:** **multiple assignees** (`assigneeIds[]`, replaces single `assignedEmployeeId` — kept as a mirror), optional **checklist** generated from a template + completion gate, **redesigned task cards** (avatars · name/role · checklist progress · glass cards), employee directory resolution |
@@ -54,12 +54,9 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
   router; approval became **admin-only** in Phase 6). New `ApprovalStatus` enum +
   `approvalStatus` user field + `AuthCubit.refreshUser` (polled by the pending
   screen).
-- **Phase 2 — Shift foundation** — new `shift` feature with full data + domain
-  (`ShiftEntity`/`ShiftModel`/`ShiftRepository(+Impl)`/`ShiftRemoteDataSource(+Impl)`),
-  `shifts/{shiftId}` Firestore rules (branch-scoped), three role placeholder
-  screens (`/admin/shifts`, `/manager/shifts`, `/my-shift`) reachable via a
-  Shifts icon in the role chrome, repo wired in DI. **No `ShiftCubit`/use cases
-  or real CRUD UI yet** (intentionally minimal — next phase).
+- **Phase 2 — Shift foundation** — *(deleted in Phase 10 as dead code; the weekly
+  schedule superseded it.)* Was a data+domain `shift` feature with placeholder
+  screens, never wired into a working UI.
 - **Phase 3 — Task foundation** — new `task` feature: data + domain
   (`TaskEntity`/`TaskModel`/`TaskRepository(+Impl)`/`TaskRemoteDataSource(+Impl)`),
   `TaskType`/`TaskStatus`/`TaskPriority` enums, `tasks/{taskId}` Firestore rules,
@@ -138,7 +135,23 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
   `app_search_field.dart`, `user_avatar.dart`. Schedule polished (coverage,
   shift badges, avatar chips — no logic change). `flutter analyze` clean (2
   pre-existing infos); 7 new unit tests pass.
-- **Action needed:** commit; deploy `firestore.rules` / `storage.rules` and
+- **Phase 10 — Production Hardening & QA (branch `claude/upbeat-knuth-7ch3wu`)**
+  — verification + stabilization + UI modernization (no new business modules; no
+  architecture change). **Cleanup:** deleted the dead Phase 2 `shift` feature
+  (folder + 3 routes + DI + `shiftsForRole` + `shiftsCollection` + `shifts/{id}`
+  rules), verified by `flutter analyze`. **Dashboards modernized** into a
+  command-center layout: Manager Home now leads with a "Needs attention" hero row
+  (waiting reviews · active tasks, tappable to the task screen) then grouped
+  Team/Shifts and Tasks sections; Employee Home leads with a premium glass
+  "Today's shift" card then a focused "Your tasks" grid. **Loading states:**
+  list screens (tasks · admin users · branches) now use a `ListSkeleton`
+  shimmer instead of a bare spinner. New shared widgets `dashboard_section.dart`
+  (`SectionHeader`, `HeroStatCard`) and `list_skeleton.dart`. **Audited** (by code
+  + tooling): auth/approval/role guards, task & schedule workflows, analytics
+  math, realtime/offline, error handling, and the **profile-upload** path (timeouts
+  + progress + error recovery — no freeze). `flutter analyze` clean (2 pre-existing
+  infos); 7 unit tests pass; `build_runner` consistent (0 stale outputs).
+- **Action needed:** deploy `firestore.rules` / `storage.rules` and
   enable Firebase Storage; bootstrap the first admin (set
   `role/approvalStatus/isActive` in the console) before production.
 
@@ -158,6 +171,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
 | adminTasks          | `/admin/tasks`               | `TaskManagementScreen`  | **admin**     |
 | managerTasks        | `/manager/tasks`             | `BranchTasksScreen`     | **manager** (+admin) |
 | myTasks             | `/my-tasks`                  | `MyTasksScreen`         | any approved auth (self) |
+| _(removed Phase 10)_ | ~~`/admin\|manager/shifts`, `/my-shift`~~ | — | Phase 2 shift screens deleted (dead code) |
 | adminSchedule       | `/admin/schedule`            | `ScheduleManagementScreen` | **admin**  |
 | managerSchedule     | `/manager/schedule`          | `BranchScheduleScreen`  | **manager** (+admin) |
 | mySchedule          | `/my-schedule`               | `MyScheduleScreen`      | any approved auth (self) |
@@ -278,24 +292,14 @@ Shared by the auth (`UserModel`) and profile (`ProfileModel`) layers.
 > Managers/employees belong to a branch via `users/{uid}.branchId` (single source
 > of truth for assignment).
 
-### Firestore schema — `shifts/{shiftId}` (Phase 2)
+### Firestore schema — `shifts/{shiftId}` (Phase 2 — REMOVED in Phase 10)
 
-| Field        | Type       | Notes                                                       |
-| ------------ | ---------- | ---------------------------------------------------------- |
-| `id`         | string     | mirrors the doc id (set on create)                         |
-| `name`       | string     | `morning` / `night` (free-form for future weekend/custom)  |
-| `startTime`  | string     | e.g. `08:30` (morning) / `16:30` (night)                   |
-| `endTime`    | string     | e.g. `16:30` (morning) / `23:00` (night)                   |
-| `branchId`   | string?    | owning branch (admin: any · manager: own branch)           |
-| `employeeId` | string?    | assigned employee uid; null while unassigned               |
-| `isActive`   | bool       | soft-disable (default `true`)                              |
-| `createdAt`, `updatedAt` | Timestamp | server timestamps written by the datasource     |
+The `shifts` collection, its rules, and the whole `shift` feature were deleted in
+Phase 10 (dead code, never consumed). The **weekly schedule**
+(`weekly_schedules`) is the production roster. `users/{uid}.assignedShift` and
+`tasks.assignedShiftId` remain as nullable strings (unused).
 
-> V1 has two shifts — **Morning** (08:30→16:30) and **Night** (16:30→23:00/00:00).
-> Times/`name` are strings so weekend & custom shifts add later with no schema
-> change. Branch/role access is enforced by `firestore.rules` (`shifts/{shiftId}`).
-
-### Firestore schema — `tasks/{taskId}` (Phase 3)
+### Firestore schema — `tasks/{taskId}` (Phase 3, +Phase 9 multi-assignee)
 
 | Field                | Type       | Notes                                                  |
 | -------------------- | ---------- | ----------------------------------------------------- |
@@ -428,17 +432,12 @@ week's Sunday), so a week is addressed directly without a query.
   `EmployeeHomeScreen`) are still functional placeholders — their shifts/tasks
   live behind the Shifts/Tasks icons in the role chrome. The **Admin** shell is
   the full admin module (Phase 5).
-- **Orphaned Phase 2 shift placeholders (recommended cleanup).** The `shift`
-  feature is now fully **dead code**: the 3 placeholder screens (`/admin/shifts`,
-  `/manager/shifts`, `/my-shift`) are unreachable from the UI (the role-chrome
-  calendar icon opens the weekly Schedule), `AppDependencies.shiftRepository` is
-  registered but never consumed (stats moved to `weekly_schedules` in Phase 7),
-  and `RouteNames.shiftsForRole` is unused. They still contain "arrives in a later
-  phase" prototype text and are reachable by manual deep-link. **Left intact in the
-  stabilization pass** (deleting a whole feature exceeds a minimal audit's scope);
-  recommended for removal in a focused cleanup PR. The shift-visibility requirement
-  is fully met by the Weekly Schedule (employee My Week · manager branch schedule ·
-  admin all branches).
+- ~~Orphaned Phase 2 shift placeholders~~ **REMOVED (Phase 10).** The entire
+  `shift` feature (`features/shift/`, the 3 placeholder screens + routes,
+  `RouteNames.shiftsForRole`, `AppDependencies.shiftRepository`,
+  `AppConstants.shiftsCollection`, and the `shifts/{shiftId}` rules) was deleted
+  as verified dead code. The shift-visibility requirement is fully met by the
+  Weekly Schedule (employee My Week · manager branch schedule · admin all branches).
 - **Real-time: tasks (push) + everything else (reload-after-mutation).**
   **Tasks are now fully streamed** (`TaskRepository.watch*` → `TaskCubit`): an
   assigned task or status change appears on every open client immediately

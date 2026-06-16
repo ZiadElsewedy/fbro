@@ -8,6 +8,7 @@ import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/app_search_field.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
+import 'package:fbro/core/widgets/list_skeleton.dart';
 import 'package:fbro/features/admin/presentation/cubit/admin_users_cubit.dart';
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
 import 'package:fbro/features/branch/presentation/cubit/branch_cubit.dart';
@@ -158,7 +159,7 @@ class _BranchManagementScreenState extends State<BranchManagementScreen> {
               listener: (context, state) =>
                   state.whenOrNull(error: (m) => AppSnackbar.error(context, m)),
               builder: (context, state) => state.maybeWhen(
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => const ListSkeleton(),
                 loaded: (branches, busy) => _list(branches, busy),
                 orElse: () => const SizedBox.shrink(),
               ),

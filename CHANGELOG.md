@@ -28,6 +28,60 @@ and [Semantic Versioning](https://semver.org).
 
 ---
 
+## 2026-06-16 — Phase 10: Production Hardening & QA
+
+A verification, stabilization and UI-modernization pass for a production beta —
+**no new business modules, no architecture change**. Reuses the existing
+navigation, Clean Architecture, repositories and theme.
+
+### Removed (cleanup — verified dead code)
+- **The entire Phase 2 `shift` feature.** It was never consumed (no `ShiftCubit`/
+  use cases; screens unreachable from the role chrome; `AppDependencies.
+  shiftRepository` registered but unused; `RouteNames.shiftsForRole` never
+  called). Deleted: `lib/features/shift/`, the `/admin|manager/shifts` + `/my-shift`
+  routes (+ imports) in `app_router.dart`, the shift route constants +
+  `shiftsForRole` in `route_names.dart`, the shift wiring in `injection.dart`,
+  `AppConstants.shiftsCollection`, and the `shifts/{shiftId}` block in
+  `firestore.rules`. The weekly **schedule** (Phase 7) is the production roster;
+  `users/{uid}.assignedShift` and `tasks.assignedShiftId` remain as harmless
+  nullable strings. Verified with `flutter analyze` (clean).
+
+### Changed (UI modernization — same navigation/architecture)
+- **Manager dashboard** restructured into a command-center: a "Needs attention"
+  hero row (**Waiting reviews** + **Active tasks**, tappable to the task screen,
+  accent when non-zero), then grouped **Team & shifts today** and **Tasks**
+  sections with `SectionHeader`s.
+- **Employee dashboard** leads with a premium glass **Today's shift** card
+  (shift icon + next-shift line) then a focused **Your tasks** grid — reduced
+  clutter.
+- **Loading states**: the task / admin-user / branch list screens now show a
+  shimmering `ListSkeleton` on first load instead of a bare spinner.
+- New shared widgets: `dashboard_section.dart` (`SectionHeader`, `HeroStatCard`)
+  and `list_skeleton.dart` (both reuse the existing theme + `Skeleton`).
+
+### Verified (by code audit + tooling — see honest limitations)
+- **Auth / approval / roles**: register → pending (real-time `watchUser`) →
+  admin approve (role + branch) → role dispatch; router redirect gates approval
+  before role, and `_isAdminArea`/`_isManagerArea` guards (incl. the new
+  `/admin/analytics`) bounce cross-role access.
+- **Tasks**: create / from-template (checklist generated) / edit / delete /
+  assign one·many·whole-team / checklist completion gate / proof upload / review;
+  lists are live streams; rules are query-compatible (`assigneeIds arrayContains`).
+- **Schedule + swaps**, **analytics math** (admin/manager/employee), **offline**
+  (Firestore persistence + reload-after-mutation), and **profile upload**
+  (60 s/20 s timeouts + progress + error recovery → never freezes).
+- `flutter analyze` clean (2 pre-existing infos only); 7 unit tests pass;
+  `build_runner` regenerates with 0 stale outputs.
+
+### Notes / honest limitations
+- Flutter UI can't be rendered/clicked in this environment, so UI work was kept
+  to safe, deterministic, theme-consistent changes verified by `flutter analyze`
+  and logic tests — not an on-device visual pass. `firestore.rules` /
+  `storage.rules` were edited but **not deployed** here. No commit was made this
+  phase (per the phase's git rules).
+
+---
+
 ## 2026-06-16 — Phase 9: Task UX, Admin UX & Design Overhaul
 
 A premium-operations redesign pass: checklist task templates, multi-assignee

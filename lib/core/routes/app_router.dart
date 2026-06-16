@@ -11,9 +11,6 @@ import 'package:fbro/features/auth/presentation/pages/pending_approval_page.dart
 import 'package:fbro/features/admin/presentation/pages/admin_shell.dart';
 import 'package:fbro/features/manager/presentation/pages/manager_shell.dart';
 import 'package:fbro/features/employee/presentation/pages/employee_shell.dart';
-import 'package:fbro/features/shift/presentation/pages/shift_management_screen.dart';
-import 'package:fbro/features/shift/presentation/pages/branch_shift_screen.dart';
-import 'package:fbro/features/shift/presentation/pages/my_shift_screen.dart';
 import 'package:fbro/features/task/presentation/pages/task_management_screen.dart';
 import 'package:fbro/features/task/presentation/pages/branch_tasks_screen.dart';
 import 'package:fbro/features/task/presentation/pages/my_tasks_screen.dart';
@@ -144,32 +141,8 @@ GoRouter createRouter(AuthCubit authCubit) {
           const ManagerShell(),
         ),
       ),
-      // ─── Shifts (Phase 2) ──────────────────────────────────────
-      // Guarded by the existing area guards: /admin/shifts is admin-only,
-      // /manager/shifts admits manager + admin; /my-shift is self-scoped.
-      GoRoute(
-        path: RouteNames.adminShifts,
-        pageBuilder: (context, state) => _slideTransition(
-          state,
-          const ShiftManagementScreen(),
-        ),
-      ),
-      GoRoute(
-        path: RouteNames.managerShifts,
-        pageBuilder: (context, state) => _slideTransition(
-          state,
-          const BranchShiftScreen(),
-        ),
-      ),
-      GoRoute(
-        path: RouteNames.myShift,
-        pageBuilder: (context, state) => _slideTransition(
-          state,
-          const MyShiftScreen(),
-        ),
-      ),
       // ─── Tasks (Phase 3) ───────────────────────────────────────
-      // Guarded like shifts: /admin/tasks is admin-only, /manager/tasks admits
+      // Guarded like the rest: /admin/tasks is admin-only, /manager/tasks admits
       // manager + admin; /my-tasks is self-scoped.
       GoRoute(
         path: RouteNames.adminTasks,

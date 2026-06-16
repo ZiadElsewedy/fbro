@@ -6,6 +6,7 @@ import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/app_search_field.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
+import 'package:fbro/core/widgets/list_skeleton.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/admin/presentation/cubit/admin_users_cubit.dart';
 import 'package:fbro/features/admin/presentation/cubit/admin_users_state.dart';
@@ -115,7 +116,7 @@ class _AdminUsersListViewState extends State<AdminUsersListView> {
               listener: (context, state) =>
                   state.whenOrNull(error: (m) => AppSnackbar.error(context, m)),
               builder: (context, state) => state.maybeWhen(
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => const ListSkeleton(),
                 loaded: (users, busy) => _list(users, busy),
                 orElse: () => const SizedBox.shrink(),
               ),

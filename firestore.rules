@@ -75,19 +75,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Shifts (Phase 2) ───────────────────────────────────────────
-    // Branch-scoped: admin = all branches; manager = own branch; employee =
-    // their own assigned shift (read-only). A shift carries `branchId` (owning
-    // branch) and `employeeId` (the assignee).
-    //   read   — admin/own-branch manager, OR the assigned employee.
-    //   write  — admin/own-branch manager only (employees can't edit).
-    match /shifts/{shiftId} {
-      allow read: if canReachBranch(resource.data.get('branchId', ''))
-        || resource.data.get('employeeId', '') == request.auth.uid;
-      allow create: if canReachBranch(request.resource.data.get('branchId', ''));
-      allow update, delete: if canReachBranch(resource.data.get('branchId', ''));
-    }
-
     // ── Tasks (Phase 3, +Phase 9 multi-assignee) ───────────────────
     // Branch-scoped: admin = all branches; manager = own branch; employee =
     // tasks they're assigned to. A task carries `branchId` (owning branch) and

@@ -10,6 +10,7 @@ import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
+import 'package:fbro/core/widgets/list_skeleton.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
@@ -79,7 +80,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         listener: (context, state) =>
             state.whenOrNull(error: (m) => AppSnackbar.error(context, m)),
         builder: (context, state) => state.maybeWhen(
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const ListSkeleton(),
           loaded: (tasks, busy, directory) => _list(tasks, busy, directory),
           orElse: () => const SizedBox.shrink(),
         ),
