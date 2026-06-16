@@ -41,6 +41,15 @@
 	<string>D R O P needs access to your camera so you can take a profile picture.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>D R O P needs access to your photos so you can set a profile picture and cover image.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<!--
+		  Required by Firebase Phone Auth: the OTP request is verified with a
+		  silent (content-available) APNs push, which the app must be able to
+		  receive in the background.
+		-->
+		<string>remote-notification</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

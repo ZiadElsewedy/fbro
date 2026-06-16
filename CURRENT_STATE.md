@@ -9,8 +9,8 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-16
-**Version:** 1.0.0+1 · **Branch:** `claude/upbeat-knuth-7ch3wu` (Phase 9)
+**Last updated:** 2026-06-17
+**Version:** 1.0.0+1 · **Branch:** `feature/ui-redesign` (Phase 11)
 
 ---
 
@@ -18,7 +18,7 @@
 
 | Module           | Status        | Notes                                                          |
 | ---------------- | ------------- | ------------------------------------------------------------- |
-| Authentication   | ✅ Complete    | Email, phone OTP, Google, verify, forgot/change pw, delete; landing = **Login** (social Welcome page removed) |
+| Authentication   | ✅ Complete    | Email, phone OTP, Google, verify, forgot/change pw, delete; landing = **Login** (social Welcome page removed). **Phase 11:** premium **Pinput** OTP (autofocus · paste · iOS autofill · auto-submit · error/resend states), hardened OTP/phone error mapping, and the **iOS Phone Auth silent-push fix** (Push + Background Modes capabilities) |
 | Account approval | ✅ Complete*   | New sign-ups seeded `pending` + inactive → **Pending Approval** screen; gate in router (`hasAppAccess`). *In-app approval UI (manager/admin) still pending — approve out of band (console) until Phase 5 |
 | Roles & routing  | ✅ Complete    | `UserRole` enum, role dispatch + guards; **admin ⊇ manager** hierarchy + branch-scoped access model (admin global · manager own-branch · employee self) |
 | Shifts (Phase 2) | ❌ Removed (Phase 10) | The unused `shift` foundation (data/domain + placeholder screens + `shifts/{shiftId}` rules + `/admin\|manager/shifts`·`/my-shift` routes + DI) was **deleted** as dead code. The **Weekly Schedule** (Phase 7) is the production roster |
@@ -151,9 +151,33 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
   math, realtime/offline, error handling, and the **profile-upload** path (timeouts
   + progress + error recovery — no freeze). `flutter analyze` clean (2 pre-existing
   infos); 7 unit tests pass; `build_runner` consistent (0 stale outputs).
+- **Phase 11 — Authentication Experience & OTP Hardening (branch `feature/ui-redesign`)**
+  — auth made production-grade with no backend/architecture change. **iOS OTP
+  root-cause fix:** added the **Push Notifications** capability
+  (`ios/Runner/Runner.entitlements` + `CODE_SIGN_ENTITLEMENTS` in all 3 Runner
+  configs + `SystemCapabilities`) and **Background Modes / remote-notification**
+  (`Info.plist` `UIBackgroundModes`) so Firebase Phone Auth's **silent APNs push**
+  can be delivered — the missing pieces behind the
+  `canHandleNotification`/swizzling warning. Firebase **method swizzling left
+  ENABLED** (documented in `AppDelegate.swift`) — it forwards the APNs token +
+  silent push to FirebaseAuth/FirebaseMessaging (Firebase's recommended setup with
+  `firebase_messaging` present). **UX:** rebuilt the Phone/OTP screen with
+  **`pinput`** (autofocus · paste · iOS one-time-code autofill · per-cell scale
+  animation · auto-submit · red error state + resend), enlarged Login/Register
+  logos, kept the monochrome DROP system; removed the old `otp_input.dart`.
+  **Error handling** extended in `auth_remote_datasource.dart` (iOS app-verification
+  codes + `quota-exceeded`/`missing-verification-*`). `flutter analyze` clean (2
+  pre-existing infos); 7 tests pass; plists/pbxproj lint OK. **Still requires
+  out-of-band:** fix the **iOS bundle-id mismatch** (`com.ziadelsewedy.fbro` app
+  vs `com.example.fbro` Firebase registration), **upload an APNs key**, and enable
+  **Phone** sign-in — see Known gaps.
 - **Action needed:** deploy `firestore.rules` / `storage.rules` and
   enable Firebase Storage; bootstrap the first admin (set
-  `role/approvalStatus/isActive` in the console) before production.
+  `role/approvalStatus/isActive` in the console) before production. **Phase 11
+  (iOS OTP):** register the real iOS bundle id `com.ziadelsewedy.fbro` in Firebase
+  + replace `GoogleService-Info.plist` (or revert the Xcode bundle id to
+  `com.example.fbro`), **upload an APNs auth key**, enable **Phone** sign-in, and
+  test OTP on a **real iPhone** (silent push is unavailable on the Simulator).
 
 ---
 
@@ -205,6 +229,16 @@ landing is **Login** (the social Welcome page was removed).
 ## Backend / Firebase status
 
 - **Firebase Auth** — configured & working: Email/Password, Phone, Google.
+  **iOS Phone Auth (Phase 11):** the app now ships the **Push Notifications** +
+  **Background Modes (remote-notification)** capabilities required for the silent
+  APNs verification push (`ios/Runner/Runner.entitlements`, `Info.plist`,
+  `project.pbxproj`). Firebase method swizzling forwards the push (left enabled by
+  design). **Two console/signing steps remain** before OTP works on a device:
+  (1) the iOS app must be registered in Firebase under the **real bundle id
+  `com.ziadelsewedy.fbro`** (currently `com.example.fbro` — a mismatch that
+  prevents the silent push from being delivered), and (2) an **APNs Authentication
+  Key** must be uploaded (Project settings → Cloud Messaging). Test on a **real
+  iPhone** — the Simulator can't receive APNs.
 - **Cloud Firestore** — in use. **Offline persistence enabled** (stabilization):
   `Settings(persistenceEnabled: true, cacheSizeBytes: CACHE_SIZE_UNLIMITED)` set
   in `main.dart` — cached reads, writes queued + synced on reconnect, no crashes
@@ -426,8 +460,21 @@ week's Sunday), so a week is addressed directly without a query.
   **emitting** the events (task assigned, waiting review, new registration, …)
   requires a server trigger. With no Node.js/Cloud Functions in scope, a sender
   (Cloud Function or external) is the remaining piece. FCM also needs native
-  setup: **APNs key + Push capability (iOS)**; Android works via `google-services`.
+  setup: the **Push Notifications + Background Modes capabilities are now in the
+  iOS project (Phase 11)**; what remains is uploading the **APNs key** to Firebase
+  (also required by Phone Auth) and fixing the **iOS bundle-id mismatch** (see the
+  Phone Auth note above). Android works via `google-services`.
   `NotificationType` documents the event contract for whatever sends them.
+
+- **iOS Phone Auth / OTP (Phase 11) — two out-of-band steps to finish.** The
+  native blockers (Push capability, Background Modes, notification forwarding) are
+  fixed **in code**. Before OTP succeeds on a real iPhone you must: (1) reconcile
+  the **bundle id** — the app is signed as `com.ziadelsewedy.fbro` but Firebase /
+  `GoogleService-Info.plist` / `firebase_options.dart` say `com.example.fbro`;
+  register the real id in Firebase + replace the plist (re-run `flutterfire
+  configure`) or revert the Xcode bundle id; and (2) **upload an APNs auth key**
+  and enable **Phone** sign-in. For **release/Play** Android builds, also add the
+  release + Play-App-Signing **SHA-1/SHA-256** in the console.
 - **Manager / Employee home dashboards** (`ManagerHomeScreen` /
   `EmployeeHomeScreen`) are still functional placeholders — their shifts/tasks
   live behind the Shifts/Tasks icons in the role chrome. The **Admin** shell is

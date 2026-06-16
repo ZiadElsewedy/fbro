@@ -28,6 +28,88 @@ and [Semantic Versioning](https://semver.org).
 
 ---
 
+## 2026-06-17 — Phase 11: Authentication Experience & OTP Hardening
+
+Makes authentication production-grade — a premium OTP experience plus the
+**iOS native fix for the Firebase Phone Auth silent-push failure** (the
+"remote notifications … need to be forwarded to FirebaseAuth's
+canHandleNotification" error). **No backend/architecture change**: reuses the
+existing `AuthCubit` → use cases → `AuthRepository` → datasource flow.
+
+### Fixed — iOS Phone Auth (root cause, not suppressed)
+- **Push Notifications capability was missing.** Firebase Phone Auth verifies
+  each OTP request with a **silent APNs push**; without the `aps-environment`
+  entitlement the device never registers for remote notifications, the silent
+  push never arrives, and FirebaseAuth logs the swizzling/`canHandleNotification`
+  warning before failing. Added **`ios/Runner/Runner.entitlements`**
+  (`aps-environment`) and wired **`CODE_SIGN_ENTITLEMENTS`** into all three
+  Runner build configs (Debug/Release/Profile) in
+  `ios/Runner.xcodeproj/project.pbxproj`, plus the **Push** + **Background Modes**
+  entries under the target's `SystemCapabilities`.
+- **Background Modes / remote-notification was missing.** Added
+  **`UIBackgroundModes` → `remote-notification`** to `ios/Runner/Info.plist` so
+  the app can receive the silent verification push in the background.
+- **Notification forwarding** — documented in `AppDelegate.swift` that Firebase
+  **method swizzling is intentionally left ENABLED** (no
+  `FirebaseAppDelegateProxyEnabled = NO`): swizzling is what forwards the APNs
+  token + silent notification to `FirebaseAuth`/`FirebaseMessaging`, which is
+  Firebase's official recommendation when `firebase_messaging` is also present
+  (manually overriding the callbacks while swizzling is on would double-handle
+  the push). The warning was caused by the missing capabilities above, not by
+  absent forwarding code.
+
+### Added
+- **`pinput` (6.0.2)** — premium 6-box OTP input on the Phone/OTP screen with
+  **auto-focus**, **paste**, **iOS one-time-code autofill** (QuickType bar),
+  per-cell **scale animation**, a monochrome focused/submitted theme, and a red
+  **error state** (`forceErrorState`, driven off `AuthState.error` with haptics).
+  Android continues to auto-verify via Firebase's `verificationCompleted`
+  (instant verification) — already wired in the datasource.
+- **Auto-submit** — the OTP verifies the instant all six digits are entered or
+  autofilled (the Verify button remains as a manual fallback). **Resend** keeps
+  the existing 60-second cooldown and now clears the field + refocuses.
+
+### Changed
+- **OTP/phone error handling hardened** in `auth_remote_datasource.dart`:
+  `_resolveOtpError` now also maps `missing-verification-code`,
+  `missing-verification-id`, `quota-exceeded`, `user-disabled`; `_resolvePhoneError`
+  adds the iOS app-verification codes (`missing-client-identifier`,
+  `invalid-app-credential`, `missing-app-credential`, `app-not-authorized`,
+  `captcha-check-failed`, `web-context-cancelled/-already-presented`,
+  `internal-error`) — each surfaced as an actionable message instead of a raw code.
+- **Login / Register** logo enlarged (52 → 64); the Phone & OTP screens now lead
+  with the **DROP** logo. Kept the monochrome (black & white) DROP design system.
+
+### Removed
+- The hand-rolled **`otp_input.dart`** widget (superseded by `pinput`).
+
+### Verified
+- `flutter analyze` clean (only the 2 pre-existing `prefer_initializing_formals`
+  infos); 7 unit tests pass; `pinput` is pure-Dart (no `pod install` needed). iOS
+  plists + `project.pbxproj` lint OK (`plutil -lint`).
+
+### ⚠️ Required out-of-band actions (cannot be done from code)
+- **iOS bundle-id mismatch (blocks OTP on device).** The app's real bundle id is
+  **`com.ziadelsewedy.fbro`** (Xcode, signed with team `7Q3PY75VGH`), but the
+  Firebase iOS app / `GoogleService-Info.plist` / `firebase_options.dart` are
+  registered as **`com.example.fbro`**. Firebase sends the silent push to the
+  registered bundle id, so it never reaches the running app. **Fix:** register
+  `com.ziadelsewedy.fbro` as an iOS app in Firebase, download its
+  `GoogleService-Info.plist`, and re-run `flutterfire configure` (or, as a
+  shortcut, set the Xcode bundle id back to `com.example.fbro`).
+- **Upload an APNs Authentication Key** to Firebase (Project settings → Cloud
+  Messaging) for the iOS app, and ensure **Phone** is enabled in Authentication →
+  Sign-in method. In Xcode, **Push Notifications** + **Background Modes
+  (Remote notifications)** now appear from the committed capabilities; build on a
+  **real device** (silent push doesn't work on the Simulator).
+- **Android** is consistent (`google-services.json` package = `applicationId` =
+  `com.example.fbro`, with a SHA-1 registered). For **release/Play** builds, add
+  the **release keystore SHA-1 + SHA-256** (and the Play App Signing SHA-256) in
+  the Firebase console so Phone Auth (Play Integrity) and Google Sign-In work in
+  production.
+
+---
+
 ## 2026-06-16 — Phase 10: Production Hardening & QA
 
 A verification, stabilization and UI-modernization pass for a production beta —

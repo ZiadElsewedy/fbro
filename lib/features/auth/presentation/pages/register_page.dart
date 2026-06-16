@@ -65,7 +65,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
                 const FadeSlideTransition(
                   delay: Duration(milliseconds: 30),
-                  child: DropLogo(height: 52),
+                  child: DropLogo(height: 64),
                 ),
 
                 const SizedBox(height: AppSpacing.xxl),

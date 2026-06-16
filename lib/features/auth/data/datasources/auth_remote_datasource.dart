@@ -173,13 +173,30 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       case 'invalid-phone-number':
         return 'The phone number is not valid. Please include the country code.';
       case 'too-many-requests':
-        return 'Too many attempts. Please wait before trying again.';
+        return 'Too many attempts. Please wait a few minutes before trying again.';
       case 'quota-exceeded':
-        return 'SMS quota exceeded. Please try again later.';
+        return 'SMS limit reached for now. Please try again later.';
       case 'network-request-failed':
         return 'Network error. Check your connection and try again.';
       case 'operation-not-allowed':
         return 'Phone sign-in is not enabled. Contact support.';
+      // iOS app-verification (silent APNs push / reCAPTCHA) failures. These
+      // surface when push notifications / APNs aren't fully configured for the
+      // device — give the user an actionable message instead of a raw code.
+      case 'missing-client-identifier':
+      case 'invalid-app-credential':
+      case 'missing-app-credential':
+        return "Couldn't verify the app on this device. Make sure you're online "
+            'and try again.';
+      case 'app-not-authorized':
+        return 'This app is not authorized to use phone sign-in. Contact support.';
+      case 'captcha-check-failed':
+        return 'App verification failed. Please try again.';
+      case 'web-context-cancelled':
+      case 'web-context-already-presented':
+        return 'Verification was cancelled. Please try again.';
+      case 'internal-error':
+        return 'Something went wrong sending the code. Please try again.';
       default:
         return message ?? 'Verification failed. Please try again.';
     }
@@ -207,11 +224,18 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     switch (code) {
       case 'invalid-verification-code':
         return 'The code you entered is incorrect. Please try again.';
+      case 'missing-verification-code':
+        return 'Enter the 6-digit code we sent you.';
       case 'invalid-verification-id':
+      case 'missing-verification-id':
       case 'session-expired':
         return 'This code has expired. Please request a new one.';
       case 'too-many-requests':
         return 'Too many attempts. Please wait and try again.';
+      case 'quota-exceeded':
+        return 'Verification limit reached. Please try again later.';
+      case 'user-disabled':
+        return 'This account has been disabled. Contact support.';
       case 'network-request-failed':
         return 'Network error. Check your connection and try again.';
       default:

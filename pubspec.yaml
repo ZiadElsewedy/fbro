@@ -50,6 +50,9 @@ dependencies:
   # Media
   image_picker: ^1.1.2
 
+  # Auth UI — premium OTP input (autofocus · paste · SMS autofill)
+  pinput: ^6.0.2
+
   # Storage
   flutter_secure_storage: ^9.2.2
 

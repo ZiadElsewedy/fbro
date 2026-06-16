@@ -55,6 +55,7 @@ design system.
 | Backend            | Firebase: Auth, Cloud Firestore, Storage, Google Sign-In    |
 | Immutable models   | `freezed` + `freezed_annotation` (entities & states)        |
 | Media              | `image_picker`                                              |
+| OTP input          | `pinput` (premium 6-box OTP — autofocus · paste · autofill) |
 | Secure storage     | `flutter_secure_storage`                                    |
 | Codegen            | `build_runner`, `freezed`, `json_serializable`             |
 | Dart SDK           | `^3.12.1`                                                   |
@@ -432,6 +433,8 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | You want to change…                       | Edit here                                                                 |
 | ----------------------------------------- | ------------------------------------------------------------------------ |
 | **Auth screens / UI**                     | `lib/features/auth/presentation/pages/` + `.../widgets/`                  |
+| **Phone / OTP screen (Pinput)**           | `lib/features/auth/presentation/pages/phone_otp_page.dart` (`pinput`: autofocus · paste · iOS autofill · auto-submit · error/resend). Phone/OTP error copy in `auth_remote_datasource.dart` (`_resolvePhoneError`/`_resolveOtpError`) |
+| **iOS Phone Auth / silent APNs push (OTP)** | `ios/Runner/Runner.entitlements` (`aps-environment`) · `ios/Runner/Info.plist` (`UIBackgroundModes` → `remote-notification`) · `ios/Runner.xcodeproj/project.pbxproj` (`CODE_SIGN_ENTITLEMENTS` ×3 + `SystemCapabilities` Push/BackgroundModes) · `ios/Runner/AppDelegate.swift` (swizzling left **enabled** — forwards token + `canHandleNotification`). Console: APNs key + matching bundle id (see CURRENT_STATE) |
 | **Auth logic / flow / state**             | `lib/features/auth/presentation/cubit/auth_cubit.dart` + `auth_state.dart` |
 | **A new auth action**                     | add `domain/usecases/`, a method on `AuthRepository(+Impl)`, a datasource method, wire in `auth_cubit.dart` **and** `core/di/injection.dart` |
 | **Firebase Auth / Google calls**          | `lib/features/auth/data/datasources/auth_remote_datasource.dart`         |
