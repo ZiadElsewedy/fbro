@@ -1,5 +1,5 @@
 name: fbro
-description: "A new Flutter project."
+description: "FBRO — role-based branch / shift operations app."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -44,6 +44,7 @@ dependencies:
   firebase_auth: ^5.3.1
   cloud_firestore: ^5.4.4
   firebase_storage: ^12.3.2
+  firebase_messaging: ^15.1.3
   google_sign_in: ^6.2.1
 
   # Media
@@ -77,6 +78,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/drop_logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

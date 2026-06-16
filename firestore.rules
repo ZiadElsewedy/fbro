@@ -1,0 +1,194 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // The signed-in user's own document — their role/branch live here. Firestore
+    // caches this get() per request, so repeated calls bill a single read.
+    function selfDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function selfRole()   { return isSignedIn() ? selfDoc().get('role', 'employee') : 'none'; }
+    function selfBranch() { return selfDoc().get('branchId', ''); }
+
+    function isAdmin()   { return isSignedIn() && selfRole() == 'admin'; }
+    function isManager() { return isSignedIn() && selfRole() == 'manager'; }
+
+    // Branch scoping. Admin is global (any branch); a manager reaches only their
+    // own branch. Employees never reach a whole branch — only their own data.
+    function canReachBranch(branch) {
+      return isAdmin() || (isManager() && branch == selfBranch());
+    }
+
+    // ── Users ──────────────────────────────────────────────────────
+    // Self: read own doc + limited self-update (cannot touch privileged fields,
+    //   but may write non-privileged fields like the FCM token).
+    // Branch members: read users in their OWN branch — their team. Managers see
+    //   their team; employees (Phase 7) see the coworkers on their shift + their
+    //   manager (the weekly schedule stores uids, resolved to names here). Read
+    //   only — only an admin writes user accounts.
+    // Admin: read/write everything — approvals, promotions, branch moves,
+    //   (de)activation. **Account approval is admin-only (Phase 6).**
+    match /users/{uid} {
+      allow read: if isOwner(uid)
+        || isAdmin()
+        || (selfBranch() != ''
+            && resource.data.get('branchId', '') == selfBranch());
+
+      // Self-registration only — always as a PENDING, INACTIVE employee. A new
+      // account cannot use the app until an ADMIN approves it (update below).
+      // Promotion to manager/admin, branch assignment and activation are never
+      // self-service.
+      allow create: if isOwner(uid)
+        && request.resource.data.get('role', 'employee') == 'employee'
+        && request.resource.data.get('isActive', false) == false
+        && request.resource.data.get('approvalStatus', 'pending') == 'pending';
+
+      // Admin: full control — approve/reject, promote, move branch, (de)activate.
+      // Self: profile-only updates — all privileged fields stay frozen (role,
+      //   isActive, branchId, assignedShift, approvalStatus). Non-privileged
+      //   fields (profile data, fcmToken) are free to change.
+      // Managers do NOT write user docs (they manage branch operations only).
+      allow update: if isAdmin()
+        || (isOwner(uid)
+            && request.resource.data.get('role', 'employee')
+                 == resource.data.get('role', 'employee')
+            && request.resource.data.get('isActive', true)
+                 == resource.data.get('isActive', true)
+            && request.resource.data.get('branchId', '')
+                 == resource.data.get('branchId', '')
+            && request.resource.data.get('assignedShift', '')
+                 == resource.data.get('assignedShift', '')
+            && request.resource.data.get('approvalStatus', 'approved')
+                 == resource.data.get('approvalStatus', 'approved'));
+
+      // Deactivate via isActive (an admin update), never a hard delete; document
+      // cleanup on account removal belongs to a Cloud Function.
+      allow delete: if false;
+    }
+
+    // ── Shifts (Phase 2) ───────────────────────────────────────────
+    // Branch-scoped: admin = all branches; manager = own branch; employee =
+    // their own assigned shift (read-only). A shift carries `branchId` (owning
+    // branch) and `employeeId` (the assignee).
+    //   read   — admin/own-branch manager, OR the assigned employee.
+    //   write  — admin/own-branch manager only (employees can't edit).
+    match /shifts/{shiftId} {
+      allow read: if canReachBranch(resource.data.get('branchId', ''))
+        || resource.data.get('employeeId', '') == request.auth.uid;
+      allow create: if canReachBranch(request.resource.data.get('branchId', ''));
+      allow update, delete: if canReachBranch(resource.data.get('branchId', ''));
+    }
+
+    // ── Tasks (Phase 3) ────────────────────────────────────────────
+    // Branch-scoped: admin = all branches; manager = own branch; employee =
+    // their own assigned tasks. A task carries `branchId` (owning branch) and
+    // `assignedEmployeeId` (the assignee).
+    //   read   — admin/own-branch manager, OR the assigned employee.
+    //   create/delete — admin/own-branch manager only.
+    //   update — admin/own-branch manager (full edit, incl. approve/reject), OR
+    //            the assigned employee on their OWN task with limits: they may
+    //            NOT reassign, move branch, change the creator, or set the
+    //            terminal approved/rejected status (review stays manager/admin).
+    match /tasks/{taskId} {
+      allow read: if canReachBranch(resource.data.get('branchId', ''))
+        || resource.data.get('assignedEmployeeId', '') == request.auth.uid;
+
+      allow create: if canReachBranch(request.resource.data.get('branchId', ''));
+
+      allow update: if canReachBranch(resource.data.get('branchId', ''))
+        || (resource.data.get('assignedEmployeeId', '') == request.auth.uid
+            && request.resource.data.get('assignedEmployeeId', '')
+                 == resource.data.get('assignedEmployeeId', '')
+            && request.resource.data.get('branchId', '')
+                 == resource.data.get('branchId', '')
+            && request.resource.data.get('createdBy', '')
+                 == resource.data.get('createdBy', '')
+            && request.resource.data.get('status', 'pending') != 'approved'
+            && request.resource.data.get('status', 'pending') != 'rejected'
+            // employees can't forge review attribution
+            && request.resource.data.get('approvedBy', '')
+                 == resource.data.get('approvedBy', '')
+            && request.resource.data.get('rejectedBy', '')
+                 == resource.data.get('rejectedBy', ''));
+
+      allow delete: if canReachBranch(resource.data.get('branchId', ''));
+    }
+
+    // ── Task templates (stabilization) ─────────────────────────────
+    // Reusable task blueprints ("Open Shop", "Night Checklist", …) managed by
+    // managers/admins. A template carries a `branchId` (owning branch) or '' for
+    // a GLOBAL template (admin-made, usable by every branch). Employees never
+    // need templates.
+    //   read   — any admin or manager (branch filtering is applied client-side;
+    //            the collection is tiny, so a full read is acceptable and a
+    //            collection query stays provably safe under this rule).
+    //   create — admin (any branch / global), OR an own-branch manager.
+    //   update/delete — admin, OR the owning-branch manager.
+    match /task_templates/{templateId} {
+      allow read: if isAdmin() || isManager();
+      allow create: if isAdmin()
+        || (isManager()
+            && request.resource.data.get('branchId', '') == selfBranch());
+      allow update, delete: if isAdmin()
+        || (isManager() && resource.data.get('branchId', '') == selfBranch());
+    }
+
+    // ── Branches (Phase 5) ─────────────────────────────────────────
+    // Any signed-in user may READ branches (names are shown in pickers and on
+    // cards across roles). Only an admin may create/edit. "Delete" is a soft
+    // delete (an admin update setting `deletedAt`), so hard deletes are denied.
+    match /branches/{branchId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ── Weekly schedules (Phase 7) ─────────────────────────────────
+    // The in-app weekly roster, one doc per (branch, week). Branch-scoped:
+    //   read   — admin/own-branch manager, OR any employee of that branch (so
+    //            they can see their own schedule + today's team).
+    //   write  — admin/own-branch manager only (employees never edit; swaps are
+    //            applied by the manager on approval).
+    match /weekly_schedules/{scheduleId} {
+      // `resource == null` first: a `get()` on a not-yet-created week's doc must
+      // return an empty snapshot (no schedule), not a permission error — the app
+      // reads a deterministic week id that often doesn't exist yet. For existing
+      // docs, scope by branch (admin/own-branch manager, or any branch employee).
+      allow read: if resource == null
+        || canReachBranch(resource.data.get('branchId', ''))
+        || resource.data.get('branchId', '') == selfBranch();
+      allow create: if canReachBranch(request.resource.data.get('branchId', ''));
+      allow update, delete: if canReachBranch(resource.data.get('branchId', ''));
+    }
+
+    // ── Shift swaps (Phase 7) ──────────────────────────────────────
+    // A swap request between two employees, approved by the branch manager.
+    //   read   — admin/own-branch manager, OR the requester/target employee.
+    //   create — the requester themself, for a swap in their own branch.
+    //   update — admin/own-branch manager (approve/reject), OR either involved
+    //            employee (coworker approve / requester cancel / decline). The
+    //            exact status flow is validated client-side (ShiftSwapCubit).
+    //   delete — admin/own-branch manager only.
+    match /shift_swaps/{swapId} {
+      allow read: if canReachBranch(resource.data.get('branchId', ''))
+        || resource.data.get('requesterId', '') == request.auth.uid
+        || resource.data.get('targetId', '') == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.get('requesterId', '') == request.auth.uid
+        && request.resource.data.get('branchId', '') == selfBranch();
+      allow update: if canReachBranch(resource.data.get('branchId', ''))
+        || resource.data.get('requesterId', '') == request.auth.uid
+        || resource.data.get('targetId', '') == request.auth.uid;
+      allow delete: if canReachBranch(resource.data.get('branchId', ''));
+    }
+  }
+}

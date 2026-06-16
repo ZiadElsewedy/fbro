@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:fbro/core/enums/user_role.dart';
+import 'package:fbro/core/enums/approval_status.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 
 class UserModel {
@@ -11,6 +13,13 @@ class UserModel {
   final String authProvider;
   final bool isEmailVerified;
   final DateTime? createdAt;
+  // ─── Roles & foundation (Phase 1) ───────────────────────────
+  final UserRole role;
+  final String? branchId;
+  final bool isActive;
+  final String? assignedShift;
+  // ─── Approval (account activation) ──────────────────────────
+  final ApprovalStatus approvalStatus;
 
   const UserModel({
     required this.uid,
@@ -21,6 +30,11 @@ class UserModel {
     this.phoneNumber,
     this.isEmailVerified = false,
     this.createdAt,
+    this.role = UserRole.employee,
+    this.branchId,
+    this.isActive = true,
+    this.assignedShift,
+    this.approvalStatus = ApprovalStatus.approved,
   });
 
   factory UserModel.fromFirebaseUser(User user, {String authProvider = 'unknown'}) =>
@@ -43,6 +57,11 @@ class UserModel {
         authProvider: entity.authProvider,
         isEmailVerified: entity.isEmailVerified,
         createdAt: entity.createdAt,
+        role: entity.role,
+        branchId: entity.branchId,
+        isActive: entity.isActive,
+        assignedShift: entity.assignedShift,
+        approvalStatus: entity.approvalStatus,
       );
 
   factory UserModel.fromMap(Map<String, dynamic> map) => UserModel(
@@ -54,8 +73,18 @@ class UserModel {
         authProvider: map['authProvider'] as String? ?? 'unknown',
         isEmailVerified: map['isEmailVerified'] as bool? ?? false,
         createdAt: (map['createdAt'] as Timestamp?)?.toDate(),
+        role: UserRole.fromString(map['role'] as String?),
+        branchId: map['branchId'] as String?,
+        isActive: map['isActive'] as bool? ?? true,
+        assignedShift: map['assignedShift'] as String?,
+        approvalStatus: ApprovalStatus.fromString(map['approvalStatus'] as String?),
       );
 
+  /// Identity/auth fields written on every sign-in (merge). The privileged
+  /// fields (`role`, `branchId`, `isActive`, `assignedShift`, `approvalStatus`)
+  /// are intentionally EXCLUDED here so a routine re-login can never overwrite an
+  /// admin-assigned role/branch or re-pend an approved account. Those are seeded
+  /// once on first document creation — see [UserRemoteDataSourceImpl.saveUser].
   Map<String, dynamic> toMap() => {
         'uid': uid,
         'email': email,
@@ -75,5 +104,10 @@ class UserModel {
         authProvider: authProvider,
         isEmailVerified: isEmailVerified,
         createdAt: createdAt,
+        role: role,
+        branchId: branchId,
+        isActive: isActive,
+        assignedShift: assignedShift,
+        approvalStatus: approvalStatus,
       );
 }

@@ -24,7 +24,24 @@ mixin _$UserEntity {
   String? get photoUrl => throw _privateConstructorUsedError;
   String? get phoneNumber => throw _privateConstructorUsedError;
   bool get isEmailVerified => throw _privateConstructorUsedError;
-  DateTime? get createdAt => throw _privateConstructorUsedError;
+  DateTime? get createdAt =>
+      throw _privateConstructorUsedError; // ─── Roles & foundation (Phase 1) ───────────────────────────
+  /// Access role; drives navigation + route guards. Defaults to [UserRole.employee].
+  UserRole get role => throw _privateConstructorUsedError;
+
+  /// Store branch the user belongs to. Assigned by an admin; null until then.
+  String? get branchId => throw _privateConstructorUsedError;
+
+  /// Soft-disable flag: a user can be deactivated without deletion.
+  bool get isActive => throw _privateConstructorUsedError;
+
+  /// Shift assigned to the user (used from Phase 2 onward); null until then.
+  String? get assignedShift =>
+      throw _privateConstructorUsedError; // ─── Approval (account activation) ──────────────────────────
+  /// Where the account sits in the approval lifecycle. New self-registrations
+  /// start [ApprovalStatus.pending]; a manager/admin approves them. Defaults to
+  /// [ApprovalStatus.approved] so legacy documents are never locked out.
+  ApprovalStatus get approvalStatus => throw _privateConstructorUsedError;
 
   /// Create a copy of UserEntity
   /// with the given fields replaced by the non-null parameter values.
@@ -49,6 +66,11 @@ abstract class $UserEntityCopyWith<$Res> {
     String? phoneNumber,
     bool isEmailVerified,
     DateTime? createdAt,
+    UserRole role,
+    String? branchId,
+    bool isActive,
+    String? assignedShift,
+    ApprovalStatus approvalStatus,
   });
 }
 
@@ -75,6 +97,11 @@ class _$UserEntityCopyWithImpl<$Res, $Val extends UserEntity>
     Object? phoneNumber = freezed,
     Object? isEmailVerified = null,
     Object? createdAt = freezed,
+    Object? role = null,
+    Object? branchId = freezed,
+    Object? isActive = null,
+    Object? assignedShift = freezed,
+    Object? approvalStatus = null,
   }) {
     return _then(
       _value.copyWith(
@@ -110,6 +137,26 @@ class _$UserEntityCopyWithImpl<$Res, $Val extends UserEntity>
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
                       as DateTime?,
+            role: null == role
+                ? _value.role
+                : role // ignore: cast_nullable_to_non_nullable
+                      as UserRole,
+            branchId: freezed == branchId
+                ? _value.branchId
+                : branchId // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            isActive: null == isActive
+                ? _value.isActive
+                : isActive // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            assignedShift: freezed == assignedShift
+                ? _value.assignedShift
+                : assignedShift // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            approvalStatus: null == approvalStatus
+                ? _value.approvalStatus
+                : approvalStatus // ignore: cast_nullable_to_non_nullable
+                      as ApprovalStatus,
           )
           as $Val,
     );
@@ -134,6 +181,11 @@ abstract class _$$UserEntityImplCopyWith<$Res>
     String? phoneNumber,
     bool isEmailVerified,
     DateTime? createdAt,
+    UserRole role,
+    String? branchId,
+    bool isActive,
+    String? assignedShift,
+    ApprovalStatus approvalStatus,
   });
 }
 
@@ -159,6 +211,11 @@ class __$$UserEntityImplCopyWithImpl<$Res>
     Object? phoneNumber = freezed,
     Object? isEmailVerified = null,
     Object? createdAt = freezed,
+    Object? role = null,
+    Object? branchId = freezed,
+    Object? isActive = null,
+    Object? assignedShift = freezed,
+    Object? approvalStatus = null,
   }) {
     return _then(
       _$UserEntityImpl(
@@ -194,6 +251,26 @@ class __$$UserEntityImplCopyWithImpl<$Res>
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
                   as DateTime?,
+        role: null == role
+            ? _value.role
+            : role // ignore: cast_nullable_to_non_nullable
+                  as UserRole,
+        branchId: freezed == branchId
+            ? _value.branchId
+            : branchId // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        isActive: null == isActive
+            ? _value.isActive
+            : isActive // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        assignedShift: freezed == assignedShift
+            ? _value.assignedShift
+            : assignedShift // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        approvalStatus: null == approvalStatus
+            ? _value.approvalStatus
+            : approvalStatus // ignore: cast_nullable_to_non_nullable
+                  as ApprovalStatus,
       ),
     );
   }
@@ -201,7 +278,7 @@ class __$$UserEntityImplCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$UserEntityImpl implements _UserEntity {
+class _$UserEntityImpl extends _UserEntity {
   const _$UserEntityImpl({
     required this.uid,
     required this.email,
@@ -211,7 +288,12 @@ class _$UserEntityImpl implements _UserEntity {
     this.phoneNumber,
     this.isEmailVerified = false,
     this.createdAt,
-  });
+    this.role = UserRole.employee,
+    this.branchId,
+    this.isActive = true,
+    this.assignedShift,
+    this.approvalStatus = ApprovalStatus.approved,
+  }) : super._();
 
   @override
   final String uid;
@@ -230,10 +312,35 @@ class _$UserEntityImpl implements _UserEntity {
   final bool isEmailVerified;
   @override
   final DateTime? createdAt;
+  // ─── Roles & foundation (Phase 1) ───────────────────────────
+  /// Access role; drives navigation + route guards. Defaults to [UserRole.employee].
+  @override
+  @JsonKey()
+  final UserRole role;
+
+  /// Store branch the user belongs to. Assigned by an admin; null until then.
+  @override
+  final String? branchId;
+
+  /// Soft-disable flag: a user can be deactivated without deletion.
+  @override
+  @JsonKey()
+  final bool isActive;
+
+  /// Shift assigned to the user (used from Phase 2 onward); null until then.
+  @override
+  final String? assignedShift;
+  // ─── Approval (account activation) ──────────────────────────
+  /// Where the account sits in the approval lifecycle. New self-registrations
+  /// start [ApprovalStatus.pending]; a manager/admin approves them. Defaults to
+  /// [ApprovalStatus.approved] so legacy documents are never locked out.
+  @override
+  @JsonKey()
+  final ApprovalStatus approvalStatus;
 
   @override
   String toString() {
-    return 'UserEntity(uid: $uid, email: $email, authProvider: $authProvider, displayName: $displayName, photoUrl: $photoUrl, phoneNumber: $phoneNumber, isEmailVerified: $isEmailVerified, createdAt: $createdAt)';
+    return 'UserEntity(uid: $uid, email: $email, authProvider: $authProvider, displayName: $displayName, photoUrl: $photoUrl, phoneNumber: $phoneNumber, isEmailVerified: $isEmailVerified, createdAt: $createdAt, role: $role, branchId: $branchId, isActive: $isActive, assignedShift: $assignedShift, approvalStatus: $approvalStatus)';
   }
 
   @override
@@ -254,7 +361,16 @@ class _$UserEntityImpl implements _UserEntity {
             (identical(other.isEmailVerified, isEmailVerified) ||
                 other.isEmailVerified == isEmailVerified) &&
             (identical(other.createdAt, createdAt) ||
-                other.createdAt == createdAt));
+                other.createdAt == createdAt) &&
+            (identical(other.role, role) || other.role == role) &&
+            (identical(other.branchId, branchId) ||
+                other.branchId == branchId) &&
+            (identical(other.isActive, isActive) ||
+                other.isActive == isActive) &&
+            (identical(other.assignedShift, assignedShift) ||
+                other.assignedShift == assignedShift) &&
+            (identical(other.approvalStatus, approvalStatus) ||
+                other.approvalStatus == approvalStatus));
   }
 
   @override
@@ -268,6 +384,11 @@ class _$UserEntityImpl implements _UserEntity {
     phoneNumber,
     isEmailVerified,
     createdAt,
+    role,
+    branchId,
+    isActive,
+    assignedShift,
+    approvalStatus,
   );
 
   /// Create a copy of UserEntity
@@ -279,7 +400,7 @@ class _$UserEntityImpl implements _UserEntity {
       __$$UserEntityImplCopyWithImpl<_$UserEntityImpl>(this, _$identity);
 }
 
-abstract class _UserEntity implements UserEntity {
+abstract class _UserEntity extends UserEntity {
   const factory _UserEntity({
     required final String uid,
     required final String email,
@@ -289,7 +410,13 @@ abstract class _UserEntity implements UserEntity {
     final String? phoneNumber,
     final bool isEmailVerified,
     final DateTime? createdAt,
+    final UserRole role,
+    final String? branchId,
+    final bool isActive,
+    final String? assignedShift,
+    final ApprovalStatus approvalStatus,
   }) = _$UserEntityImpl;
+  const _UserEntity._() : super._();
 
   @override
   String get uid;
@@ -306,7 +433,27 @@ abstract class _UserEntity implements UserEntity {
   @override
   bool get isEmailVerified;
   @override
-  DateTime? get createdAt;
+  DateTime? get createdAt; // ─── Roles & foundation (Phase 1) ───────────────────────────
+  /// Access role; drives navigation + route guards. Defaults to [UserRole.employee].
+  @override
+  UserRole get role;
+
+  /// Store branch the user belongs to. Assigned by an admin; null until then.
+  @override
+  String? get branchId;
+
+  /// Soft-disable flag: a user can be deactivated without deletion.
+  @override
+  bool get isActive;
+
+  /// Shift assigned to the user (used from Phase 2 onward); null until then.
+  @override
+  String? get assignedShift; // ─── Approval (account activation) ──────────────────────────
+  /// Where the account sits in the approval lifecycle. New self-registrations
+  /// start [ApprovalStatus.pending]; a manager/admin approves them. Defaults to
+  /// [ApprovalStatus.approved] so legacy documents are never locked out.
+  @override
+  ApprovalStatus get approvalStatus;
 
   /// Create a copy of UserEntity
   /// with the given fields replaced by the non-null parameter values.

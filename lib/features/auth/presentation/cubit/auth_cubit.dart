@@ -15,6 +15,7 @@ import 'package:fbro/features/auth/domain/usecases/check_email_verified.dart';
 import 'package:fbro/features/auth/domain/usecases/change_password.dart';
 import 'package:fbro/features/auth/domain/usecases/delete_account.dart';
 import 'package:fbro/features/auth/domain/repositories/auth_repository.dart';
+import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'auth_state.dart';
 
 class AuthCubit extends Cubit<AuthState> {
@@ -34,6 +35,7 @@ class AuthCubit extends Cubit<AuthState> {
   final DeleteAccount _deleteAccount;
 
   StreamSubscription? _authSub;
+  StreamSubscription? _userWatchSub;
 
   /// True while any auth action is in flight. Used to reject duplicate taps
   /// and concurrent requests (e.g. tapping Sign In then Google rapidly).
@@ -78,6 +80,59 @@ class AuthCubit extends Cubit<AuthState> {
     _listenToAuthChanges();
   }
 
+  /// Firebase-derived sign-ins (email/Google/OTP) only know the Auth profile,
+  /// which has no role. Re-read the Firestore document so the emitted
+  /// [AuthState.authenticated] carries the authoritative role/branch and the
+  /// router can dispatch to the correct role shell. Falls back to the Firebase
+  /// user if the read fails.
+  Future<UserEntity> _withStoredProfile(UserEntity fallback) async {
+    try {
+      final stored = await _getUser(fallback.uid);
+      return stored ?? fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  /// Re-reads the current user's Firestore document and re-emits
+  /// [AuthState.authenticated] so the router re-evaluates access. Used by the
+  /// Pending Approval screen to detect when a manager/admin has approved the
+  /// account (`approvalStatus` → approved, `isActive` → true) and let the user
+  /// through to their role shell without forcing a sign-out / sign-in.
+  Future<void> refreshUser() async {
+    final firebaseUser = _repository.currentUser;
+    if (firebaseUser == null) {
+      emit(const AuthState.unauthenticated());
+      return;
+    }
+    emit(AuthState.authenticated(await _withStoredProfile(firebaseUser)));
+  }
+
+  /// Live-watches the signed-in user's Firestore document and re-emits
+  /// [AuthState.authenticated] on every change — the real-time replacement for
+  /// polling on the Pending Approval screen: the instant an admin approves the
+  /// account (`approvalStatus` → approved, `isActive` → true), the router
+  /// redirects to the role shell with no re-login. Idempotent; pair with
+  /// [stopWatchingUser]. Backed by Firestore's offline cache, so it also serves
+  /// the last-known doc when offline.
+  void watchCurrentUser() {
+    final firebaseUser = _repository.currentUser;
+    if (firebaseUser == null) return;
+    _userWatchSub?.cancel();
+    _userWatchSub = _repository.watchUser(firebaseUser.uid).listen(
+      (user) {
+        if (user != null) emit(AuthState.authenticated(user));
+      },
+      onError: (_) {/* transient; the manual refresh button remains available */},
+    );
+  }
+
+  /// Stops the [watchCurrentUser] subscription (call on leaving the screen).
+  void stopWatchingUser() {
+    _userWatchSub?.cancel();
+    _userWatchSub = null;
+  }
+
   void _listenToAuthChanges() {
     _authSub = _repository.authStateChanges.listen((user) {
       if (user == null) {
@@ -96,7 +151,7 @@ class AuthCubit extends Cubit<AuthState> {
       if (!user.isEmailVerified) {
         emit(AuthState.awaitingEmailVerification(user));
       } else {
-        emit(AuthState.authenticated(user));
+        emit(AuthState.authenticated(await _withStoredProfile(user)));
       }
     } on AuthFailure catch (e) {
       emit(AuthState.error(e.message));
@@ -130,7 +185,7 @@ class AuthCubit extends Cubit<AuthState> {
     try {
       final user = await _signInWithGoogle();
       await _saveUser(user);
-      emit(AuthState.authenticated(user));
+      emit(AuthState.authenticated(await _withStoredProfile(user)));
     } on AuthFailure catch (e) {
       emit(AuthState.error(e.message));
     }
@@ -162,7 +217,7 @@ class AuthCubit extends Cubit<AuthState> {
         smsCode: smsCode,
       );
       await _saveUser(user);
-      emit(AuthState.authenticated(user));
+      emit(AuthState.authenticated(await _withStoredProfile(user)));
     } on AuthFailure catch (e) {
       emit(AuthState.error(e.message));
     }
@@ -192,7 +247,7 @@ class AuthCubit extends Cubit<AuthState> {
       final user = await _checkEmailVerified();
       if (user.isEmailVerified) {
         await _saveUser(user);
-        emit(AuthState.authenticated(user));
+        emit(AuthState.authenticated(await _withStoredProfile(user)));
       } else {
         emit(AuthState.awaitingEmailVerification(user));
       }
@@ -252,6 +307,7 @@ class AuthCubit extends Cubit<AuthState> {
   @override
   Future<void> close() {
     _authSub?.cancel();
+    _userWatchSub?.cancel();
     return super.close();
   }
 }

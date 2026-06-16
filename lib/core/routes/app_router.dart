@@ -2,13 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:fbro/features/auth/presentation/pages/splash_page.dart';
-import 'package:fbro/features/auth/presentation/pages/welcome_page.dart';
 import 'package:fbro/features/auth/presentation/pages/login_page.dart';
 import 'package:fbro/features/auth/presentation/pages/register_page.dart';
 import 'package:fbro/features/auth/presentation/pages/phone_otp_page.dart';
 import 'package:fbro/features/auth/presentation/pages/forgot_password_page.dart';
 import 'package:fbro/features/auth/presentation/pages/email_verification_page.dart';
-import 'package:fbro/features/home/presentation/pages/home_page.dart';
+import 'package:fbro/features/auth/presentation/pages/pending_approval_page.dart';
+import 'package:fbro/features/admin/presentation/pages/admin_shell.dart';
+import 'package:fbro/features/manager/presentation/pages/manager_shell.dart';
+import 'package:fbro/features/employee/presentation/pages/employee_shell.dart';
+import 'package:fbro/features/shift/presentation/pages/shift_management_screen.dart';
+import 'package:fbro/features/shift/presentation/pages/branch_shift_screen.dart';
+import 'package:fbro/features/shift/presentation/pages/my_shift_screen.dart';
+import 'package:fbro/features/task/presentation/pages/task_management_screen.dart';
+import 'package:fbro/features/task/presentation/pages/branch_tasks_screen.dart';
+import 'package:fbro/features/task/presentation/pages/my_tasks_screen.dart';
+import 'package:fbro/features/schedule/presentation/pages/schedule_management_screen.dart';
+import 'package:fbro/features/schedule/presentation/pages/branch_schedule_screen.dart';
+import 'package:fbro/features/schedule/presentation/pages/my_schedule_screen.dart';
+import 'package:fbro/features/branch/presentation/pages/branch_management_screen.dart';
+import 'package:fbro/features/admin/presentation/pages/manager_management_screen.dart';
+import 'package:fbro/features/admin/presentation/pages/employee_management_screen.dart';
+import 'package:fbro/features/admin/presentation/pages/pending_approvals_screen.dart';
 import 'package:fbro/features/profile/presentation/pages/profile_page.dart';
 import 'package:fbro/features/profile/presentation/pages/edit_profile_page.dart';
 import 'package:fbro/features/settings/presentation/pages/settings_page.dart';
@@ -26,18 +41,18 @@ GoRouter createRouter(AuthCubit authCubit) {
 
       final authState = authCubit.state;
 
-      final isAuthenticated = authState.maybeWhen(
-        authenticated: (_) => true,
-        orElse: () => false,
+      final user = authState.maybeWhen(
+        authenticated: (u) => u,
+        orElse: () => null,
       );
+      final isAuthenticated = user != null;
 
       final isAwaitingVerification = authState.maybeWhen(
         awaitingEmailVerification: (_) => true,
         orElse: () => false,
       );
 
-      final isOnAuthFlow = loc == RouteNames.welcome ||
-          loc == RouteNames.login ||
+      final isOnAuthFlow = loc == RouteNames.login ||
           loc == RouteNames.register ||
           loc == RouteNames.phone ||
           loc == RouteNames.forgotPassword;
@@ -48,13 +63,47 @@ GoRouter createRouter(AuthCubit authCubit) {
         return RouteNames.emailVerification;
       }
 
-      if (isAuthenticated && isOnAuthFlow) return RouteNames.home;
-      if (isAuthenticated && loc == RouteNames.emailVerification) {
-        return RouteNames.home;
+      if (isAuthenticated) {
+        // Approval gate (checked before role dispatch). FBRO is an internal ops
+        // system: an authenticated account that hasn't been approved — or has
+        // been deactivated — is confined to the Pending Approval screen until a
+        // manager/admin approves it. Sign-out is the only way off the screen.
+        if (!user.hasAppAccess) {
+          return loc == RouteNames.pendingApproval
+              ? null
+              : RouteNames.pendingApproval;
+        }
+
+        final roleHome = RouteNames.homeForRole(user.role);
+
+        // Role guard. Admin ⊇ manager: admin areas are admin-only, but manager
+        // areas admit admins too (admin can do everything a manager can). The
+        // employee home (/) is employee-only. Anyone landing in an area that
+        // isn't theirs (incl. manual URL hacking) is bounced to their own home.
+        // Shared routes (/profile, /settings) stay open to all roles.
+        if (_isAdminArea(loc) && !user.role.isAdmin) return roleHome;
+        if (_isManagerArea(loc) && !(user.role.isManager || user.role.isAdmin)) {
+          return roleHome;
+        }
+        if (loc == RouteNames.home && !user.role.isEmployee) {
+          return roleHome;
+        }
+
+        // Approved users never see the auth flow / verification / pending
+        // screens → bounce them to their role home.
+        if (isOnAuthFlow ||
+            loc == RouteNames.emailVerification ||
+            loc == RouteNames.pendingApproval) {
+          return roleHome;
+        }
+
+        return null;
       }
 
-      if (!isAuthenticated && !isAwaitingVerification && !isOnAuthFlow) {
-        if (loc != RouteNames.splash) return RouteNames.welcome;
+      // Unauthenticated → confine to the auth flow; the landing screen is Login
+      // (the old social Welcome page has been removed).
+      if (!isAwaitingVerification && !isOnAuthFlow) {
+        if (loc != RouteNames.splash) return RouteNames.login;
       }
 
       return null;
@@ -67,17 +116,133 @@ GoRouter createRouter(AuthCubit authCubit) {
         ),
       ),
       GoRoute(
-        path: RouteNames.welcome,
+        path: RouteNames.pendingApproval,
         pageBuilder: (context, state) => _fadeTransition(
           state,
-          const WelcomePage(),
+          const PendingApprovalPage(),
         ),
       ),
       GoRoute(
         path: RouteNames.home,
         pageBuilder: (context, state) => _fadeTransition(
           state,
-          const HomePage(),
+          const EmployeeShell(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.adminDashboard,
+        pageBuilder: (context, state) => _fadeTransition(
+          state,
+          const AdminShell(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.managerHome,
+        pageBuilder: (context, state) => _fadeTransition(
+          state,
+          const ManagerShell(),
+        ),
+      ),
+      // ─── Shifts (Phase 2) ──────────────────────────────────────
+      // Guarded by the existing area guards: /admin/shifts is admin-only,
+      // /manager/shifts admits manager + admin; /my-shift is self-scoped.
+      GoRoute(
+        path: RouteNames.adminShifts,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const ShiftManagementScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.managerShifts,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const BranchShiftScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.myShift,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const MyShiftScreen(),
+        ),
+      ),
+      // ─── Tasks (Phase 3) ───────────────────────────────────────
+      // Guarded like shifts: /admin/tasks is admin-only, /manager/tasks admits
+      // manager + admin; /my-tasks is self-scoped.
+      GoRoute(
+        path: RouteNames.adminTasks,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const TaskManagementScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.managerTasks,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const BranchTasksScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.myTasks,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const MyTasksScreen(),
+        ),
+      ),
+      // ─── Weekly schedule (Phase 7) ─────────────────────────────
+      // Guarded like tasks: /admin/schedule is admin-only, /manager/schedule
+      // admits manager + admin; /my-schedule is self-scoped (own branch).
+      GoRoute(
+        path: RouteNames.adminSchedule,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const ScheduleManagementScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.managerSchedule,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const BranchScheduleScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.mySchedule,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const MyScheduleScreen(),
+        ),
+      ),
+      // ─── Admin module (Phase 5) ────────────────────────────────
+      // All under /admin/*, covered by the admin-only `_isAdminArea` guard.
+      GoRoute(
+        path: RouteNames.adminBranches,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const BranchManagementScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.adminManagers,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const ManagerManagementScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.adminEmployees,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const EmployeeManagementScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.adminApprovals,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const PendingApprovalsScreen(),
         ),
       ),
       GoRoute(
@@ -188,6 +353,16 @@ CustomTransitionPage<void> _slideTransition(
         );
       },
     );
+
+/// True when [loc] is anywhere inside the admin area (`/admin` or `/admin/...`).
+bool _isAdminArea(String loc) =>
+    loc == RouteNames.adminDashboard ||
+    loc.startsWith('${RouteNames.adminDashboard}/');
+
+/// True when [loc] is anywhere inside the manager area (`/manager` or `/manager/...`).
+bool _isManagerArea(String loc) =>
+    loc == RouteNames.managerHome ||
+    loc.startsWith('${RouteNames.managerHome}/');
 
 class _AuthStateNotifier extends ChangeNotifier {
   _AuthStateNotifier(AuthCubit cubit) {
