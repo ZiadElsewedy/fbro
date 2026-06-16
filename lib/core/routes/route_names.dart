@@ -23,14 +23,6 @@ class RouteNames {
   static const String adminDashboard = '/admin';
   static const String managerHome = '/manager';
 
-  // ─── Shifts (Phase 2) ───────────────────────────────────────
-  // Admin/manager shift screens live under their role area so the existing
-  // `_isAdminArea` / `_isManagerArea` guards cover them; the employee shift
-  // screen is self-scoped (shows only the caller's own shift).
-  static const String adminShifts = '/admin/shifts';
-  static const String managerShifts = '/manager/shifts';
-  static const String myShift = '/my-shift';
-
   // ─── Tasks (Phase 3) ────────────────────────────────────────
   // Admin/manager task screens live under their role area so the existing
   // `_isAdminArea` / `_isManagerArea` guards cover them; the employee task
@@ -52,6 +44,7 @@ class RouteNames {
   static const String adminBranches = '/admin/branches';
   static const String adminManagers = '/admin/managers';
   static const String adminEmployees = '/admin/employees';
+  static const String adminAnalytics = '/admin/analytics';
   static const String adminApprovals = '/admin/approvals';
 
   /// The landing route for a given role, used by the router redirect and the
@@ -64,19 +57,6 @@ class RouteNames {
         return managerHome;
       case UserRole.employee:
         return home;
-    }
-  }
-
-  /// The shift screen for a given role (admin: all branches, manager: own
-  /// branch, employee: own shift). Used by the shared role chrome.
-  static String shiftsForRole(UserRole role) {
-    switch (role) {
-      case UserRole.admin:
-        return adminShifts;
-      case UserRole.manager:
-        return managerShifts;
-      case UserRole.employee:
-        return myShift;
     }
   }
 

@@ -21,7 +21,7 @@ currently ships a complete authentication system with an **account-approval
 gate** (new sign-ups start *pending* and can't use the app until a
 manager/admin approves them), a role system with role-based navigation + route
 guards (Phase 1), a production-ready user profile module, account settings, a
-**shift** foundation (Phase 2), a **task management workflow** (Phase 3–4):
+**task management workflow** (Phase 3–4):
 managers/admins create + assign tasks, employees execute them (start → complete
 → submit, with notes + proof image), and managers/admins review (approve /
 reject); an **admin management module** (Phase 5): branch CRUD, manager /
@@ -98,12 +98,11 @@ lib/
 │   ├── errors/               # exceptions.dart (data layer) / failures.dart (domain)
 │   ├── routes/               # app_router.dart (role dispatch + guards), route_names.dart
 │   ├── theme/                # app_colors / typography / spacing / radius / app_theme
-│   └── widgets/              # app_snackbar, drop_logo, skeleton, role_scaffold, role_placeholder
+│   └── widgets/              # app_snackbar, drop_logo, skeleton, role_scaffold, role_placeholder, user_avatar (+AvatarStack), app_motion (EntranceFade), app_search_field
 └── features/
     ├── auth/                 # Sign-in/up, phone OTP, Google, email verify, password, role, approval
     ├── profile/              # View + edit profile, image uploads, username checks
-    ├── shift/                # Shift data/domain (entity·model·repository·datasource) + role shift screens (Phase 2)
-    ├── task/                 # Task feature — data/domain + use cases + TaskCubit + functional role screens (Phase 3–4); realtime list streams + reusable task templates (Stabilization)
+    ├── task/                 # Task feature — data/domain + use cases + TaskCubit + functional role screens (Phase 3–4); realtime list streams + reusable templates (Stabilization); Phase 9 — multi-assignee (assigneeIds[]) + checklist templates + redesigned cards + assignee directory
     ├── branch/               # Branch feature — data/domain + BranchCubit + branch management (Phase 5)
     ├── admin/                # Admin module — user-admin data/domain + AdminUsersCubit + dashboard/managers/employees/approvals (Phase 5)
     ├── statistics/           # Statistics feature — entity/model/repo/datasource + StatisticsCubit; powers all 3 dashboards (Phase 6, +Phase 7 schedule figures)
@@ -119,9 +118,9 @@ lib/
 > shared `StatisticsCubit` (admin: global · manager: own branch · employee: own).
 >
 > The `task` (Phase 3–4), `branch` + `admin` (Phase 5), `statistics` (Phase 6)
-> and `schedule` (Phase 7) features are full vertical slices. The `shift` feature
-> (Phase 2) owns only data + domain with **placeholder screens** (no `ShiftCubit`)
-> and is **superseded** by `schedule` for production scheduling.
+> and `schedule` (Phase 7) features are full vertical slices. The Phase 2 `shift`
+> foundation was **removed in Phase 10** (dead code — never consumed; the weekly
+> `schedule` is the production roster).
 >
 > **Cubit→repository convention varies by feature:** `auth`/`profile`/`task`
 > cubits go through **use cases** for write actions; `branch`/`admin`/
@@ -235,30 +234,15 @@ Firestore users/{uid}          FirebaseAuth
   it falls back to the legacy `displayName`/`photoUrl` keys, and `editMap`
   keeps those legacy keys in sync on write.
 
-### Shift chain (Phase 2 — foundation only)
+### Shift chain (Phase 2 — REMOVED in Phase 10)
 
-```
-ShiftManagementScreen / BranchShiftScreen / MyShiftScreen   (presentation/pages)
-  (functional placeholders — NO ShiftCubit/use cases yet)
-                              ⋮  (next phase wires a ShiftCubit + use cases here)
-ShiftRepository (abstract)                                   (domain/repositories)
-        ↓   AppDependencies.shiftRepository  (composed in injection.dart)
-ShiftRepositoryImpl                                          (data/repositories)
-        ↓
-ShiftRemoteDataSource                                        (data/datasources)
-        ↓
-Cloud Firestore  shifts/{shiftId}
-```
-
-- The shift **data + domain** layers are complete (`ShiftEntity`, `ShiftModel`,
-  `ShiftRepository(+Impl)`, `ShiftRemoteDataSource(+Impl)`) and exposed via
-  `AppDependencies.shiftRepository`. Datasources throw `ServerException`; the
-  repository converts to `ServerFailure` and maps `ShiftModel → ShiftEntity`.
-- **No presentation logic yet** — the three role screens are placeholders. The
-  branch/role access model is enforced server-side in `firestore.rules`
-  (`shifts/{shiftId}`): admin = all branches, manager = own branch, employee =
-  their own assigned shift (read-only). The user's `assignedShift` (Phase 1)
-  references the assigned `shiftId`; the shift's `employeeId` references back.
+The Phase 2 `shift` foundation (`features/shift/`, `shifts/{shiftId}` collection +
+rules, `/admin|manager/shifts` + `/my-shift` routes, `RouteNames.shiftsForRole`,
+`AppDependencies.shiftRepository`, `AppConstants.shiftsCollection`) was **deleted
+in Phase 10**: it was never consumed (no `ShiftCubit`/use cases, screens
+unreachable from the chrome) and the **weekly `schedule` (Phase 7)** is the
+production roster. The `users/{uid}.assignedShift` and `tasks.assignedShiftId`
+fields remain as nullable strings (harmless, unused).
 
 ### Task chain (Phase 3–4 — full vertical slice)
 
@@ -316,13 +300,28 @@ Cloud Firestore  tasks/{taskId}   task_templates/{id}   Storage tasks/{id}/proof
   manager own branch, employee own assigned tasks with **limited writes** (may
   advance status / add notes / proof but may not reassign, change branch, or
   approve/reject). Proof images upload to Storage `tasks/{taskId}/proof.jpg`.
-- **Task templates** (`task_templates/{id}`): reusable blueprints ("Open Shop",
-  "Night Checklist") that **prefill** the task form so daily work isn't retyped.
-  Same `TaskCubit`/`TaskRepository` (no new cubit/DI): `templates` (branch-scoped
-  read, filtered client-side), `saveTemplate`, `deleteTemplate`. UI is a two-step
-  New Task chooser (Blank / From a template) + a Manage Templates sheet
-  (`task_template_sheets.dart`). A template holds only content (title/desc/
-  type/priority) + `branchId` (`''` = global, admin-made).
+- **Checklist templates** (`task_templates/{id}`): reusable **checklists** ("Open
+  Shop", "Close Shop") that **prefill** the task form *and generate the task's
+  checklist*. Same `TaskCubit`/`TaskRepository` (no new cubit/DI): `templates`
+  (branch-scoped read, filtered client-side), `saveTemplate`, `deleteTemplate`.
+  UI is a two-step New Task chooser (Blank / From a template) + a Manage Templates
+  sheet (`task_template_sheets.dart`) with a **checklist editor**. A template
+  holds content (title/desc/type/priority) + `checklistItems[]`
+  (`ChecklistItemTemplate`: id/title/isRequired) + `branchId` (`''` = global).
+- **Multi-assignee + checklist (Phase 9).** A task carries `assigneeIds[]`
+  (`TaskEntity`, replacing the single `assignedEmployeeId`, which `TaskModel`
+  keeps as a synced **primary mirror** for backward-compatible rules/stats) and a
+  `checklist` of `ChecklistItem`s (`checklist_item.dart`: id/title/isRequired/
+  completed/completedAt). The assign sheet is multi-select (one · many · whole
+  team) → `TaskCubit.assignEmployees(employeeIds)`; the employee query/stream and
+  `firestore.rules` use `assigneeIds arrayContains`. A task **cannot be completed
+  until every required checklist item is done** (`TaskEntity.requiredChecklist
+  Complete`, gated in `TaskCubit.completeTask`); employees tick items via
+  `TaskCubit.toggleChecklistItem`. `TaskCubit` also builds a per-branch **user
+  directory** (uid → `UserEntity`, via `GetUsersByBranch`) carried on
+  `TaskState.loaded` so cards render real avatars · names · roles (`UserAvatar`/
+  `AvatarStack`). Redesigned `task_card.dart` shows avatars + checklist progress +
+  status/priority; the manager review sheet shows checklist progress.
 
 ### Admin module chain (Phase 5)
 
@@ -442,11 +441,6 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Profile reads/writes / image uploads**  | `lib/features/profile/data/datasources/profile_remote_datasource.dart`   |
 | **Profile schema / serialization**        | `lib/features/profile/domain/entities/profile_entity.dart` + `data/models/profile_model.dart` (then run codegen) |
 | **Auth ⇄ Profile sync (name/avatar)**     | `lib/features/profile/data/repositories/profile_repository_impl.dart`    |
-| **Shift schema / serialization**          | `lib/features/shift/domain/entities/shift_entity.dart` + `data/models/shift_model.dart` (then run codegen) |
-| **Shift reads/writes (Firestore)**        | `lib/features/shift/data/datasources/shift_remote_datasource.dart`       |
-| **Shift repository contract / impl**      | `lib/features/shift/domain/repositories/shift_repository.dart` + `data/repositories/shift_repository_impl.dart` (wired in `core/di/injection.dart`) |
-| **Shift screens (admin/manager/employee)**| `lib/features/shift/presentation/pages/` (`shift_management_screen` · `branch_shift_screen` · `my_shift_screen`) |
-| **Shift routes / role entry point**       | `lib/core/routes/route_names.dart` (`adminShifts`/`managerShifts`/`myShift` + `shiftsForRole`) + `app_router.dart` + `role_scaffold.dart` (Shifts icon) |
 | **Task type/status/priority values**      | `lib/core/enums/task_type.dart` · `task_status.dart` · `task_priority.dart` |
 | **Task schema / serialization (incl. audit fields)** | `lib/features/task/domain/entities/task_entity.dart` + `data/models/task_model.dart` (then run codegen) |
 | **Task reads/writes / review / proof upload** | `lib/features/task/data/datasources/task_remote_datasource.dart` (Firestore + Storage `tasks/{id}/proof.jpg`) |
@@ -455,6 +449,12 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **A new task action**                     | add `domain/usecases/`, a `TaskRepository(+Impl)` method, a datasource method, wire in `task_cubit.dart` **and** `core/di/injection.dart` |
 | **Task screens (admin/manager/employee)** | `lib/features/task/presentation/pages/` (`my_tasks_screen` employee · `branch_tasks_screen`/`task_management_screen` → shared `widgets/manager_tasks_view.dart`) |
 | **Task UI actions (create/assign/review/complete) + card** | `lib/features/task/presentation/widgets/` (`task_action_sheets.dart`, `task_card.dart`, `task_empty_state.dart`) |
+| **Multi-assignee (assigneeIds[]) — schema/logic** | `task_entity.dart` (`assigneeIds`, `isAssigned`) + `task_model.dart` (writes `assigneeIds` + primary `assignedEmployeeId` mirror; reads with legacy fallback) → `assign_task.dart` use case → `TaskCubit.assignEmployees` → multi-select `_AssignSheet` in `task_action_sheets.dart`; rules `tasks/{id}` (`assigneeIds arrayContains`); stats `employeeStats` |
+| **Checklist (template + task) schema/logic** | `lib/features/task/domain/entities/checklist_item.dart` (`ChecklistItem` + `ChecklistItemTemplate`) + `task_template_entity.dart` (`checklistItems`, `buildTaskChecklist`) + `task_entity.dart` (`checklist`, `requiredChecklistComplete`/progress getters); serialization in `task_template_model.dart` / `task_model.dart`; completion gate + toggling in `TaskCubit` (`completeTask`/`toggleChecklistItem`); checklist editor in `task_template_sheets.dart` |
+| **Assignee identity on cards (uid → user)** | `TaskCubit` directory (`_ensureDirectory` via `GetUsersByBranch`) → `TaskState.loaded.directory` → `task_card.dart` (`resolveAssignees`, `_AssigneesRow`) |
+| **Reliable avatars (image + initials fallback)** | `lib/core/widgets/user_avatar.dart` (`UserAvatar`, `UserAvatar.fromUser`, `AvatarStack`, `avatarInitials`) — used by task cards, admin user cards, schedule chips/pickers |
+| **Card / list entrance motion** | `lib/core/widgets/app_motion.dart` (`EntranceFade`, `staggerDelay`) |
+| **Search box (admin lists)** | `lib/core/widgets/app_search_field.dart` (`AppSearchField`) |
 | **Admin task branch picker (dropdown, not free text)** | `task_action_sheets.dart` (`_BranchDropdown`) ← `TaskCubit.branches()` ← `BranchRepository` (wired into `TaskCubit` in `injection.dart`) |
 | **Task realtime list streams**            | `TaskRepository.watch{AllTasks,TasksByBranch,EmployeeTasks}` (+impl + `TaskRemoteDataSource`) → `TaskCubit.load` subscribes by role |
 | **Task templates (schema / serialization)** | `lib/features/task/domain/entities/task_template_entity.dart` + `data/models/task_template_model.dart` (then run codegen) |
@@ -476,7 +476,12 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Schedule/swap DI wiring**               | `lib/core/di/injection.dart` (`scheduleCubit`/`shiftSwapCubit`) + `main.dart` providers |
 | **Dashboard screens (live stats)**        | `lib/features/admin/presentation/pages/admin_dashboard_screen.dart` · `manager/.../manager_home_screen.dart` · `employee/.../employee_home_screen.dart` (+ shared `statistics/presentation/widgets/stat_grid.dart` — `StatGrid` + `StatGridSkeleton` loading placeholder) |
 | **Push notifications (FCM)**              | `lib/core/services/notification_service.dart` + `core/enums/notification_type.dart`; wired in `main.dart` (background handler, init, token register on auth, foreground snackbar) |
-| **Admin routes**                          | `lib/core/routes/route_names.dart` (`adminBranches`/`adminManagers`/`adminEmployees`/`adminApprovals`) + `app_router.dart` (under `_isAdminArea`) |
+| **Admin routes**                          | `lib/core/routes/route_names.dart` (`adminBranches`/`adminManagers`/`adminEmployees`/`adminAnalytics`/`adminApprovals`) + `app_router.dart` (under `_isAdminArea`) |
+| **Admin Home (4 KPIs) / module nav**      | `lib/features/admin/presentation/pages/admin_dashboard_screen.dart` (KPI cards + nav tiles) |
+| **Admin Analytics (full metric wall)**    | `lib/features/admin/presentation/pages/admin_analytics_screen.dart` (route `/admin/analytics`; reuses `StatGrid`) |
+| **Branches page (premium cards + search)**| `lib/features/branch/presentation/pages/branch_management_screen.dart` (manager + employee counts via `AdminUsersCubit.usersWithRole`) |
+| **Admin user cards / search + filters**   | `admin_user_card.dart` (avatar-led) · `admin_users_list_view.dart` (search, Managers/Approvals) · `employee_management_screen.dart` (search + active/inactive + branch) |
+| **Schedule UI polish (badges/avatars/coverage)** | `lib/features/schedule/presentation/widgets/manager_schedule_view.dart` + `schedule_helpers.dart` (`userForUid`) + `pages/my_schedule_screen.dart` (no logic change) |
 | **Admin/branch DI wiring**                | `lib/core/di/injection.dart` (`branchCubit`/`adminUsersCubit`/`adminStatsCubit`) + `main.dart` providers |
 | **A role's home/dashboard screen**        | `lib/features/{employee,manager,admin}/presentation/pages/`              |
 | **Shared role chrome / placeholder**      | `lib/core/widgets/role_scaffold.dart` · `role_placeholder.dart`         |
@@ -629,11 +634,15 @@ Patterns below are established across the codebase and **must be reused**.
   non-privileged fields like `fcmToken`.)
 - **Enforcement** lives in `firestore.rules`: reusable `isAdmin()`/`isManager()`/
   `selfBranch()`/`canReachBranch(branch)` helpers read the requester's own user
-  doc. **`shifts/{shiftId}` (Phase 2)** and **`tasks/{taskId}` (Phase 3)** are
-  the branch-scoped collections wired to `canReachBranch()` (admin all · manager
-  own-branch · employee own assigned data). Shifts are employee read-only; tasks
-  additionally allow the **assigned employee a limited self-update** (advance
-  status / add notes / proof, but not reassign, move branch, or approve/reject).
+  doc. **`tasks/{taskId}` (Phase 3, +Phase 9 multi-assignee)** is the
+  branch-scoped collection wired to `canReachBranch()` (admin all · manager
+  own-branch · employee own assigned data). Tasks
+  allow the **assigned employee a limited self-update** (advance
+  status / tick checklist items / add notes / proof, but not reassign, move
+  branch, or approve/reject); the assignee check is `request.auth.uid in
+  assigneeIds` (Phase 9, legacy `assignedEmployeeId` fallback).
+  (The Phase 2 `shifts/{shiftId}` rules were removed in Phase 10 with the shift
+  feature.)
   **`task_templates/{id}` (Stabilization)** are manager/admin-readable reusable
   blueprints; create/update/delete are admin (global/any) or own-branch manager —
   employees never read them. **`branches/{branchId}` (Phase 5)** is admin-write /

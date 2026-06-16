@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+import 'package:fbro/core/routes/route_names.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:fbro/features/statistics/domain/entities/statistics_entity.dart';
 import 'package:fbro/features/statistics/presentation/cubit/statistics_cubit.dart';
 import 'package:fbro/features/statistics/presentation/cubit/statistics_state.dart';
+import 'package:fbro/features/statistics/presentation/widgets/dashboard_section.dart';
 import 'package:fbro/features/statistics/presentation/widgets/stat_grid.dart';
 
-/// Manager dashboard (Phase 6): live operational stats for the manager's own
-/// branch. Shifts/tasks management lives behind the role-chrome icons.
+/// Manager dashboard (Phase 6, +Phase 10 command-center layout): the manager's
+/// own-branch operations at a glance — what needs attention first (active tasks,
+/// waiting reviews), then team & today's shifts, then task breakdown.
 class ManagerHomeScreen extends StatefulWidget {
   const ManagerHomeScreen({super.key});
 
@@ -41,13 +46,11 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
       child: ListView(
         padding: const EdgeInsets.all(AppSpacing.pagePadding),
         children: [
-          Text('Branch overview', style: AppTypography.h3),
-          const SizedBox(height: AppSpacing.md),
           BlocBuilder<StatisticsCubit, StatisticsState>(
             builder: (context, state) => state.maybeWhen(
-              loaded: (s) => StatGrid(items: _items(s)),
-              error: (m) => _errorCard(m),
-              orElse: () => const StatGridSkeleton(count: 10),
+              loaded: (s) => _content(s),
+              error: (m) => _ErrorCard(message: m),
+              orElse: () => const _LoadingSkeleton(),
             ),
           ),
         ],
@@ -55,25 +58,92 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
     );
   }
 
-  List<StatItem> _items(StatisticsEntity s) => [
-        StatItem('Employees', '${s.employeesInBranch}', Icons.groups_outlined),
-        StatItem('Scheduled today', '${s.scheduledToday}',
-            Icons.event_available_outlined),
-        StatItem('Morning today', '${s.morningShiftEmployees}',
-            Icons.wb_sunny_outlined),
-        StatItem('Night today', '${s.nightShiftEmployees}',
-            Icons.nightlight_outlined),
-        StatItem('Active tasks', '${s.activeTasks}', Icons.assignment_outlined),
-        StatItem('Waiting reviews', '${s.waitingReviews}',
-            Icons.rate_review_outlined),
-        StatItem('Completed today', '${s.completedTasksToday}',
-            Icons.task_alt_outlined),
-        StatItem('Rejected tasks', '${s.rejectedTasks}', Icons.cancel_outlined),
-        StatItem('Daily tasks', '${s.dailyTasks}', Icons.event_repeat_outlined),
-        StatItem('Special tasks', '${s.specialTasks}', Icons.star_outline_rounded),
-      ];
+  Widget _content(StatisticsEntity s) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHeader('Needs attention'),
+        EntranceFade(
+          child: Row(
+            children: [
+              Expanded(
+                child: HeroStatCard(
+                  label: 'Waiting reviews',
+                  value: '${s.waitingReviews}',
+                  icon: Icons.rate_review_outlined,
+                  highlight: s.waitingReviews > 0,
+                  onTap: () => context.push(RouteNames.managerTasks),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: HeroStatCard(
+                  label: 'Active tasks',
+                  value: '${s.activeTasks}',
+                  icon: Icons.assignment_outlined,
+                  onTap: () => context.push(RouteNames.managerTasks),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        const SectionHeader('Team & shifts today'),
+        EntranceFade(
+          delay: staggerDelay(1),
+          child: StatGrid(items: [
+            StatItem('Employees', '${s.employeesInBranch}',
+                Icons.groups_outlined),
+            StatItem('Scheduled today', '${s.scheduledToday}',
+                Icons.event_available_outlined),
+            StatItem('Morning shift', '${s.morningShiftEmployees}',
+                Icons.wb_sunny_outlined),
+            StatItem('Night shift', '${s.nightShiftEmployees}',
+                Icons.nightlight_outlined),
+          ]),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        const SectionHeader('Tasks'),
+        EntranceFade(
+          delay: staggerDelay(2),
+          child: StatGrid(items: [
+            StatItem('Completed today', '${s.completedTasksToday}',
+                Icons.task_alt_outlined),
+            StatItem('Rejected', '${s.rejectedTasks}', Icons.cancel_outlined),
+            StatItem('Daily', '${s.dailyTasks}', Icons.event_repeat_outlined),
+            StatItem('Special', '${s.specialTasks}',
+                Icons.star_outline_rounded),
+          ]),
+        ),
+      ],
+    );
+  }
+}
 
-  Widget _errorCard(String message) {
+class _LoadingSkeleton extends StatelessWidget {
+  const _LoadingSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeader('Needs attention'),
+        StatGridSkeleton(count: 2),
+        SizedBox(height: AppSpacing.xl),
+        SectionHeader('Team & shifts today'),
+        StatGridSkeleton(count: 4),
+      ],
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  const _ErrorCard({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),

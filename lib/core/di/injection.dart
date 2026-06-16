@@ -30,9 +30,6 @@ import 'package:fbro/features/profile/domain/usecases/upload_profile_image.dart'
 import 'package:fbro/features/profile/domain/usecases/upload_cover_image.dart';
 import 'package:fbro/features/profile/domain/usecases/check_username.dart';
 import 'package:fbro/features/profile/presentation/cubit/profile_cubit.dart';
-import 'package:fbro/features/shift/data/datasources/shift_remote_datasource.dart';
-import 'package:fbro/features/shift/data/repositories/shift_repository_impl.dart';
-import 'package:fbro/features/shift/domain/repositories/shift_repository.dart';
 import 'package:fbro/features/auth/domain/usecases/get_users_by_branch.dart';
 import 'package:fbro/features/task/data/datasources/task_remote_datasource.dart';
 import 'package:fbro/features/task/data/repositories/task_repository_impl.dart';
@@ -84,11 +81,6 @@ class AppDependencies {
   /// FCM foundation (Phase 6) — token registration + foreground handling.
   static late final NotificationService notificationService;
 
-  /// Phase 2 shift foundation. Composed here and ready for the shift UI (a
-  /// `ShiftCubit` + use cases) to consume in the next phase; no in-app shift
-  /// management screens drive it yet.
-  static late final ShiftRepository shiftRepository;
-
   /// Phase 3 task foundation, activated by the Phase 4 [taskCubit] + use cases.
   static late final TaskRepository taskRepository;
 
@@ -99,8 +91,6 @@ class AppDependencies {
       FirebaseFirestore.instance,
       FirebaseStorage.instance,
     );
-    final shiftRemoteDataSource =
-        ShiftRemoteDataSourceImpl(FirebaseFirestore.instance);
     final taskRemoteDataSource = TaskRemoteDataSourceImpl(
       FirebaseFirestore.instance,
       FirebaseStorage.instance,
@@ -112,7 +102,6 @@ class AppDependencies {
     final ProfileRepository profileRepository =
         ProfileRepositoryImpl(profileRemoteDataSource, authRemoteDataSource);
 
-    shiftRepository = ShiftRepositoryImpl(shiftRemoteDataSource);
     taskRepository = TaskRepositoryImpl(taskRemoteDataSource);
 
     // Branch repository is built early — the TaskCubit needs it for the admin's
