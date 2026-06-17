@@ -9,8 +9,24 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-17
-**Version:** 1.0.0+1 · **Branch:** `redesign` (DROP THE SHOP indigo redesign)
+**Last updated:** 2026-06-18
+**Version:** 1.0.0+1 · **Branch:** `redesign` (DROP — monochrome enterprise UX)
+
+> **App branding (2026-06-18):** App icon replaced with DROP branding image on Android + iOS (all sizes auto-generated). App display name changed to **DROP** (AndroidManifest + Info.plist). Dart package name stays `fbro` internally.
+
+> **Operations Workflow Upgrade + Product Review (2026-06-18):** Full enterprise task system on top of the existing architecture. **① Recurring Tasks** — `RecurrenceConfig` entity (frequency/interval/weekday/hour/minute) + `RecurrenceFrequency` enum; on approve `TaskCubit._spawnNextRecurrence` auto-creates the next task with checklist reset and deadline advanced; recurrence picker (chip row) in the task form. **② Activity Timeline** — `ActivityEntry` embedded array (`activityLog`) on every task; every status transition (create/start/submit/approve/reject) appends an entry with actor + timestamp + optional note; shown newest-first in the Task Details page. **③ Task Details Screen** (`task_details_screen.dart`) — full-screen scrollable: animated status/priority/deadline pills, assignee block with "Assigned by Name·Role", checklist with live progress bar, submitted work (notes + proof), activity timeline, role-appropriate action buttons. **④ Employee UX redesign** (`my_tasks_screen.dart`) — tabbed Active/Done, 5 sorted sections, animated entrance cards, slides into Task Details. **⑤ Product-review UX fix:** the two-step "Complete → re-open → Submit for Review" friction eliminated; `TaskCubit.completeAndSubmit` uploads proof + advances straight to `waitingReview` in one write; the "Mark Complete" expansion button is now **"Complete & Submit"**. `flutter analyze` clean. See [CHANGELOG.md](CHANGELOG.md).
+
+> **Task UX overhaul (2026-06-18):** ① **Proof-photo "User is not authorized" fixed**
+> — it's Firebase **Storage `unauthorized`** (rules not deployed / Storage not
+> enabled); the code is now **resilient** (proof is best-effort — a Storage failure
+> no longer blocks completing the task or loses notes; precise warning shown) and the
+> **manager Review sheet now shows the submitted notes + proof image**. ⚠️ Still must
+> **enable Storage + deploy `storage.rules`** for uploads to actually work. ②
+> **Task cards redesigned** — monochrome, scannable, no priority rail / coloured
+> chips / loud badges; colour reserved for **destructive** actions only. ③ **"Assigned
+> by Name · Role"** added to cards (resolves `createdBy`). ④ **Username removed** from
+> profile editing (no operational value; legacy social field). `flutter analyze`
+> clean; 12 tests pass. See [CHANGELOG.md](CHANGELOG.md).
 
 > **DROP THE SHOP UI redesign (2026-06-17):** restructured the role chrome into a
 > **bottom navigation bar** (Home · Tasks · Schedule · Profile) and redesigned the
@@ -64,13 +80,13 @@
 | Shifts (Phase 2) | ❌ Removed (Phase 10) | The unused `shift` foundation (data/domain + placeholder screens + `shifts/{shiftId}` rules + `/admin\|manager/shifts`·`/my-shift` routes + DI) was **deleted** as dead code. The **Weekly Schedule** (Phase 7) is the production roster |
 | Weekly Schedule (Phase 7) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit` + manager editor / admin override / employee my-week view. Roster `day → morning/night → employees`; `weekly_schedules/{id}` rules. Reuses Role/Branch systems |
 | Shift Swap (Phase 7) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected |
-| Tasks (Phase 3–4, +Stabilization, +Phase 9) | ✅ Workflow + realtime + multi-assignee | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens (create·assign·start·complete+notes/proof·submit·review approve/reject), client-side status-transition rules, audit fields, proof upload, **live Firestore streams**, admin **branch dropdown**. **Phase 9:** **multiple assignees** (`assigneeIds[]`, replaces single `assignedEmployeeId` — kept as a mirror), optional **checklist** generated from a template + completion gate, **redesigned task cards** (avatars · name/role · checklist progress · glass cards), employee directory resolution |
+| Tasks (Phase 3–4, +Stabilization, +Phase 9, +Workflow Upgrade) | ✅ Full operations workflow | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens, client-side status-transition rules, proof upload, **live Firestore streams**, admin branch dropdown, multi-assignee, checklist+completion gate. **Workflow Upgrade (2026-06-18):** **recurring tasks** (`RecurrenceConfig`, auto-spawn on approve), **activity timeline** (`ActivityEntry[]` embedded in task), **Task Details Screen** (full-screen view for all roles), **employee My Tasks redesign** (tabbed/sectioned/animated with Details navigation) |
 | Task / Checklist Templates (Stabilization, +Phase 9) | ✅ Complete | Reusable blueprints ("Open Shop", "Close Shop"). **Phase 9:** templates are now **checklists** — `TaskTemplateEntity.checklistItems` (`ChecklistItemTemplate`: id/title/isRequired) with a checklist editor; creating a task generates its `checklist`. `task_templates/{id}` rules (admin global/any · manager own-branch). New Task → Blank vs. From a template + Manage Templates sheet |
 | Branches (Phase 5, +Phase 9) | ✅ Complete   | `BranchEntity`/`Model`/`Repository`/`RemoteDataSource` + `BranchCubit`; admin CRUD + activate/deactivate + soft delete; `branches/{id}` rules. **Phase 9:** premium cards (manager + employee count + status) + search |
 | Admin module (Phase 5, +Phase 9 UX) | ✅ Complete | Branch / manager / employee management + **admin-only** pending-user approval + branch assignment. `AdminUsersCubit`, `UserAdminRepository` over `users/{uid}`. **Phase 9:** Admin Home restructured to **4 KPIs** + module nav; new **Analytics** page (`/admin/analytics`); avatar-led user cards; search + active/inactive/branch filters |
 | Dashboards / Statistics (Phase 6, +Phase 7) | ✅ Complete | `statistics` feature (`StatisticsCubit`) drives **live** admin / manager / employee dashboards. **Phase 7:** shift/coverage figures read the weekly schedule. **Phase 9:** the full metric wall moved to the Analytics page; the Admin Home shows only 4 headline KPIs |
 | Notifications (Phase 6, +Phase 7) | 🟡 Foundation | FCM client foundation: permission + device-token persistence + foreground snackbars. `NotificationType` extended with Phase 7 swap/schedule events. **Sending** the events needs a server trigger (out of scope) |
-| Profile          | ✅ Complete    | View/edit, avatar+cover upload, username checks                |
+| Profile          | ✅ Complete    | View/edit (Full Name · Bio · avatar+cover). **Username removed (2026-06-18)** from editing/validation — no operational value (legacy social field); dormant model field + `CheckUsername` use case remain as harmless legacy |
 | Settings         | ✅ Complete    | Settings page + change password + delete account              |
 | Role shells      | ✅ Live        | All three role dashboards show live operational stats (Phase 6); Admin shell hosts the full admin module (Phase 5) |
 | Design system    | ✅ Complete    | **Strictly monochrome** black / white / grey dark UI (`AppColors.primary` = white, the only accent; `onPrimary`/`primarySurface`/flat `primaryGlow`), **dark-mode only**; branded **DROP** (`DropLogo` wordmark, preserved). Role chrome is a **bottom navigation bar** (`AppBottomNav` + rebuilt `RoleScaffold`: Home · Tasks · Schedule · Profile). Signature screens: splash brand lockup, breathing-clock Pending Approval. **Phase 9:** premium glass cards, reusable `UserAvatar`/`AvatarStack`, `EntranceFade` motion, `AppSearchField` |
@@ -191,6 +207,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
   math, realtime/offline, error handling, and the **profile-upload** path (timeouts
   + progress + error recovery — no freeze). `flutter analyze` clean (2 pre-existing
   infos); 7 unit tests pass; `build_runner` consistent (0 stale outputs).
+- **Operations Workflow Upgrade (2026-06-18, branch `redesign`)** — enterprise task system on top of the existing architecture (no logic/routing/data/rules regressions). New entities: `RecurrenceConfig` (freezed, `nextOccurrence()`) and `ActivityEntry` (freezed). New enum `RecurrenceFrequency` (none/daily/weekly/monthly). `TaskModel` updated: `recurrence` and `activityLog` serialised to/from Firestore. `TaskCubit` extended: `createTask` seeds first `ActivityEntry`; `startTask`/`submitForReview`/`approveTask`/`rejectTask` each append an entry; `approveTask` calls `_spawnNextRecurrence` when `frequency != none`. New full-screen `TaskDetailsScreen` (all roles: status pills, assignees, checklist, notes/proof, activity timeline, role-appropriate actions). `MyTasksScreen` rebuilt (tabbed Active/Done, 5 sections, animated entrance, minimal cards → Details). `ManagerTasksView` taps open `TaskDetailsScreen` with slide transition. `_RecurrencePicker` chip row in task form (new tasks only). `flutter analyze` clean (0 errors, 0 warnings; 2 pre-existing infos in auth/profile cubits untouched).
 - **Action needed:** deploy `firestore.rules` / `storage.rules` and
   enable Firebase Storage; bootstrap the first admin (set
   `role/approvalStatus/isActive` in the console) before production.
@@ -353,6 +370,8 @@ Phase 10 (dead code, never consumed). The **weekly schedule**
 | `assigneeIds`        | string[]   | **Phase 9** — employees assigned to the task (multi-assignee). Empty = unassigned |
 | `assignedEmployeeId` | string?    | **legacy mirror** of the primary assignee (`assigneeIds.first`), kept in sync for back-compat rules/stats; read falls back to it when `assigneeIds` is absent |
 | `checklist`          | array<map> | **Phase 9** — `{id, title, isRequired, completed, completedAt}` items generated from the template; the task can't complete until all required items are `completed` |
+| `recurrence`         | map?       | **Workflow Upgrade** — `{frequency, interval, weekday, hour, minute}`. `frequency` = `none`/`daily`/`weekly`/`monthly`. When a task is approved and `frequency != none`, `TaskCubit._spawnNextRecurrence` auto-creates the next instance (checklist reset, deadline advanced) |
+| `activityLog`        | array<map> | **Workflow Upgrade** — embedded array of `{status, actorId, actorName, at, note}`. Every status transition appends an entry. Shown newest-first on the Task Details screen |
 | `createdBy`          | string?    | uid of the manager/admin who created it               |
 | `assignedShiftId`    | string?    | optional link to `shifts/{shiftId}`                   |
 | `deadline`           | Timestamp? | due date/time                                         |
@@ -363,11 +382,7 @@ Phase 10 (dead code, never consumed). The **weekly schedule**
 | `reviewNotes`        | string?    | reviewer's note on approve/reject (Phase 4)           |
 | `createdAt`, `updatedAt` | Timestamp | server timestamps written by the datasource       |
 
-> Workflow: manager/admin creates + assigns → employee `started`→`completed`→
-> `waitingReview` → manager/admin `approved`/`rejected`. Branch/role access +
-> the limited employee self-update are enforced by `firestore.rules`
-> (`tasks/{taskId}`). The employee cannot reassign, change branch, or set the
-> terminal approved/rejected status.
+> Workflow: manager/admin creates (optionally with recurrence + checklist) + assigns → employee `started`→`completed`→`waitingReview` → manager/admin `approved`/`rejected` (approval auto-spawns next recurrence). Branch/role access + the limited employee self-update are enforced by `firestore.rules` (`tasks/{taskId}`). The employee cannot reassign, change branch, or set the terminal approved/rejected status.
 
 ### Firestore schema — `task_templates/{id}` (Stabilization)
 
@@ -478,15 +493,15 @@ week's Sunday), so a week is addressed directly without a query.
   `AppConstants.shiftsCollection`, and the `shifts/{shiftId}` rules) was deleted
   as verified dead code. The shift-visibility requirement is fully met by the
   Weekly Schedule (employee My Week · manager branch schedule · admin all branches).
-- **Real-time: tasks (push) + everything else (reload-after-mutation).**
-  **Tasks are now fully streamed** (`TaskRepository.watch*` → `TaskCubit`): an
-  assigned task or status change appears on every open client immediately
+- **Real-time scope: tasks + approval are push; everything else is reload-after-mutation.**
+  **Tasks are fully streamed** (`TaskRepository.watch*` → `TaskCubit`): an
+  assigned task or any status change appears on every open client immediately
   (cross-client push), backed by the offline cache. Pending-approval is also
-  stream-driven. **Schedule / branch / admin / swap** lists still use
-  **reload-after-mutation** (instant for the acting user) + pull-to-refresh;
-  another user's open list reflects a change on next refresh. Converting those to
-  streams too is a deliberate follow-up (out of this pass's scope). **(Phase 8)**
-  approving a swap auto-refreshes the manager Schedule tab via a `BlocListener`.
+  stream-driven (`watchCurrentUser`). **Schedule / branch / admin / swap** lists
+  still use **reload-after-mutation** (instant for the acting user) +
+  pull-to-refresh; another user's open list reflects a change on next refresh.
+  **(Phase 8)** approving a swap auto-refreshes the manager Schedule tab via a
+  `BlocListener`.
 - **Integration-audit findings.** (1) **Managers do not approve users** —
   approval is admin-only (Phase 6 design); any "manager approves employee"
   expectation is intentionally unsupported. (2) **Rejected users** land on the
@@ -533,24 +548,12 @@ week's Sunday), so a week is addressed directly without a query.
 
 ## Suggested next steps
 
-1. Commit Phase 1 on `feature/roles-and-foundation`; open a PR into `main`.
-2. Deploy `firestore.rules` / `storage.rules` and enable Storage.
-3. Bootstrap the first admin (in the Firebase console set
-   `role: admin`, `approvalStatus: approved`, `isActive: true`); then verify the
-   register → Pending Approval → approve → role dispatch flow end to end.
-4. Verify Phase 5 end to end: create a branch, approve a pending user as
-   employee/manager, assign branches, and confirm the dashboard counts.
-5. **Shift UI:** add a `ShiftCubit` + use cases on top of `ShiftRepository`
-   (mirroring the now-built task feature), then the admin/manager shift
-   management + assignment UI and the employee my-shift view; sync
-   `users/{uid}.assignedShift` on assignment. Seed the two V1 shifts.
-6. **Task workflow hardening:** enforce status transitions in `firestore.rules`,
-   resolve assignee uid → name on cards, link tasks to shifts in the UI.
-7. **Notifications sender:** add the server trigger that emits the
-   `NotificationType` events to device tokens (Cloud Function or external) +
-   native FCM setup (APNs key + Push capability on iOS).
-8. **Stats optimization (if data grows):** move the dashboard counts to Firestore
-   `count()` aggregate queries (with the needed composite indexes).
-9. Add a Cloud Function to clean up the user document on account deletion.
-10. Add widget/cubit tests, starting with `AuthCubit`, the approval gate, the
-    `TaskCubit` transition rules, and the router redirect.
+1. **Deploy rules + enable Storage** — `firebase deploy --only firestore:rules,storage` and enable Firebase Storage in the console. Until then proof uploads return `unauthorized`.
+2. **Bootstrap first admin** — in the Firebase console set `role: admin`, `approvalStatus: approved`, `isActive: true` on the founder's account; then verify register → Pending Approval → approve → role dispatch end to end.
+3. **Firestore rules for `activityLog`/`recurrence`** — the new fields written by `TaskCubit` are covered by the existing employee self-update path. Confirm the limited-employee rule allows writing `activityLog` (array union) without allowing `recurrence` changes. Harden if needed.
+4. **Recurring tasks: server-side spawn** — the current `_spawnNextRecurrence` runs client-side on approve. A Cloud Function on `tasks/{taskId}` write (status==approved + frequency!=none) would be more reliable for offline/concurrent approval cases.
+5. **Notifications sender** — add a server trigger for the `NotificationType` events (task assigned, waiting review, approved/rejected) to device tokens (Cloud Function or external) + native FCM setup (APNs key + Push capability on iOS).
+6. **Task workflow hardening** — enforce status transitions in `firestore.rules` (who can write each status value), not only client-side in `TaskCubit._canTransition`.
+7. **Stats optimization** (if data grows) — move dashboard counts to Firestore `count()` aggregate queries with composite indexes.
+8. Add a Cloud Function to clean up `users/{uid}` Firestore document on account deletion.
+9. Add cubit/widget tests, starting with `TaskCubit` transition rules, `RecurrenceConfig.nextOccurrence`, `ActivityEntry` serialisation, and the router redirect.

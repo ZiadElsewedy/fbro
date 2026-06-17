@@ -11,6 +11,36 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-06-18 — App Icon & Name)
+- **App icon** updated to new DROP branding image on both Android and iOS (all sizes generated via `flutter_launcher_icons` from `assets/E22CA445-D611-4A31-8EE5-BB661032E09C.png`).
+- **App display name** changed from `FBRO` → `DROP` in `AndroidManifest.xml` (android:label) and `Info.plist` (CFBundleDisplayName + CFBundleName). Dart package name (`name: fbro` in pubspec.yaml) unchanged.
+- Added `flutter_launcher_icons: ^0.14.3` as a dev dependency.
+
+### Fixed (2026-06-18 — Product Review: Employee UX)
+- **Two-step complete → submit UX eliminated.** After an employee tapped "Submit
+  Completion" (status → `completed`), they had to re-find the task card and tap
+  "Submit for Review" a second time. `TaskCubit.completeAndSubmit` now uploads the
+  proof image and advances the task directly to `waitingReview` in a **single
+  Firestore write**, recording both `completed` and `waitingReview` activity
+  entries with the same timestamp. The bottom-sheet button is renamed **"Complete &
+  Submit"**. The separate `completeTask` (→ `completed`) and `submitForReview`
+  paths are preserved for backward compat (e.g. tasks already in `completed` state
+  still show "Submit for Review").
+- **QA Checklist corrected** — R2 (task assignment) was documented as
+  "refresh-based"; tasks are in fact realtime Firestore streams (`TaskCubit`).
+  Updated E7/E10/E11 scenarios and the real-time note accordingly. Removed the
+  obsolete known-limitation about the admin free-text branch field (fixed in
+  Stabilization). Added accuracy notes on activity-log analytics limits and
+  recurring-task spawn behaviour.
+
+### Added (2026-06-18 — Operations Workflow Upgrade)
+- **Recurring tasks** — `RecurrenceFrequency` enum (none/daily/weekly/monthly) + `RecurrenceConfig` entity (`frequency`, `interval`, `weekday`, `hour`, `minute`, `nextOccurrence()`). Manager/admin can set recurrence on any task. On approval, `TaskCubit._spawnNextRecurrence` auto-creates the next instance with the checklist reset and deadline advanced.
+- **Activity timeline** — `ActivityEntry` entity embedded in `task.activityLog[]`. Every status transition (create/start/submit/approve/reject) appends an entry with actor, timestamp, and optional note. Shown newest-first on the Task Details page.
+- **Task Details Screen** (`task_details_screen.dart`) — full-screen scrollable view: status header with animated pills, assignee block with "Assigned by Name·Role", checklist with live progress bar, submitted work (notes + proof image), activity timeline, and role-appropriate action buttons. Accessible from both manager (`ManagerTasksView`) and employee (`MyTasksScreen`) task cards.
+- **Employee task UX redesign** (`my_tasks_screen.dart`) — tabbed layout (Active / Done) with 5 sorted sections: Needs Attention (rejected), In Progress, Today's Tasks, Upcoming, In Review. Animated entrance (fade+slide, staggered per card). Minimal card with status dot, deadline, checklist progress pill, and recurrence badge. Tapping any card opens `TaskDetailsScreen` with slide transition.
+- **Recurrence picker** in task form sheet (`_RecurrencePicker`) — animated chip row: None / Daily / Weekly / Monthly. Only shown on new task creation.
+- **`RecurrenceConfig`** and **`ActivityEntry`** are freezed entities with full Firestore serialisation in `task_model.dart`.
+
 ### Added
 - `PROJECT_CONTEXT.md` — architecture, dependency maps, modification map, and
   conventions as the single source of truth for the codebase.
@@ -25,6 +55,66 @@ and [Semantic Versioning](https://semver.org).
   documentation protocol into every new session (read all three docs first,
   verify against the codebase, auto-update docs + any stale project memory
   before finishing).
+
+---
+
+## 2026-06-18 — Task UX overhaul: proof bug, monochrome cards, "Assigned by", username removal
+
+A product-design + architecture pass toward an enterprise (Linear/Notion/Asana)
+feel: **black/white/grey, minimal, scannable**. Fixes the proof-photo flow,
+redesigns task cards, surfaces **who assigned a task**, and removes the
+operationally-useless username. Architecture, routing, role system, and Firebase
+integration are unchanged.
+
+### Fixed — review-photo / "User is not authorized" on Complete
+- **Root cause:** the error is Firebase **Storage's `unauthorized`** — `storage.rules`
+  aren't deployed / Storage isn't enabled. The upload code + rules are correct
+  (`tasks/{taskId}/proof.jpg`, any signed-in user). **⚠️ Action required (console):**
+  enable Storage + `firebase deploy --only storage,firestore:rules`.
+- **Code fix (resilience):** `TaskCubit.completeTask` uploaded the proof *inside*
+  the completion action, so a Storage failure **aborted the whole completion** —
+  the employee couldn't even mark the task done and lost their notes. The proof is
+  now **best-effort**: on upload failure the task still completes (notes kept) and a
+  **precise, actionable warning** surfaces ("…Enable Firebase Storage and deploy
+  storage.rules, then re-attach it.") instead of a blocking, cryptic error.
+- **Manager can now view the submitted work:** the Review sheet
+  ([task_action_sheets.dart](lib/features/task/presentation/widgets/task_action_sheets.dart))
+  gained a **"Submitted work"** block showing the employee's notes + the proof image
+  (it previously showed neither).
+
+### Changed — task cards redesigned (monochrome, scannable)
+- Rebuilt [task_card.dart](lib/features/task/presentation/widgets/task_card.dart) as a
+  calm, enterprise card: **no priority rail, no coloured chips, no loud status
+  badge**. Clear hierarchy — Title · subtle status (greyscale dot + label) ·
+  Description · assignee (avatar/name/role) · **meta key-values** (Assigned by · Due ·
+  Priority) · greyscale checklist · actions. **Removed all red/yellow** from the card
+  body; colour is now reserved strictly for **destructive** actions (Delete) — even
+  the amber "Review"/"Restart" accents are now monochrome.
+- **"Assigned by" added everywhere relevant** — the card resolves the task's
+  `createdBy` → "Name · Role" (e.g. "Ahmed Hassan · Manager"; global creators not in
+  the branch directory show "Admin"). Managers/employees now instantly see who
+  created a task. **Overdue** is flagged inline (greyscale) on the Due row.
+
+### Changed — username removed (no operational value)
+- Audited: username was **never collected at registration**, only **forced in
+  profile editing** ("Username is required"), and is a leftover from the app's
+  earlier social iteration — it provides no store-operations value (identity is Full
+  Name · Email · Role · Branch). Removed the username field + validation + the
+  uniqueness check from the edit-profile flow
+  ([edit_profile_page.dart](lib/features/profile/presentation/pages/edit_profile_page.dart)).
+  The dormant model field + `CheckUsername` use case are left as harmless legacy
+  (no longer read/written by any UI) — a full model purge is a safe follow-up.
+
+### Verified
+- `flutter analyze` clean (2 pre-existing infos); **12 tests pass**. No
+  entity/route/rule schema change; the proof + completion **workflow and permissions
+  are intact** — the fix is resilience + UX, not a permission change.
+
+### Still open (next, per the brief)
+- **Full-screen employee Tasks experience** (search · filters · My Tasks / Overdue /
+  Completed sections) — the redesigned card is the building block.
+- **Broad screen simplification** (Home/Admin/Manager altitude pass).
+- **Deploy `storage.rules` + enable Storage** so proof photos actually upload.
 
 ---
 
@@ -48,6 +138,18 @@ wordmark is preserved and still rendered by `DropLogo`.
   infinity — identical look, no crash. Locked in with
   [task_card_layout_test.dart](test/task_card_layout_test.dart) (pumps a `TaskCard`
   in a `ListView`). Pre-existing since Phase 9 (surfaced now that the UI was run).
+
+### Fixed (search field — "a field inside a field")
+- **`AppSearchField` rendered an ugly nested box** (Branches / Employees /
+  Managers). Its inner `TextField` set only `border: InputBorder.none`, so it still
+  inherited the global `InputDecorationTheme`'s `filled: true`,
+  `enabledBorder`/`focusedBorder` outlines, and 18px padding — drawing a second
+  filled, bordered, padded box inside the search surface. Rebuilt to **fully
+  neutralise** the input theme (`filled: false`, all border states
+  `InputBorder.none`, `isCollapsed: true`, zero content padding) so it's ONE clean
+  rounded surface, with a **focus highlight** (border + magnifier brighten) and a
+  circular clear button — monochrome. Locked in with
+  [app_search_field_test.dart](test/app_search_field_test.dart).
 
 ### Changed (chrome — bottom navigation)
 - **`RoleScaffold`** rebuilt around a **bottom navigation bar**
