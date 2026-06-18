@@ -2,7 +2,9 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:fbro/core/enums/task_type.dart';
 import 'package:fbro/core/enums/task_status.dart';
 import 'package:fbro/core/enums/task_priority.dart';
+import 'package:fbro/features/task/domain/entities/activity_entry.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
+import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
 
 part 'task_entity.freezed.dart';
 
@@ -53,6 +55,11 @@ class TaskEntity with _$TaskEntity {
     DateTime? rejectedAt,
     /// Reviewer's note left on approve/reject.
     String? reviewNotes,
+    /// Recurrence rule — null means "one-off" (does not repeat). When set, the
+    /// [TaskCubit] auto-creates the next instance after this task is approved.
+    RecurrenceConfig? recurrence,
+    /// Activity timeline: one entry per status transition, ordered oldest→newest.
+    @Default(<ActivityEntry>[]) List<ActivityEntry> activityLog,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _TaskEntity;

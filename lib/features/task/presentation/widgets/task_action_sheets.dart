@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fbro/core/enums/recurrence_frequency.dart';
 import 'package:fbro/core/enums/task_priority.dart';
 import 'package:fbro/core/enums/task_type.dart';
 import 'package:fbro/core/theme/app_colors.dart';
@@ -12,6 +13,7 @@ import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_text_field.dart';
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
+import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/domain/entities/task_template_entity.dart';
 import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
@@ -136,11 +138,19 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
       text: widget.existing?.title ?? widget.prefill?.title ?? '');
   late final _desc = TextEditingController(
       text: widget.existing?.description ?? widget.prefill?.description ?? '');
-  late TaskType _type =
-      widget.existing?.type ?? widget.prefill?.type ?? TaskType.daily;
   late TaskPriority _priority =
       widget.existing?.priority ?? widget.prefill?.priority ?? TaskPriority.normal;
   late DateTime? _deadline = widget.existing?.deadline;
+  late RecurrenceFrequency _recurrence =
+      widget.existing?.recurrence?.frequency ?? RecurrenceFrequency.none;
+
+  /// Checklist state: parallel lists for controllers, required flag, id,
+  /// and the original [ChecklistItem] (only set when editing an existing task,
+  /// so we can preserve the completed/completedAt state on save).
+  final List<TextEditingController> _itemControllers = [];
+  final List<bool> _itemRequired = [];
+  final List<String> _itemIds = [];
+  final List<ChecklistItem?> _itemOriginals = [];
 
   /// Admin-only branch selection (managers use their own fixed branch).
   late String? _branchId = _initialBranch();
@@ -158,10 +168,81 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _initChecklist();
+  }
+
+  void _initChecklist() {
+    if (widget.existing != null) {
+      // Edit mode: seed from the task's existing checklist items, preserving state
+      for (final item in widget.existing!.checklist) {
+        _itemControllers.add(TextEditingController(text: item.title));
+        _itemRequired.add(item.isRequired);
+        _itemIds.add(item.id);
+        _itemOriginals.add(item);
+      }
+    } else if (widget.prefill != null) {
+      // New task from template: seed from the template's checklist items
+      for (final t in widget.prefill!.checklistItems) {
+        _itemControllers.add(TextEditingController(text: t.title));
+        _itemRequired.add(t.isRequired);
+        _itemIds.add(t.id);
+        _itemOriginals.add(null);
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _title.dispose();
     _desc.dispose();
+    for (final c in _itemControllers) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  void _addChecklistItem() {
+    setState(() {
+      _itemControllers.add(TextEditingController());
+      _itemRequired.add(true);
+      _itemIds.add('ci_${DateTime.now().millisecondsSinceEpoch}_${_itemControllers.length}');
+      _itemOriginals.add(null);
+    });
+  }
+
+  void _removeChecklistItem(int i) {
+    _itemControllers[i].dispose();
+    setState(() {
+      _itemControllers.removeAt(i);
+      _itemRequired.removeAt(i);
+      _itemIds.removeAt(i);
+      _itemOriginals.removeAt(i);
+    });
+  }
+
+  void _toggleRequired(int i) =>
+      setState(() => _itemRequired[i] = !_itemRequired[i]);
+
+  List<ChecklistItem> _buildChecklist() {
+    final result = <ChecklistItem>[];
+    for (var i = 0; i < _itemControllers.length; i++) {
+      final title = _itemControllers[i].text.trim();
+      if (title.isEmpty) continue;
+      final original = _itemOriginals[i];
+      if (original != null) {
+        // Preserve completed state, update title + required
+        result.add(original.copyWith(title: title, isRequired: _itemRequired[i]));
+      } else {
+        result.add(ChecklistItem(
+          id: _itemIds[i],
+          title: title,
+          isRequired: _itemRequired[i],
+        ));
+      }
+    }
+    return result;
   }
 
   void _save() {
@@ -177,27 +258,34 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
       return;
     }
     final description = _desc.text.trim().isEmpty ? null : _desc.text.trim();
+    final checklist = _buildChecklist();
 
     final existing = widget.existing;
     if (existing == null) {
+      // Infer type from recurrence: recurring = daily routine, else special
+      final inferredType = _recurrence != RecurrenceFrequency.none
+          ? TaskType.daily
+          : TaskType.special;
       widget.cubit.createTask(
         title: title,
         description: description,
-        type: _type,
+        type: inferredType,
         priority: _priority,
         branchId: branchId,
         deadline: _deadline,
-        // A task created from a checklist template gets its checklist generated.
-        checklist: widget.prefill?.buildTaskChecklist() ?? const [],
+        checklist: checklist,
+        recurrence: _recurrence == RecurrenceFrequency.none
+            ? null
+            : RecurrenceConfig(frequency: _recurrence),
       );
     } else {
       widget.cubit.editTask(existing.copyWith(
         title: title,
         description: description,
-        type: _type,
         priority: _priority,
         branchId: branchId,
         deadline: _deadline,
+        checklist: checklist,
       ));
     }
     Navigator.of(context).pop();
@@ -234,11 +322,14 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
             label: 'Description (optional)',
             prefixIcon: Icons.notes_rounded,
           ),
-          if (widget.existing == null &&
-              (widget.prefill?.checklistItems.isNotEmpty ?? false)) ...[
-            const SizedBox(height: AppSpacing.md),
-            _ChecklistPreview(items: widget.prefill!.checklistItems),
-          ],
+          const SizedBox(height: AppSpacing.md),
+          _InlineChecklistEditor(
+            controllers: _itemControllers,
+            required: _itemRequired,
+            onAdd: _addChecklistItem,
+            onRemove: _removeChecklistItem,
+            onToggleRequired: _toggleRequired,
+          ),
           if (widget.isAdmin) ...[
             const SizedBox(height: AppSpacing.md),
             _BranchDropdown(
@@ -247,14 +338,6 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
               onChanged: (v) => setState(() => _branchId = v),
             ),
           ],
-          const SizedBox(height: AppSpacing.md),
-          _Dropdown<TaskType>(
-            label: 'Type',
-            value: _type,
-            items: TaskType.values,
-            labelOf: (t) => t.value,
-            onChanged: (v) => setState(() => _type = v),
-          ),
           const SizedBox(height: AppSpacing.md),
           _Dropdown<TaskPriority>(
             label: 'Priority',
@@ -298,6 +381,13 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
               ),
             ),
           ),
+          const SizedBox(height: AppSpacing.md),
+          // Recurrence picker (new tasks only)
+          if (widget.existing == null)
+            _RecurrencePicker(
+              value: _recurrence,
+              onChanged: (v) => setState(() => _recurrence = v),
+            ),
           if (_error != null) ...[
             const SizedBox(height: AppSpacing.md),
             Text(_error!,
@@ -365,11 +455,23 @@ class _BranchDropdown extends StatelessWidget {
   }
 }
 
-/// Read-only preview of a template's checklist, shown in the New Task form so
-/// the manager sees what the employee will be asked to complete.
-class _ChecklistPreview extends StatelessWidget {
-  const _ChecklistPreview({required this.items});
-  final List<ChecklistItemTemplate> items;
+/// Inline checklist editor used inside the task creation / edit form.
+/// The parent [_TaskFormSheetState] owns all state (controllers, required flags,
+/// ids); this widget is stateless and just renders + calls back.
+class _InlineChecklistEditor extends StatelessWidget {
+  const _InlineChecklistEditor({
+    required this.controllers,
+    required this.required,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onToggleRequired,
+  });
+
+  final List<TextEditingController> controllers;
+  final List<bool> required;
+  final VoidCallback onAdd;
+  final void Function(int) onRemove;
+  final void Function(int) onToggleRequired;
 
   @override
   Widget build(BuildContext context) {
@@ -384,31 +486,151 @@ class _ChecklistPreview extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header row
           Row(
             children: [
               const Icon(Icons.checklist_rounded,
                   size: 16, color: AppColors.textTertiary),
               const SizedBox(width: AppSpacing.sm),
-              Text('Checklist · ${items.length} steps',
-                  style: AppTypography.labelSmall),
+              Text('Checklist', style: AppTypography.labelSmall),
+              if (controllers.isNotEmpty) ...[
+                const SizedBox(width: AppSpacing.sm),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkBg,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppColors.darkBorder),
+                  ),
+                  child: Text('${controllers.length}',
+                      style: AppTypography.caption),
+                ),
+              ],
+              const Spacer(),
+              GestureDetector(
+                onTap: onAdd,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm, vertical: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.darkBorder),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.add_rounded,
+                          size: 14, color: AppColors.textSecondary),
+                      const SizedBox(width: 3),
+                      Text('Add step',
+                          style: AppTypography.caption
+                              .copyWith(color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
-          for (final i in items)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(
-                children: [
-                  const Icon(Icons.radio_button_unchecked_rounded,
-                      size: 15, color: AppColors.textTertiary),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                      child: Text(i.title, style: AppTypography.bodySmall)),
-                  if (!i.isRequired)
-                    Text('optional', style: AppTypography.caption),
-                ],
+          // Items
+          if (controllers.isEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text('No steps yet. Tap "Add step" to build the checklist.',
+                style: AppTypography.caption
+                    .copyWith(color: AppColors.textTertiary)),
+          ] else ...[
+            const SizedBox(height: AppSpacing.md),
+            for (var i = 0; i < controllers.length; i++)
+              _ChecklistItemRow(
+                key: ValueKey('ci_$i'),
+                controller: controllers[i],
+                isRequired: required[i],
+                onToggleRequired: () => onToggleRequired(i),
+                onRemove: () => onRemove(i),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A single editable row inside [_InlineChecklistEditor].
+class _ChecklistItemRow extends StatelessWidget {
+  const _ChecklistItemRow({
+    super.key,
+    required this.controller,
+    required this.isRequired,
+    required this.onToggleRequired,
+    required this.onRemove,
+  });
+
+  final TextEditingController controller;
+  final bool isRequired;
+  final VoidCallback onToggleRequired;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Row(
+        children: [
+          const Icon(Icons.drag_indicator_rounded,
+              size: 18, color: AppColors.darkBorder),
+          const SizedBox(width: 4),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              style: AppTypography.bodySmall,
+              decoration: InputDecoration(
+                hintText: 'Step description…',
+                hintStyle: AppTypography.bodySmall
+                    .copyWith(color: AppColors.textTertiary),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md, vertical: 10),
+                filled: true,
+                fillColor: AppColors.darkBg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.darkBorder),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.darkBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide:
+                      const BorderSide(color: AppColors.textSecondary),
+                ),
               ),
             ),
+          ),
+          const SizedBox(width: 6),
+          // Required toggle: filled star = required, outline = optional
+          Tooltip(
+            message: isRequired
+                ? 'Required — tap to make optional'
+                : 'Optional — tap to make required',
+            child: GestureDetector(
+              onTap: onToggleRequired,
+              child: Icon(
+                isRequired
+                    ? Icons.star_rounded
+                    : Icons.star_outline_rounded,
+                size: 18,
+                color: isRequired
+                    ? AppColors.textSecondary
+                    : AppColors.textTertiary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: onRemove,
+            child: const Icon(Icons.close_rounded,
+                size: 18, color: AppColors.textTertiary),
+          ),
         ],
       ),
     );
@@ -636,6 +858,7 @@ class _ReviewSheetState extends State<_ReviewSheet> {
             const SizedBox(height: AppSpacing.md),
             _ReviewChecklist(task: widget.task),
           ],
+          _SubmittedWork(task: widget.task),
           const SizedBox(height: AppSpacing.lg),
           AppTextField(
             controller: _notes,
@@ -735,6 +958,75 @@ class _ReviewChecklist extends StatelessWidget {
   }
 }
 
+/// The employee's submitted work shown to the reviewing manager: their notes and
+/// the proof photo (if any). Renders nothing when there's neither.
+class _SubmittedWork extends StatelessWidget {
+  const _SubmittedWork({required this.task});
+  final TaskEntity task;
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = task.notes ?? '';
+    final proof = task.proofImageUrl ?? '';
+    if (notes.isEmpty && proof.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.md),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: AppColors.darkSurfaceElevated,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.darkBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Submitted work', style: AppTypography.labelSmall),
+            if (notes.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(notes, style: AppTypography.bodySmall),
+            ],
+            if (proof.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  proof,
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  cacheWidth: 900,
+                  loadingBuilder: (context, child, progress) => progress == null
+                      ? child
+                      : Container(
+                          height: 180,
+                          alignment: Alignment.center,
+                          color: AppColors.darkSurface,
+                          child: const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                  errorBuilder: (ctx, err, st) => Container(
+                    height: 56,
+                    alignment: Alignment.centerLeft,
+                    child: Text('Proof image unavailable',
+                        style: AppTypography.caption),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Shared dropdown ─────────────────────────────────────────────
 class _Dropdown<T> extends StatelessWidget {
   const _Dropdown({
@@ -781,6 +1073,67 @@ class _Dropdown<T> extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+/// Compact recurrence selector: chips for None / Daily / Weekly / Monthly.
+class _RecurrencePicker extends StatelessWidget {
+  const _RecurrencePicker({required this.value, required this.onChanged});
+  final RecurrenceFrequency value;
+  final void Function(RecurrenceFrequency) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.repeat_rounded,
+                size: 16, color: AppColors.textTertiary),
+            const SizedBox(width: AppSpacing.sm),
+            Text('Repeats', style: AppTypography.bodySmall),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          children: [
+            for (final freq in RecurrenceFrequency.values)
+              GestureDetector(
+                onTap: () => onChanged(freq),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: value == freq
+                        ? AppColors.primary
+                        : AppColors.darkSurfaceElevated,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: value == freq
+                          ? AppColors.primary
+                          : AppColors.darkBorder,
+                    ),
+                  ),
+                  child: Text(
+                    freq.label,
+                    style: AppTypography.caption.copyWith(
+                      color: value == freq
+                          ? AppColors.onPrimary
+                          : AppColors.textSecondary,
+                      fontWeight: value == freq
+                          ? FontWeight.w700
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

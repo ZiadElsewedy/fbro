@@ -57,6 +57,13 @@ mixin _$TaskEntity {
 
   /// Reviewer's note left on approve/reject.
   String? get reviewNotes => throw _privateConstructorUsedError;
+
+  /// Recurrence rule — null means "one-off" (does not repeat). When set, the
+  /// [TaskCubit] auto-creates the next instance after this task is approved.
+  RecurrenceConfig? get recurrence => throw _privateConstructorUsedError;
+
+  /// Activity timeline: one entry per status transition, ordered oldest→newest.
+  List<ActivityEntry> get activityLog => throw _privateConstructorUsedError;
   DateTime? get createdAt => throw _privateConstructorUsedError;
   DateTime? get updatedAt => throw _privateConstructorUsedError;
 
@@ -94,9 +101,13 @@ abstract class $TaskEntityCopyWith<$Res> {
     String? rejectedBy,
     DateTime? rejectedAt,
     String? reviewNotes,
+    RecurrenceConfig? recurrence,
+    List<ActivityEntry> activityLog,
     DateTime? createdAt,
     DateTime? updatedAt,
   });
+
+  $RecurrenceConfigCopyWith<$Res>? get recurrence;
 }
 
 /// @nodoc
@@ -133,6 +144,8 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
     Object? rejectedBy = freezed,
     Object? rejectedAt = freezed,
     Object? reviewNotes = freezed,
+    Object? recurrence = freezed,
+    Object? activityLog = null,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
   }) {
@@ -214,6 +227,14 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
                 ? _value.reviewNotes
                 : reviewNotes // ignore: cast_nullable_to_non_nullable
                       as String?,
+            recurrence: freezed == recurrence
+                ? _value.recurrence
+                : recurrence // ignore: cast_nullable_to_non_nullable
+                      as RecurrenceConfig?,
+            activityLog: null == activityLog
+                ? _value.activityLog
+                : activityLog // ignore: cast_nullable_to_non_nullable
+                      as List<ActivityEntry>,
             createdAt: freezed == createdAt
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
@@ -225,6 +246,20 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
           )
           as $Val,
     );
+  }
+
+  /// Create a copy of TaskEntity
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @pragma('vm:prefer-inline')
+  $RecurrenceConfigCopyWith<$Res>? get recurrence {
+    if (_value.recurrence == null) {
+      return null;
+    }
+
+    return $RecurrenceConfigCopyWith<$Res>(_value.recurrence!, (value) {
+      return _then(_value.copyWith(recurrence: value) as $Val);
+    });
   }
 }
 
@@ -257,9 +292,14 @@ abstract class _$$TaskEntityImplCopyWith<$Res>
     String? rejectedBy,
     DateTime? rejectedAt,
     String? reviewNotes,
+    RecurrenceConfig? recurrence,
+    List<ActivityEntry> activityLog,
     DateTime? createdAt,
     DateTime? updatedAt,
   });
+
+  @override
+  $RecurrenceConfigCopyWith<$Res>? get recurrence;
 }
 
 /// @nodoc
@@ -295,6 +335,8 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
     Object? rejectedBy = freezed,
     Object? rejectedAt = freezed,
     Object? reviewNotes = freezed,
+    Object? recurrence = freezed,
+    Object? activityLog = null,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
   }) {
@@ -376,6 +418,14 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
             ? _value.reviewNotes
             : reviewNotes // ignore: cast_nullable_to_non_nullable
                   as String?,
+        recurrence: freezed == recurrence
+            ? _value.recurrence
+            : recurrence // ignore: cast_nullable_to_non_nullable
+                  as RecurrenceConfig?,
+        activityLog: null == activityLog
+            ? _value._activityLog
+            : activityLog // ignore: cast_nullable_to_non_nullable
+                  as List<ActivityEntry>,
         createdAt: freezed == createdAt
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
@@ -412,10 +462,13 @@ class _$TaskEntityImpl extends _TaskEntity {
     this.rejectedBy,
     this.rejectedAt,
     this.reviewNotes,
+    this.recurrence,
+    final List<ActivityEntry> activityLog = const <ActivityEntry>[],
     this.createdAt,
     this.updatedAt,
   }) : _assigneeIds = assigneeIds,
        _checklist = checklist,
+       _activityLog = activityLog,
        super._();
 
   @override
@@ -497,6 +550,24 @@ class _$TaskEntityImpl extends _TaskEntity {
   /// Reviewer's note left on approve/reject.
   @override
   final String? reviewNotes;
+
+  /// Recurrence rule — null means "one-off" (does not repeat). When set, the
+  /// [TaskCubit] auto-creates the next instance after this task is approved.
+  @override
+  final RecurrenceConfig? recurrence;
+
+  /// Activity timeline: one entry per status transition, ordered oldest→newest.
+  final List<ActivityEntry> _activityLog;
+
+  /// Activity timeline: one entry per status transition, ordered oldest→newest.
+  @override
+  @JsonKey()
+  List<ActivityEntry> get activityLog {
+    if (_activityLog is EqualUnmodifiableListView) return _activityLog;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_activityLog);
+  }
+
   @override
   final DateTime? createdAt;
   @override
@@ -504,7 +575,7 @@ class _$TaskEntityImpl extends _TaskEntity {
 
   @override
   String toString() {
-    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, createdBy: $createdBy, assignedShiftId: $assignedShiftId, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, createdBy: $createdBy, assignedShiftId: $assignedShiftId, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -549,6 +620,12 @@ class _$TaskEntityImpl extends _TaskEntity {
                 other.rejectedAt == rejectedAt) &&
             (identical(other.reviewNotes, reviewNotes) ||
                 other.reviewNotes == reviewNotes) &&
+            (identical(other.recurrence, recurrence) ||
+                other.recurrence == recurrence) &&
+            const DeepCollectionEquality().equals(
+              other._activityLog,
+              _activityLog,
+            ) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
             (identical(other.updatedAt, updatedAt) ||
@@ -577,6 +654,8 @@ class _$TaskEntityImpl extends _TaskEntity {
     rejectedBy,
     rejectedAt,
     reviewNotes,
+    recurrence,
+    const DeepCollectionEquality().hash(_activityLog),
     createdAt,
     updatedAt,
   ]);
@@ -611,6 +690,8 @@ abstract class _TaskEntity extends TaskEntity {
     final String? rejectedBy,
     final DateTime? rejectedAt,
     final String? reviewNotes,
+    final RecurrenceConfig? recurrence,
+    final List<ActivityEntry> activityLog,
     final DateTime? createdAt,
     final DateTime? updatedAt,
   }) = _$TaskEntityImpl;
@@ -674,6 +755,15 @@ abstract class _TaskEntity extends TaskEntity {
   /// Reviewer's note left on approve/reject.
   @override
   String? get reviewNotes;
+
+  /// Recurrence rule — null means "one-off" (does not repeat). When set, the
+  /// [TaskCubit] auto-creates the next instance after this task is approved.
+  @override
+  RecurrenceConfig? get recurrence;
+
+  /// Activity timeline: one entry per status transition, ordered oldest→newest.
+  @override
+  List<ActivityEntry> get activityLog;
   @override
   DateTime? get createdAt;
   @override

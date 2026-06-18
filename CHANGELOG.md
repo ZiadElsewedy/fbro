@@ -16,6 +16,13 @@ and [Semantic Versioning](https://semver.org).
 - **App display name** changed from `FBRO` → `DROP` in `AndroidManifest.xml` (android:label) and `Info.plist` (CFBundleDisplayName + CFBundleName). Dart package name (`name: fbro` in pubspec.yaml) unchanged.
 - Added `flutter_launcher_icons: ^0.14.3` as a dev dependency.
 
+### Added (2026-06-18 — Inline Checklist Editor in Task Form)
+- **Inline checklist editor** in the Create/Edit Task bottom sheet (`_InlineChecklistEditor` + `_ChecklistItemRow`). Managers can now add, remove, and reorder checklist steps directly on any blank task (not just templates). Each step has a **required/optional toggle** (star icon). On create: steps become `ChecklistItem`s on the task; on edit: existing steps preserve their `completed`/`completedAt` state, new steps are appended uncompleted.
+- When a task is created from a **template**, its checklist is now **pre-populated and editable** (was read-only preview before) — managers can trim or extend the template checklist before creating.
+
+### Changed (2026-06-18 — Task Form Simplified)
+- **Removed the "Type" dropdown** (`TaskType: daily / special`) from the Create/Edit Task form. It was visually redundant with the "Repeats" picker ("Type: daily" looked identical to "Repeats: Daily"). Type is now **auto-inferred**: recurring tasks → `TaskType.daily`; one-off tasks → `TaskType.special`. The field is still stored on the entity for stats/filtering — it just no longer requires manual input.
+
 ### Fixed (2026-06-18 — Product Review: Employee UX)
 - **Two-step complete → submit UX eliminated.** After an employee tapped "Submit
   Completion" (status → `completed`), they had to re-find the task card and tap

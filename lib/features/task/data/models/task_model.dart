@@ -1,9 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fbro/core/extensions/firestore_extensions.dart';
+import 'package:fbro/core/enums/recurrence_frequency.dart';
 import 'package:fbro/core/enums/task_type.dart';
 import 'package:fbro/core/enums/task_status.dart';
 import 'package:fbro/core/enums/task_priority.dart';
+import 'package:fbro/features/task/domain/entities/activity_entry.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
+import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 
 /// Firestore (de)serialization for [TaskEntity] — collection `tasks/{taskId}`.
@@ -34,6 +37,8 @@ class TaskModel {
   final String? rejectedBy;
   final DateTime? rejectedAt;
   final String? reviewNotes;
+  final RecurrenceConfig? recurrence;
+  final List<ActivityEntry> activityLog;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -57,6 +62,8 @@ class TaskModel {
     this.rejectedBy,
     this.rejectedAt,
     this.reviewNotes,
+    this.recurrence,
+    this.activityLog = const [],
     this.createdAt,
     this.updatedAt,
   });
@@ -81,6 +88,8 @@ class TaskModel {
         rejectedBy: map['rejectedBy'] as String?,
         rejectedAt: map.date('rejectedAt'),
         reviewNotes: map['reviewNotes'] as String?,
+        recurrence: _recurrenceFromMap(map['recurrence']),
+        activityLog: _activityLogFromList(map['activityLog']),
         createdAt: map.date('createdAt'),
         updatedAt: map.date('updatedAt'),
       );
@@ -105,6 +114,8 @@ class TaskModel {
         rejectedBy: e.rejectedBy,
         rejectedAt: e.rejectedAt,
         reviewNotes: e.reviewNotes,
+        recurrence: e.recurrence,
+        activityLog: e.activityLog,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
       );
@@ -134,6 +145,8 @@ class TaskModel {
         'rejectedBy': rejectedBy,
         'rejectedAt': rejectedAt == null ? null : Timestamp.fromDate(rejectedAt!),
         'reviewNotes': reviewNotes,
+        'recurrence': _recurrenceToMap(recurrence),
+        'activityLog': _activityLogToList(activityLog),
       };
 
   /// Returns a copy with the Firestore-generated [id] applied (used on create).
@@ -157,6 +170,8 @@ class TaskModel {
         rejectedBy: rejectedBy,
         rejectedAt: rejectedAt,
         reviewNotes: reviewNotes,
+        recurrence: recurrence,
+        activityLog: activityLog,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
@@ -181,6 +196,8 @@ class TaskModel {
         rejectedBy: rejectedBy,
         rejectedAt: rejectedAt,
         reviewNotes: reviewNotes,
+        recurrence: recurrence,
+        activityLog: activityLog,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
@@ -226,6 +243,60 @@ class TaskModel {
             'completed': i.completed,
             'completedAt':
                 i.completedAt == null ? null : Timestamp.fromDate(i.completedAt!),
+          },
+      ];
+
+  static RecurrenceConfig? _recurrenceFromMap(dynamic raw) {
+    if (raw is! Map) return null;
+    return RecurrenceConfig(
+      frequency: RecurrenceFrequency.fromString(raw['frequency'] as String?),
+      interval: (raw['interval'] as int?) ?? 1,
+      weekday: (raw['weekday'] as int?) ?? 1,
+      hour: (raw['hour'] as int?) ?? 9,
+      minute: (raw['minute'] as int?) ?? 0,
+    );
+  }
+
+  static Map<String, dynamic>? _recurrenceToMap(RecurrenceConfig? r) {
+    if (r == null) return null;
+    return {
+      'frequency': r.frequency.value,
+      'interval': r.interval,
+      'weekday': r.weekday,
+      'hour': r.hour,
+      'minute': r.minute,
+    };
+  }
+
+  static List<ActivityEntry> _activityLogFromList(dynamic raw) {
+    if (raw is! List) return const [];
+    final result = <ActivityEntry>[];
+    for (final e in raw) {
+      if (e is Map) {
+        final at = (e['at'] as Timestamp?)?.toDate();
+        if (at == null) continue;
+        result.add(ActivityEntry(
+          status: e['status'] as String? ?? '',
+          actorId: e['actorId'] as String? ?? '',
+          actorName: e['actorName'] as String?,
+          at: at,
+          note: e['note'] as String?,
+        ));
+      }
+    }
+    return result;
+  }
+
+  static List<Map<String, dynamic>> _activityLogToList(
+          List<ActivityEntry> log) =>
+      [
+        for (final e in log)
+          {
+            'status': e.status,
+            'actorId': e.actorId,
+            'actorName': e.actorName,
+            'at': Timestamp.fromDate(e.at),
+            'note': e.note,
           },
       ];
 }

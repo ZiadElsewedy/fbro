@@ -351,6 +351,9 @@ class _TemplateFormState extends State<_TemplateForm> {
   }
 
   Future<void> _save() async {
+    // Clear any stale error from a previous attempt.
+    if (_error != null) setState(() => _error = null);
+
     final title = _title.text.trim();
     if (title.isEmpty) {
       setState(() => _error = 'Title is required.');
@@ -380,12 +383,11 @@ class _TemplateFormState extends State<_TemplateForm> {
       );
       if (mounted) Navigator.of(context).pop(true);
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-          _error = 'Could not save the template. Please try again.';
-        });
-      }
+      if (mounted) setState(() => _error = 'Could not save. Please try again.');
+    } finally {
+      // Always clear the loading state — even if mounted becomes false while
+      // awaiting (e.g. the sheet was dismissed externally).
+      if (mounted && _saving) setState(() => _saving = false);
     }
   }
 
@@ -462,6 +464,7 @@ class _TemplateFormState extends State<_TemplateForm> {
 
   Widget _checklistRow(_ChecklistRow row) {
     return Padding(
+      key: ValueKey(row.id),
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(
         children: [

@@ -13,6 +13,7 @@ import 'package:fbro/core/extensions/context_extensions.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
 import 'package:fbro/features/task/presentation/cubit/task_state.dart';
+import 'package:fbro/features/task/presentation/pages/task_details_screen.dart';
 import 'package:fbro/features/task/presentation/widgets/task_action_sheets.dart';
 import 'package:fbro/features/task/presentation/widgets/task_card.dart';
 import 'package:fbro/features/task/presentation/widgets/task_empty_state.dart';
@@ -191,44 +192,60 @@ class _ManagerTasksViewState extends State<ManagerTasksView> {
 
   Widget _card(TaskEntity task, Map<String, UserEntity> directory) {
     final cubit = context.read<TaskCubit>();
-    return TaskCard(
-      task: task,
-      directory: directory,
-      onAssigneesTap: () =>
-          showAssignSheet(context: context, cubit: cubit, task: task),
-      actions: [
-        if (task.status == TaskStatus.waitingReview)
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(PageRouteBuilder(
+        pageBuilder: (ctx, anim, secAnim) =>
+            TaskDetailsScreen(task: task, directory: directory),
+        transitionsBuilder: (ctx, anim, secAnim, child) => SlideTransition(
+          position: Tween<Offset>(
+                  begin: const Offset(1, 0), end: Offset.zero)
+              .animate(CurvedAnimation(
+                  parent: anim, curve: Curves.easeOutCubic)),
+          child: FadeTransition(
+              opacity: CurvedAnimation(
+                  parent: anim, curve: const Interval(0, 0.6)),
+              child: child),
+        ),
+        transitionDuration: const Duration(milliseconds: 320),
+      )),
+      child: TaskCard(
+        task: task,
+        directory: directory,
+        onAssigneesTap: () =>
+            showAssignSheet(context: context, cubit: cubit, task: task),
+        actions: [
+          if (task.status == TaskStatus.waitingReview)
+            TaskActionButton(
+              label: 'Review',
+              icon: Icons.rate_review_outlined,
+              onPressed: () =>
+                  showReviewSheet(context: context, cubit: cubit, task: task),
+            ),
           TaskActionButton(
-            label: 'Review',
-            icon: Icons.rate_review_outlined,
-            color: AppColors.warning,
+            label: 'Assign',
+            icon: Icons.person_add_alt_1_outlined,
             onPressed: () =>
-                showReviewSheet(context: context, cubit: cubit, task: task),
+                showAssignSheet(context: context, cubit: cubit, task: task),
           ),
-        TaskActionButton(
-          label: 'Assign',
-          icon: Icons.person_add_alt_1_outlined,
-          onPressed: () =>
-              showAssignSheet(context: context, cubit: cubit, task: task),
-        ),
-        TaskActionButton(
-          label: 'Edit',
-          icon: Icons.edit_outlined,
-          onPressed: () => showTaskFormSheet(
-            context: context,
-            cubit: cubit,
-            existing: task,
-            isAdmin: widget.isAdmin,
-            defaultBranchId: _branchId,
+          TaskActionButton(
+            label: 'Edit',
+            icon: Icons.edit_outlined,
+            onPressed: () => showTaskFormSheet(
+              context: context,
+              cubit: cubit,
+              existing: task,
+              isAdmin: widget.isAdmin,
+              defaultBranchId: _branchId,
+            ),
           ),
-        ),
-        TaskActionButton(
-          label: 'Delete',
-          icon: Icons.delete_outline_rounded,
-          color: AppColors.error,
-          onPressed: () => _confirmDelete(task),
-        ),
-      ],
+          TaskActionButton(
+            label: 'Delete',
+            icon: Icons.delete_outline_rounded,
+            color: AppColors.error,
+            onPressed: () => _confirmDelete(task),
+          ),
+        ],
+      ),
     );
   }
 }
