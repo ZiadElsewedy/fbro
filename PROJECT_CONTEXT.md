@@ -114,7 +114,7 @@ lib/
     ├── statistics/           # Statistics feature — entity/model/repo/datasource + StatisticsCubit; powers all 3 dashboards (Phase 6, +Phase 7 schedule figures)
     ├── schedule/             # Weekly schedule + shift swaps (Phase 7) — full slice + ScheduleCubit & ShiftSwapCubit; weekly_schedules + shift_swaps
     ├── manager/              # ManagerShell + ManagerHomeScreen (live branch dashboard, Phase 6)
-    ├── employee/             # EmployeeShell + EmployeeHomeScreen (live own dashboard, Phase 6)
+    ├── employee/             # EmployeeShell + EmployeeHomeScreen (live command center: progress-ring hero + actionable task list; redesign v2)
     └── settings/             # Settings + change password (presentation only)
 ```
 
@@ -261,7 +261,8 @@ task_card · task_action_sheets (create·assign·review) · task_template_sheets
 TaskCubit  + TaskState                                        (presentation/cubit)
         ↓  one use case per WRITE action (reads/streams/templates/activity: repo-direct or inline)
 CreateTask · UpdateTask · DeleteTask · AssignTask
-ChangeTaskStatus · ReviewTask · UploadTaskProof   (domain/usecases)
+UploadTaskProof                                    (domain/usecases)
+[ChangeTaskStatus · ReviewTask — dormant; no longer used by TaskCubit]
 GetUsersByBranch (auth use case — assignee picker)
 TaskRepository.watch{AllTasks,TasksByBranch,EmployeeTasks}  (realtime lists)
 TaskRepository.{get,create,delete}Template                 (task templates)
@@ -288,7 +289,7 @@ Cloud Firestore  tasks/{taskId}   task_templates/{id}   Storage tasks/{id}/proof
 - **Core workflow:** a manager/admin creates + assigns a task (optionally with a checklist + recurrence); the employee drives it via **`TaskCubit.completeAndSubmit`** — a single action that uploads proof + notes and advances the task directly to `waitingReview` (recording both `completed` and `waitingReview` activity entries in one write); a manager/admin reviews → `approved` | `rejected`; approval auto-spawns the next recurrence when `frequency != none`. Every transition appends an `ActivityEntry` to `task.activityLog`. The legacy two-step `completeTask` → `submitForReview` path is kept for tasks already in `completed` state. `TaskType` (daily/special), `TaskStatus`, `TaskPriority`, and `RecurrenceFrequency` are enums in `core/enums`.
 - **Branch is never free text.** A manager's task takes their own `branchId`; an **admin picks an existing branch from a Firestore-backed dropdown** (`TaskCubit.branches()` → `BranchRepository`). This guarantees the task's `branchId` matches the employees' `users/{uid}.branchId`, so the Assign picker is always populated.
 - **Realtime lists.** `TaskCubit.load` subscribes to a **live Firestore snapshot stream** by role (admin: `watchAllTasks` · manager: `watchTasksByBranch` · employee: `watchEmployeeTasks`), so a newly assigned task or any status change appears **immediately** (backed by the offline cache). Mutations keep the list visible (`loaded(tasks, busy)`) and the stream reflects the result; on error the previous list is restored. Pull-to-refresh re-subscribes. The subscription is cancelled in `close()`.
-- **Status transitions are validated in `TaskCubit._canTransition`** (invalid moves are blocked client-side); WHO may write is enforced in `firestore.rules` (`tasks/{taskId}`): admin all branches, manager own branch, employee own assigned tasks with **limited writes** (may advance status / add notes / proof but may not reassign, change branch, or approve/reject). Proof images upload to Storage `tasks/{taskId}/proof.jpg`.
+- **Every status transition is a single atomic `_updateTask` write** that sets the new `status`, its per-transition audit timestamp (`startedAt`/`submittedAt`/`approvedAt`/`rejectedAt`), and appends the `ActivityEntry` in one Firestore document write — there is no two-write pattern. The `_mutating` flag prevents concurrent writes. **Status transitions are validated in `TaskCubit._canTransition`** (invalid moves are blocked client-side); WHO may write is enforced in `firestore.rules` (`tasks/{taskId}`): admin all branches, manager own branch, employee own assigned tasks with **limited writes** (may advance status / add notes / proof but may not reassign, change branch, or approve/reject). Proof images upload to Storage `tasks/{taskId}/proof.jpg`.
 - **Checklist templates** (`task_templates/{id}`): reusable **checklists** ("Open Shop", "Close Shop") that **prefill** the task form *and generate the task's checklist*. Same `TaskCubit`/`TaskRepository` (no new cubit/DI). UI: two-step New Task chooser (Blank / From a template) + Manage Templates sheet (`task_template_sheets.dart`) with a **checklist editor**.
 - **Multi-assignee + checklist (Phase 9).** A task carries `assigneeIds[]` (replacing the single `assignedEmployeeId`, which `TaskModel` keeps as a synced **primary mirror** for backward-compatible rules/stats) and a `checklist` of `ChecklistItem`s. A task **cannot be completed until every required checklist item is done** (`TaskEntity.requiredChecklistComplete`); employees tick items via `TaskCubit.toggleChecklistItem`. `TaskCubit` builds a per-branch **user directory** (`TaskState.loaded.directory`) so cards render real avatars · names · roles.
 - **Recurring tasks (Workflow Upgrade).** `TaskEntity` carries an optional `RecurrenceConfig` (frequency/interval/weekday/hour/minute, `nextOccurrence()`). On task creation, the manager/admin picks a recurrence via the `_RecurrencePicker` chip row in the form sheet. When `TaskCubit.approveTask` succeeds and `task.recurrence?.frequency != none`, `_spawnNextRecurrence(source)` creates the next task (same content, checklist reset, deadline = `recurrence.nextOccurrence(now)`). Best-effort — a spawn failure never blocks the approval.
@@ -340,8 +341,12 @@ Firestore branches/{id}   Firestore users/{uid}     aggregates users/tasks/shift
   **branch-scoped** collections once (single-field `where` queries — automatic
   indexes) and **counts client-side** (status/type/today breakdowns), avoiding
   composite indexes; `count()` aggregate queries are a future optimization.
-  All three role dashboards (`AdminDashboardScreen`, `ManagerHomeScreen`,
-  `EmployeeHomeScreen`) read it via the shared `StatGrid` widget.
+  The `AdminDashboardScreen` / `ManagerHomeScreen` consume it via the shared
+  `StatGrid` widget; the **`EmployeeHomeScreen` (redesign v2)** reads
+  `StatisticsCubit` only for **today's shift** (`currentShiftName` /
+  `upcomingShiftName`) and computes its task breakdown + progress ring from the
+  live `TaskCubit` list instead (the ground truth — `employeeStats` does not
+  populate `activeTasks`).
 - **Notifications** (`core/services/notification_service.dart`, FCM): requests
   permission, persists the device `fcmToken` on `users/{uid}` (best-effort), and
   surfaces foreground pushes as in-app snackbars (wired in `main.dart` via a
@@ -453,7 +458,7 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Schedule screens (admin/manager/employee)** | `lib/features/schedule/presentation/pages/` (`schedule_management_screen` admin · `branch_schedule_screen` manager · `my_schedule_screen` employee) → shared `widgets/manager_schedule_view.dart` · `swap_view.dart` · `schedule_helpers.dart` |
 | **Schedule routes / role entry point**    | `lib/core/routes/route_names.dart` (`adminSchedule`/`managerSchedule`/`mySchedule` + `scheduleForRole`) + `app_router.dart` + `role_scaffold.dart` (calendar icon → Schedule) |
 | **Schedule/swap DI wiring**               | `lib/core/di/injection.dart` (`scheduleCubit`/`shiftSwapCubit`) + `main.dart` providers |
-| **Dashboard screens (live stats)**        | `lib/features/admin/presentation/pages/admin_dashboard_screen.dart` · `manager/.../manager_home_screen.dart` · `employee/.../employee_home_screen.dart` (+ shared `statistics/presentation/widgets/stat_grid.dart` — `StatGrid` + `StatGridSkeleton` loading placeholder) |
+| **Dashboard screens (live stats)**        | `lib/features/admin/presentation/pages/admin_dashboard_screen.dart` · `manager/.../manager_home_screen.dart` (both use shared `statistics/presentation/widgets/stat_grid.dart` — `StatGrid` + `StatGridSkeleton`) · `employee/.../employee_home_screen.dart` (**bespoke, redesign v2** — own `_HeroTodayCard`/`_ProgressRing`/`_RingPainter`/`_StatStrip`/`_HomeTaskCard` with inline actions; task counts from the live `TaskCubit` list, shift from `StatisticsCubit`) |
 | **Push notifications (FCM)**              | `lib/core/services/notification_service.dart` + `core/enums/notification_type.dart`; wired in `main.dart` (background handler, init, token register on auth, foreground snackbar) |
 | **Admin routes**                          | `lib/core/routes/route_names.dart` (`adminBranches`/`adminManagers`/`adminEmployees`/`adminAnalytics`/`adminApprovals`) + `app_router.dart` (under `_isAdminArea`) |
 | **Admin Home (4 KPIs) / module nav**      | `lib/features/admin/presentation/pages/admin_dashboard_screen.dart` (KPI cards + nav tiles) |

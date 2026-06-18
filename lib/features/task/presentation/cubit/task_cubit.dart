@@ -17,10 +17,8 @@ import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/domain/entities/task_template_entity.dart';
 import 'package:fbro/features/task/domain/repositories/task_repository.dart';
 import 'package:fbro/features/task/domain/usecases/assign_task.dart';
-import 'package:fbro/features/task/domain/usecases/change_task_status.dart';
 import 'package:fbro/features/task/domain/usecases/create_task.dart';
 import 'package:fbro/features/task/domain/usecases/delete_task.dart';
-import 'package:fbro/features/task/domain/usecases/review_task.dart';
 import 'package:fbro/features/task/domain/usecases/update_task.dart';
 import 'package:fbro/features/task/domain/usecases/upload_task_proof.dart';
 import 'task_state.dart';
@@ -40,8 +38,6 @@ class TaskCubit extends Cubit<TaskState> {
   final UpdateTask _updateTask;
   final DeleteTask _deleteTask;
   final AssignTask _assignTask;
-  final ChangeTaskStatus _changeTaskStatus;
-  final ReviewTask _reviewTask;
   final UploadTaskProof _uploadTaskProof;
   final GetUsersByBranch _getUsersByBranch;
 
@@ -60,8 +56,6 @@ class TaskCubit extends Cubit<TaskState> {
     required this._updateTask,
     required this._deleteTask,
     required this._assignTask,
-    required this._changeTaskStatus,
-    required this._reviewTask,
     required this._uploadTaskProof,
     required this._getUsersByBranch,
   }) : super(const TaskState.initial());
@@ -178,14 +172,23 @@ class TaskCubit extends Cubit<TaskState> {
         task,
         TaskStatus.approved,
         () async {
-          await _reviewTask(
-            taskId: task.id,
-            approved: true,
-            reviewerId: _user?.uid ?? '',
+          final now = DateTime.now();
+          await _updateTask(task.copyWith(
+            status: TaskStatus.approved,
+            approvedBy: _user?.uid,
+            approvedAt: now,
             reviewNotes: reviewNotes,
-          );
-          // Persist activity + auto-generate the next recurring instance.
-          await _appendActivity(task, TaskStatus.approved, note: reviewNotes);
+            activityLog: [
+              ...task.activityLog,
+              ActivityEntry(
+                status: TaskStatus.approved.value,
+                actorId: _user?.uid ?? '',
+                actorName: _user?.displayName,
+                at: now,
+                note: reviewNotes,
+              ),
+            ],
+          ));
           if (task.recurrence != null &&
               task.recurrence!.frequency.value != 'none') {
             await _spawnNextRecurrence(task);
@@ -198,13 +201,23 @@ class TaskCubit extends Cubit<TaskState> {
         task,
         TaskStatus.rejected,
         () async {
-          await _reviewTask(
-            taskId: task.id,
-            approved: false,
-            reviewerId: _user?.uid ?? '',
+          final now = DateTime.now();
+          await _updateTask(task.copyWith(
+            status: TaskStatus.rejected,
+            rejectedBy: _user?.uid,
+            rejectedAt: now,
             reviewNotes: reviewNotes,
-          );
-          await _appendActivity(task, TaskStatus.rejected, note: reviewNotes);
+            activityLog: [
+              ...task.activityLog,
+              ActivityEntry(
+                status: TaskStatus.rejected.value,
+                actorId: _user?.uid ?? '',
+                actorName: _user?.displayName,
+                at: now,
+                note: reviewNotes,
+              ),
+            ],
+          ));
         },
       );
 
@@ -213,9 +226,20 @@ class TaskCubit extends Cubit<TaskState> {
         task,
         TaskStatus.started,
         () async {
-          await _changeTaskStatus(
-              taskId: task.id, status: TaskStatus.started);
-          await _appendActivity(task, TaskStatus.started);
+          final now = DateTime.now();
+          await _updateTask(task.copyWith(
+            status: TaskStatus.started,
+            startedAt: now,
+            activityLog: [
+              ...task.activityLog,
+              ActivityEntry(
+                status: TaskStatus.started.value,
+                actorId: _user?.uid ?? '',
+                actorName: _user?.displayName,
+                at: now,
+              ),
+            ],
+          ));
         },
       );
 
@@ -239,8 +263,8 @@ class TaskCubit extends Cubit<TaskState> {
           proofUrl = await _uploadTaskProof(task.id, proof);
         } catch (_) {
           uploadWarning =
-              'Task marked complete, but the photo could not be uploaded. '
-              'Enable Firebase Storage and deploy storage.rules, then re-attach it.';
+              'Task marked complete. Photo upload failed — '
+              'check your internet connection and try again.';
         }
       }
       final updated = task.copyWith(
@@ -287,11 +311,20 @@ class TaskCubit extends Cubit<TaskState> {
         task,
         TaskStatus.waitingReview,
         () async {
-          await _changeTaskStatus(
-            taskId: task.id,
+          final now = DateTime.now();
+          await _updateTask(task.copyWith(
             status: TaskStatus.waitingReview,
-          );
-          await _appendActivity(task, TaskStatus.waitingReview);
+            submittedAt: now,
+            activityLog: [
+              ...task.activityLog,
+              ActivityEntry(
+                status: TaskStatus.waitingReview.value,
+                actorId: _user?.uid ?? '',
+                actorName: _user?.displayName,
+                at: now,
+              ),
+            ],
+          ));
         },
       );
 
@@ -327,13 +360,14 @@ class TaskCubit extends Cubit<TaskState> {
           proofUrl = await _uploadTaskProof(task.id, proof);
         } catch (_) {
           uploadWarning =
-              'Task submitted, but the photo could not be uploaded. '
-              'Enable Firebase Storage and deploy storage.rules, then re-attach it.';
+              'Task submitted. Photo upload failed — '
+              'check your internet connection and try again.';
         }
       }
       final now = DateTime.now();
       final updated = task.copyWith(
         status: TaskStatus.waitingReview,
+        submittedAt: now,
         notes: notes ?? task.notes,
         proofImageUrl: proofUrl ?? task.proofImageUrl,
         activityLog: [
@@ -417,28 +451,6 @@ class TaskCubit extends Cubit<TaskState> {
       _repository.deleteTemplate(templateId);
 
   // ─── Internals ─────────────────────────────────────────────────
-  /// Appends an [ActivityEntry] to the task's log by updating the Firestore doc.
-  Future<void> _appendActivity(
-    TaskEntity task,
-    TaskStatus status, {
-    String? note,
-  }) async {
-    try {
-      final entry = ActivityEntry(
-        status: status.value,
-        actorId: _user?.uid ?? '',
-        actorName: _user?.displayName,
-        at: DateTime.now(),
-        note: note,
-      );
-      await _updateTask(task.copyWith(
-        activityLog: [...task.activityLog, entry],
-      ));
-    } catch (_) {
-      // Activity log is best-effort; never fail the primary action.
-    }
-  }
-
   /// Creates the next instance of a recurring task immediately after [source]
   /// is approved. Resets checklist items to uncompleted; inherits everything
   /// else (title, description, type, priority, branchId, assignees, recurrence).
@@ -524,7 +536,8 @@ class TaskCubit extends Cubit<TaskState> {
       case TaskStatus.pending:
         return to == TaskStatus.started;
       case TaskStatus.started:
-        return to == TaskStatus.completed;
+        // completeAndSubmit goes started → waitingReview directly (skipping completed)
+        return to == TaskStatus.completed || to == TaskStatus.waitingReview;
       case TaskStatus.completed:
         return to == TaskStatus.waitingReview;
       case TaskStatus.waitingReview:

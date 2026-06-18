@@ -32,6 +32,8 @@ class TaskModel {
   final DateTime? deadline;
   final String? notes;
   final String? proofImageUrl;
+  final DateTime? startedAt;
+  final DateTime? submittedAt;
   final String? approvedBy;
   final DateTime? approvedAt;
   final String? rejectedBy;
@@ -57,6 +59,8 @@ class TaskModel {
     this.deadline,
     this.notes,
     this.proofImageUrl,
+    this.startedAt,
+    this.submittedAt,
     this.approvedBy,
     this.approvedAt,
     this.rejectedBy,
@@ -83,6 +87,8 @@ class TaskModel {
         deadline: map.date('deadline'),
         notes: map['notes'] as String?,
         proofImageUrl: map['proofImageUrl'] as String?,
+        startedAt: map.date('startedAt'),
+        submittedAt: map.date('submittedAt'),
         approvedBy: map['approvedBy'] as String?,
         approvedAt: map.date('approvedAt'),
         rejectedBy: map['rejectedBy'] as String?,
@@ -109,6 +115,8 @@ class TaskModel {
         deadline: e.deadline,
         notes: e.notes,
         proofImageUrl: e.proofImageUrl,
+        startedAt: e.startedAt,
+        submittedAt: e.submittedAt,
         approvedBy: e.approvedBy,
         approvedAt: e.approvedAt,
         rejectedBy: e.rejectedBy,
@@ -140,6 +148,8 @@ class TaskModel {
         'deadline': deadline == null ? null : Timestamp.fromDate(deadline!),
         'notes': notes,
         'proofImageUrl': proofImageUrl,
+        'startedAt': startedAt == null ? null : Timestamp.fromDate(startedAt!),
+        'submittedAt': submittedAt == null ? null : Timestamp.fromDate(submittedAt!),
         'approvedBy': approvedBy,
         'approvedAt': approvedAt == null ? null : Timestamp.fromDate(approvedAt!),
         'rejectedBy': rejectedBy,
@@ -165,6 +175,8 @@ class TaskModel {
         deadline: deadline,
         notes: notes,
         proofImageUrl: proofImageUrl,
+        startedAt: startedAt,
+        submittedAt: submittedAt,
         approvedBy: approvedBy,
         approvedAt: approvedAt,
         rejectedBy: rejectedBy,
@@ -191,6 +203,8 @@ class TaskModel {
         deadline: deadline,
         notes: notes,
         proofImageUrl: proofImageUrl,
+        startedAt: startedAt,
+        submittedAt: submittedAt,
         approvedBy: approvedBy,
         approvedAt: approvedAt,
         rejectedBy: rejectedBy,

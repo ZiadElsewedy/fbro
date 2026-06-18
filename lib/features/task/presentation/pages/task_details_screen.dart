@@ -952,14 +952,16 @@ class _CompleteButtonState extends State<_CompleteButton> {
     }
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final notes = _notes.text.trim();
-    widget.cubit.completeAndSubmit(
+    await widget.cubit.completeAndSubmit(
       widget.task,
       notes: notes.isEmpty ? null : notes,
       proof: _proof,
     );
-    Navigator.of(context).pop();
+    // Pop after the upload completes so any upload-failure snackbar fires
+    // while this screen's BlocConsumer is still mounted and visible.
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override

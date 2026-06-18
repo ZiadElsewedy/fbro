@@ -11,6 +11,77 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-06-18 — Employee Home Screen Redesign v2)
+
+Full rebuild of `employee_home_screen.dart` into a personal operations command
+center. The screen is a single live dashboard driven by the **TaskCubit task
+list** (ground truth) for everything task-related, with the `StatisticsCubit`
+used only for today's shift. No new files, routes, cubits, models, or schema —
+presentation only.
+
+- **Time-aware greeting** — date pill ("WED, 18 JUN") + "Good morning, [First Name]" (display type), animated entrance.
+- **Animated "Today" hero card** — a sweeping **circular progress ring** (`_ProgressRing` + `_RingPainter` CustomPaint) showing *finished / total* with a count-up centre, paired with today's shift (Morning/Night/Off + "Next:" line) and a live summary pill ("4 to do · 1 in review" / "All caught up").
+- **Count-up stat strip** — 4 chips (To do / Active / In review / Done) computed from the live task list via a `_Counts` helper + `TweenAnimationBuilder`. **Fixes a latent bug:** the old strip read `stats.activeTasks`, which `employeeStats` never populates, so "In progress" was always 0; counts now come from the task list.
+- **Actionable task cards** — each card has a footer action so the employee can work **without leaving Home**: pending → **Start task** (primary, calls `TaskCubit.startTask` inline), started → **Continue** (opens Details), rejected → **View feedback**, in-review → muted "Awaiting review". Body tap opens `TaskDetailsScreen` (fade + slide). Cards show title, description, animated checklist progress, and meta chips (relative due — "Due today"/"Overdue"/"Due in 2d", "From [manager]" resolved via the cubit directory, and the rejection note).
+- **Sections** — Needs attention (rejected) · Submitted (in review) · Up next (active, sorted started-first then soonest deadline, top 3 + "View N more"), plus an "Open all tasks" row that navigates to the Tasks tab (`RouteNames.tasksForRole`).
+- **Polish** — `_Pressable` scale-on-press feedback on every tappable surface; staggered `EntranceFade`; an error `BlocListener` (guarded to Home being the visible route); a last-good-snapshot cache so inline-action transitions never blank the list; combined `_HomeShimmer` loading state; refined empty / all-caught-up states. Stays strictly monochrome (colour only for status).
+
+`flutter analyze` clean (0 errors, 0 warnings; 2 pre-existing infos unchanged).
+
+### Fixed (2026-06-18 — Proof submission error visibility)
+- **Upload error now shown on the right screen.** `_CompleteButton._submit()` was fire-and-forget: it launched `completeAndSubmit` and immediately popped the screen. If the Storage upload failed, the warning snackbar fired on `MyTasksScreen` (the previous screen) after the user had already navigated away — easy to miss. `_submit()` is now `async` and `await`s `completeAndSubmit` before calling `pop()`. The upload-failure snackbar now appears while the user is still looking at the task details screen.
+- **User-friendly upload error messages.** Upload failure messages no longer reference internal infrastructure ("Enable Firebase Storage and deploy storage.rules"). Both `completeTask` and `completeAndSubmit` now show: `"Photo upload failed — check your internet connection and try again."` The root cause (Storage not enabled) is still documented in `CURRENT_STATE.md` for the operator.
+
+`flutter analyze` clean (0 errors, 0 warnings; 2 pre-existing infos unchanged).
+
+### Fixed (2026-06-18 — Task Workflow Architecture: single-write state machine)
+
+**Root cause of duplicate activity entries, status regressions, and unreliable checklist.**
+
+Every status-transition method (`startTask`, `submitForReview`, `approveTask`, `rejectTask`) was doing two conflicting Firestore writes:
+
+1. **Write 1 (thin)** — `_changeTaskStatus` / `_reviewTask`: sets `status=newStatus` only, via `merge:true`
+2. **Write 2 (fat)** — `_appendActivity` → `_updateTask`: writes the **entire** task map from the *original* entity (which still carries `status=oldStatus`), via `merge:true`, reverting Write 1
+
+Because `merge:true` overwrites every specified field, Write 2 always reverted the status back to the pre-transition value. The Firestore real-time stream fired after each write, so the UI would bounce: `pending → started → pending`. This caused:
+- Employees seeing "Start Task" again after tapping it → tapping again → **duplicate "Started" activity entries**
+- Checklist becoming non-interactive (gated on `status == started`) because status bounced back to `pending`
+- Managers seeing the review block re-appear after approving/rejecting
+
+**Fix:** Replaced the two-write pattern with a **single `_updateTask` call** in each method that atomically writes the new `status`, any audit fields (`approvedBy`/`rejectedBy`/`approvedAt`/`rejectedAt`/`reviewNotes`), and the new `ActivityEntry`, all in one Firestore document write. No more race condition.
+
+- `startTask` — single write: `status=started` + activity entry
+- `submitForReview` — single write: `status=waitingReview` + activity entry  
+- `approveTask` — single write: `status=approved` + audit fields + activity entry + spawn recurrence
+- `rejectTask` — single write: `status=rejected` + audit fields + activity entry
+
+Removed `_appendActivity` helper (was the source of the double-write).
+Removed `ChangeTaskStatus` and `ReviewTask` use cases from `TaskCubit` (no longer needed; use case files kept as dormant domain objects).
+Updated `_canTransition` to include `started → waitingReview` (the path `completeAndSubmit` uses), making the state machine complete.
+DI wiring (`injection.dart`) updated to match the removed cubit dependencies.
+
+**Second pass — complete single-write architecture with audit timestamps:**
+
+Added `startedAt` and `submittedAt` fields to `TaskEntity` (freezed) and `TaskModel` (serialization + Firestore Timestamp ↔ DateTime). Completing the per-transition audit timestamp set: every status transition now writes its own named timestamp in the same atomic document update — `startedAt` (`startTask`), `submittedAt` (`submitForReview` and `completeAndSubmit`), `approvedAt` (`approveTask`), `rejectedAt` (`rejectTask`).
+
+**Full audit result — every task action verified clean:**
+
+| Action | Writes | Stale-data risk |
+|---|---|---|
+| `createTask` | 1 Firestore create | none |
+| `editTask` | 1 Firestore update | none |
+| `deleteTask` | 1 Firestore delete | none |
+| `assignEmployees` | 1 thin merge (no status change) | none |
+| `startTask` | 1 atomic update (status + startedAt + activity) | none |
+| `completeTask` | 1 atomic update (status + notes/proof + activity) | none |
+| `submitForReview` | 1 atomic update (status + submittedAt + activity) | none |
+| `completeAndSubmit` | 1 Storage upload + 1 atomic update (status + submittedAt + activity) | none |
+| `approveTask` | 1 atomic update (status + approvedAt + audit + activity) | none |
+| `rejectTask` | 1 atomic update (status + rejectedAt + audit + activity) | none |
+| `toggleChecklistItem` | 1 atomic update (checklist only, no status change) | none |
+
+Freezed codegen re-run (2 outputs written). `flutter analyze` clean (0 errors, 0 warnings; 2 pre-existing infos unchanged).
+
 ### Changed (2026-06-18 — App Icon & Name)
 - **App icon** updated to new DROP branding image on both Android and iOS (all sizes generated via `flutter_launcher_icons` from `assets/E22CA445-D611-4A31-8EE5-BB661032E09C.png`).
 - **App display name** changed from `FBRO` → `DROP` in `AndroidManifest.xml` (android:label) and `Info.plist` (CFBundleDisplayName + CFBundleName). Dart package name (`name: fbro` in pubspec.yaml) unchanged.

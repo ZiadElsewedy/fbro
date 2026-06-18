@@ -46,7 +46,13 @@ mixin _$TaskEntity {
 
   /// Download URL of the proof image the employee uploads on completion.
   String? get proofImageUrl =>
-      throw _privateConstructorUsedError; // ─── Review audit (Phase 4 — lightweight, not a full history) ───
+      throw _privateConstructorUsedError; // ─── Lifecycle timestamps (one per status transition, set atomically) ───
+  /// When an employee first started the task.
+  DateTime? get startedAt => throw _privateConstructorUsedError;
+
+  /// When the employee submitted for review (via completeAndSubmit or submitForReview).
+  DateTime? get submittedAt =>
+      throw _privateConstructorUsedError; // ─── Review audit fields ─────────────────────────────────────
   /// uid of the manager/admin who approved the task, + when.
   String? get approvedBy => throw _privateConstructorUsedError;
   DateTime? get approvedAt => throw _privateConstructorUsedError;
@@ -96,6 +102,8 @@ abstract class $TaskEntityCopyWith<$Res> {
     DateTime? deadline,
     String? notes,
     String? proofImageUrl,
+    DateTime? startedAt,
+    DateTime? submittedAt,
     String? approvedBy,
     DateTime? approvedAt,
     String? rejectedBy,
@@ -139,6 +147,8 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
     Object? deadline = freezed,
     Object? notes = freezed,
     Object? proofImageUrl = freezed,
+    Object? startedAt = freezed,
+    Object? submittedAt = freezed,
     Object? approvedBy = freezed,
     Object? approvedAt = freezed,
     Object? rejectedBy = freezed,
@@ -207,6 +217,14 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
                 ? _value.proofImageUrl
                 : proofImageUrl // ignore: cast_nullable_to_non_nullable
                       as String?,
+            startedAt: freezed == startedAt
+                ? _value.startedAt
+                : startedAt // ignore: cast_nullable_to_non_nullable
+                      as DateTime?,
+            submittedAt: freezed == submittedAt
+                ? _value.submittedAt
+                : submittedAt // ignore: cast_nullable_to_non_nullable
+                      as DateTime?,
             approvedBy: freezed == approvedBy
                 ? _value.approvedBy
                 : approvedBy // ignore: cast_nullable_to_non_nullable
@@ -287,6 +305,8 @@ abstract class _$$TaskEntityImplCopyWith<$Res>
     DateTime? deadline,
     String? notes,
     String? proofImageUrl,
+    DateTime? startedAt,
+    DateTime? submittedAt,
     String? approvedBy,
     DateTime? approvedAt,
     String? rejectedBy,
@@ -330,6 +350,8 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
     Object? deadline = freezed,
     Object? notes = freezed,
     Object? proofImageUrl = freezed,
+    Object? startedAt = freezed,
+    Object? submittedAt = freezed,
     Object? approvedBy = freezed,
     Object? approvedAt = freezed,
     Object? rejectedBy = freezed,
@@ -398,6 +420,14 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
             ? _value.proofImageUrl
             : proofImageUrl // ignore: cast_nullable_to_non_nullable
                   as String?,
+        startedAt: freezed == startedAt
+            ? _value.startedAt
+            : startedAt // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
+        submittedAt: freezed == submittedAt
+            ? _value.submittedAt
+            : submittedAt // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
         approvedBy: freezed == approvedBy
             ? _value.approvedBy
             : approvedBy // ignore: cast_nullable_to_non_nullable
@@ -457,6 +487,8 @@ class _$TaskEntityImpl extends _TaskEntity {
     this.deadline,
     this.notes,
     this.proofImageUrl,
+    this.startedAt,
+    this.submittedAt,
     this.approvedBy,
     this.approvedAt,
     this.rejectedBy,
@@ -534,7 +566,15 @@ class _$TaskEntityImpl extends _TaskEntity {
   /// Download URL of the proof image the employee uploads on completion.
   @override
   final String? proofImageUrl;
-  // ─── Review audit (Phase 4 — lightweight, not a full history) ───
+  // ─── Lifecycle timestamps (one per status transition, set atomically) ───
+  /// When an employee first started the task.
+  @override
+  final DateTime? startedAt;
+
+  /// When the employee submitted for review (via completeAndSubmit or submitForReview).
+  @override
+  final DateTime? submittedAt;
+  // ─── Review audit fields ─────────────────────────────────────
   /// uid of the manager/admin who approved the task, + when.
   @override
   final String? approvedBy;
@@ -575,7 +615,7 @@ class _$TaskEntityImpl extends _TaskEntity {
 
   @override
   String toString() {
-    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, createdBy: $createdBy, assignedShiftId: $assignedShiftId, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, createdBy: $createdBy, assignedShiftId: $assignedShiftId, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -610,6 +650,10 @@ class _$TaskEntityImpl extends _TaskEntity {
             (identical(other.notes, notes) || other.notes == notes) &&
             (identical(other.proofImageUrl, proofImageUrl) ||
                 other.proofImageUrl == proofImageUrl) &&
+            (identical(other.startedAt, startedAt) ||
+                other.startedAt == startedAt) &&
+            (identical(other.submittedAt, submittedAt) ||
+                other.submittedAt == submittedAt) &&
             (identical(other.approvedBy, approvedBy) ||
                 other.approvedBy == approvedBy) &&
             (identical(other.approvedAt, approvedAt) ||
@@ -649,6 +693,8 @@ class _$TaskEntityImpl extends _TaskEntity {
     deadline,
     notes,
     proofImageUrl,
+    startedAt,
+    submittedAt,
     approvedBy,
     approvedAt,
     rejectedBy,
@@ -685,6 +731,8 @@ abstract class _TaskEntity extends TaskEntity {
     final DateTime? deadline,
     final String? notes,
     final String? proofImageUrl,
+    final DateTime? startedAt,
+    final DateTime? submittedAt,
     final String? approvedBy,
     final DateTime? approvedAt,
     final String? rejectedBy,
@@ -739,7 +787,14 @@ abstract class _TaskEntity extends TaskEntity {
 
   /// Download URL of the proof image the employee uploads on completion.
   @override
-  String? get proofImageUrl; // ─── Review audit (Phase 4 — lightweight, not a full history) ───
+  String? get proofImageUrl; // ─── Lifecycle timestamps (one per status transition, set atomically) ───
+  /// When an employee first started the task.
+  @override
+  DateTime? get startedAt;
+
+  /// When the employee submitted for review (via completeAndSubmit or submitForReview).
+  @override
+  DateTime? get submittedAt; // ─── Review audit fields ─────────────────────────────────────
   /// uid of the manager/admin who approved the task, + when.
   @override
   String? get approvedBy;

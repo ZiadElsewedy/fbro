@@ -9,10 +9,25 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-18
+**Last updated:** 2026-06-18 (employee home redesign v2)
 **Version:** 1.0.0+1 · **Branch:** `redesign` (DROP — monochrome enterprise UX)
 
+> **Employee home redesign v2 (2026-06-18):** `employee_home_screen.dart` rebuilt
+> into a live command center — an animated **circular progress ring** hero
+> (`_RingPainter` CustomPaint, sweep + count-up) + today's shift, a count-up
+> **stat strip**, and an **actionable** task list (Start a pending task inline →
+> `TaskCubit.startTask`; Continue / View feedback; body tap → `TaskDetailsScreen`).
+> All task counts/sections come from the **live `TaskCubit` stream** (ground
+> truth — fixes the old "In progress" chip always reading 0, since `employeeStats`
+> never sets `activeTasks`); only the shift comes from `StatisticsCubit`. Staggered
+> entrances, `_Pressable` press feedback, last-good-snapshot cache (no flicker on
+> inline actions), route-guarded error snackbars, "Open all tasks" → Tasks tab.
+> Strictly monochrome; presentation-only (no new files/routes/cubits/schema).
+> `flutter analyze` clean (2 pre-existing infos).
+
 > **App branding (2026-06-18):** App icon replaced with DROP branding image on Android + iOS (all sizes auto-generated). App display name changed to **DROP** (AndroidManifest + Info.plist). Dart package name stays `fbro` internally.
+
+> **Task workflow architecture (2026-06-18 — two passes):** Eliminated the double-write race condition and completed the single-write architecture. Every status transition is now one atomic `_updateTask` call that writes `status` + `activityLog` entry + per-transition audit timestamp in a single Firestore document write. **New fields:** `startedAt` (set by `startTask`) and `submittedAt` (set by `submitForReview` and `completeAndSubmit`), joining the existing `approvedAt`/`rejectedAt`. `ChangeTaskStatus` and `ReviewTask` use cases removed from `TaskCubit` (dormant on disk). `_canTransition` updated to include `started → waitingReview`. Freezed codegen re-run. `flutter analyze` clean (2 pre-existing infos only).
 
 > **Inline checklist editor + form simplification (2026-06-18):** ① The Create/Edit Task form now has a fully **inline editable checklist** section (`_InlineChecklistEditor`). Managers tap "Add step" to add items, tap the star to toggle required/optional, tap × to remove. On create → items become `ChecklistItem`s; on edit → existing items preserve `completed`/`completedAt`, new items start uncompleted. Template-based tasks pre-populate the checklist editably (was read-only before). ② **"Type: daily/special" dropdown removed** from the form — it was visually redundant with "Repeats"; type is now auto-inferred (recurring → daily, one-off → special). `flutter analyze` clean.
 
@@ -24,6 +39,10 @@
 > no longer blocks completing the task or loses notes; precise warning shown) and the
 > **manager Review sheet now shows the submitted notes + proof image**. ⚠️ Still must
 > **enable Storage + deploy `storage.rules`** for uploads to actually work. ②
+> **Upload-failure error is now shown on the right screen** — `_submit()` in
+> `_CompleteButton` is now `async`/`await`-ed so the error snackbar fires while
+> `TaskDetailsScreen` is still open (was previously shown on `MyTasksScreen` after
+> the pop — easy to miss). Error message is user-friendly (no developer jargon). ②
 > **Task cards redesigned** — monochrome, scannable, no priority rail / coloured
 > chips / loud badges; colour reserved for **destructive** actions only. ③ **"Assigned
 > by Name · Role"** added to cards (resolves `createdBy`). ④ **Username removed** from
@@ -380,6 +399,8 @@ Phase 10 (dead code, never consumed). The **weekly schedule**
 | `deadline`           | Timestamp? | due date/time                                         |
 | `notes`              | string?    | employee's free-text notes                            |
 | `proofImageUrl`      | string?    | proof image download URL (uploaded on completion)     |
+| `startedAt`  | Timestamp? | set atomically when `startTask` writes `status=started` |
+| `submittedAt` | Timestamp? | set atomically when `submitForReview` / `completeAndSubmit` writes `status=waitingReview` |
 | `approvedBy`, `approvedAt`   | string? / Timestamp? | reviewer uid + time on approve (Phase 4 audit) |
 | `rejectedBy`, `rejectedAt`   | string? / Timestamp? | reviewer uid + time on reject (Phase 4 audit) |
 | `reviewNotes`        | string?    | reviewer's note on approve/reject (Phase 4)           |
@@ -486,10 +507,13 @@ week's Sunday), so a week is addressed directly without a query.
   (Cloud Function or external) is the remaining piece. FCM also needs native
   setup: **APNs key + Push capability (iOS)**; Android works via `google-services`.
   `NotificationType` documents the event contract for whatever sends them.
-- **Manager / Employee home dashboards** (`ManagerHomeScreen` /
-  `EmployeeHomeScreen`) are still functional placeholders — their shifts/tasks
-  live behind the Shifts/Tasks icons in the role chrome. The **Admin** shell is
-  the full admin module (Phase 5).
+- **Employee home dashboard** (`EmployeeHomeScreen`) is a **full live
+  command center (redesign v2, 2026-06-18)** — animated progress-ring hero +
+  today's shift, count-up stat strip, and an **actionable** task list (start a
+  task inline, continue, view feedback) computed from the live `TaskCubit`
+  stream; the Tasks tab is the full list. The **Manager** home
+  (`ManagerHomeScreen`) leads with a "Needs attention" hero + grouped sections;
+  the **Admin** shell is the full admin module (Phase 5).
 - ~~Orphaned Phase 2 shift placeholders~~ **REMOVED (Phase 10).** The entire
   `shift` feature (`features/shift/`, the 3 placeholder screens + routes,
   `RouteNames.shiftsForRole`, `AppDependencies.shiftRepository`,

@@ -46,7 +46,12 @@ class TaskEntity with _$TaskEntity {
     String? notes,
     /// Download URL of the proof image the employee uploads on completion.
     String? proofImageUrl,
-    // ─── Review audit (Phase 4 — lightweight, not a full history) ───
+    // ─── Lifecycle timestamps (one per status transition, set atomically) ───
+    /// When an employee first started the task.
+    DateTime? startedAt,
+    /// When the employee submitted for review (via completeAndSubmit or submitForReview).
+    DateTime? submittedAt,
+    // ─── Review audit fields ─────────────────────────────────────
     /// uid of the manager/admin who approved the task, + when.
     String? approvedBy,
     DateTime? approvedAt,
