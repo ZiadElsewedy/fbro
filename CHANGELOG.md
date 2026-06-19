@@ -12,6 +12,68 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-06-19 — Admin command-center redesign + reusable component library)
+
+A premium-operations pass on the **Admin** experience (enterprise / Apple-inspired
+dark UI), built on a new shared component library so repeated card patterns stop
+being copy-pasted. **Strictly monochrome** — the existing `AppColors` tokens were
+kept (owner chose not to shift the palette); colour stays reserved for status.
+No schema / route / entity / Firestore-rule changes; no codegen (no freezed
+touched). `flutter analyze` clean (**0 issues**); 17 tests pass (12 + 5 new).
+
+**New reusable components (`lib/core/widgets/`):**
+- **`GlassContainer`** — the one shared premium surface (elevated→surface
+  gradient, hairline border, soft depth shadow, large radius) with built-in
+  press-scale + hover feedback and a `highlight`/`accent` mode. `HeroStatCard`
+  and `AdminUserCard` were **refactored onto it** (dedup — the gradient/border/
+  shadow `BoxDecoration` lived in 4+ places).
+- **`DashboardMetricCard`** — icon chip · value · label · optional trend/status
+  footnote (built on `GlassContainer`).
+- **`ActionCard`** — premium quick-action tile (icon chip + title + optional
+  subtitle), replacing boring `ListTile`s.
+- **`AdminSectionHeader`** — prominent section header (title + optional subtitle +
+  optional trailing action), distinct from the micro-label `SectionHeader`.
+- **`TimelineTile`** — generic vertical-timeline row (dot · spine · title ·
+  timestamp · actor · note), rendered purely from data. The Task Details activity
+  timeline (`_ActivityTimeline`/`_TimelineRow`) was rebuilt on it, and the admin
+  recent-activity feed reuses it.
+- **`TaskStatusChip`** requirement is satisfied by the existing
+  `StatusBadge.task(status)` factory (no duplicate widget created).
+
+**New shared formatting (`lib/features/task/presentation/activity_format.dart`):**
+`activityTitle(status)` / `activityColor(status)` / `relativeTime(dt)` — the
+status→label/colour + relative-time mapping, previously private to Task Details,
+now shared with the admin activity feed.
+
+**Admin Home → command center** (`admin_dashboard_screen.dart`, rebuilt):
+time-aware **greeting header** (salutation · date · branch/employee scope) → a
+focal **hero card** that surfaces the most urgent insight (pending approvals →
+tasks awaiting review → overdue → all-clear) with a metric, summary, today's
+throughput progress bar and a CTA → a 2×2 **metrics grid**
+(`DashboardMetricCard`: Branches · Employees · Managers · Active tasks, with
+trend lines) → **quick actions** (`ActionCard`: Add Branch · Add Manager · Assign
+Task · Approve Employee) → a **pending-approvals** preview (read-only, via the new
+`AdminUsersCubit.pendingUsers()`) → a **recent-activity feed** (`TimelineTile`,
+derived from the live task stream's `activityLog`) → a **Manage** grid (Schedules
+· Employees · Analytics · Settings). Reads three live sources: `StatisticsCubit`,
+the `TaskCubit` all-branches stream, and pending users. Every module stays
+reachable in 1–2 taps.
+
+**Employee Management page** (`employee_management_screen.dart`): the generic
+`AdminUserCard` was replaced by a new **`EmployeeCard`** (avatar · name · role ·
+branch · active/inactive badge) carrying a **performance metric strip**
+(Completed · Pending · Completion rate · Late). Metrics are derived from the live
+admin task stream via the new pure helper **`computeEmployeeMetrics`**
+(`employee_metrics.dart`) — no new backend query/schema. `EmployeeMetrics` is unit
+tested ([employee_metrics_test.dart](test/employee_metrics_test.dart), 5 cases).
+
+**Task timeline (data architecture note):** the spec's recommended event-based
+timeline (`TaskEvent`/`TaskEventType`) is **already implemented** as
+`TaskEntity.activityLog` (`List<ActivityEntry>{status, actorId, actorName, at,
+note}`); the timeline renders dynamically from that list (supports missing /
+optional steps and rework loops — no hardcoded sequence). This pass extracted the
+reusable `TimelineTile` and shared the formatting, rather than re-modelling.
+
 ### Changed (2026-06-19 — Employee schedule premium redesign)
 
 **`my_schedule_screen.dart` fully rebuilt** to a premium, animated schedule view:

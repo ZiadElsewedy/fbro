@@ -13,6 +13,7 @@ import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_dialog.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
+import 'package:fbro/core/widgets/timeline_tile.dart';
 import 'package:fbro/core/widgets/user_avatar.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
@@ -20,6 +21,7 @@ import 'package:fbro/features/auth/presentation/widgets/app_text_field.dart';
 import 'package:fbro/features/task/domain/entities/activity_entry.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
+import 'package:fbro/features/task/presentation/activity_format.dart';
 import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
 import 'package:fbro/features/task/presentation/cubit/task_state.dart';
 import 'package:fbro/features/task/presentation/widgets/task_action_sheets.dart';
@@ -757,138 +759,30 @@ class _ActivityTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Show newest first.
+    // Show newest first — rendered purely from the event list (no hardcoded
+    // sequence), so missing/optional steps and rework loops just work.
     final entries = log.reversed.toList();
     return Column(
       children: [
         for (var i = 0; i < entries.length; i++)
-          _TimelineRow(
-            entry: entries[i],
-            directory: directory,
+          TimelineTile(
+            title: activityTitle(entries[i].status),
+            titleColor: activityColor(entries[i].status),
+            dotColor: activityColor(entries[i].status),
+            time: relativeTime(entries[i].at),
+            subtitle: _actorName(entries[i]),
+            note: entries[i].note,
             isLast: i == entries.length - 1,
           ),
       ],
     );
   }
-}
 
-class _TimelineRow extends StatelessWidget {
-  const _TimelineRow({
-    required this.entry,
-    required this.directory,
-    required this.isLast,
-  });
-
-  final ActivityEntry entry;
-  final Map<String, UserEntity> directory;
-  final bool isLast;
-
-  @override
-  Widget build(BuildContext context) {
+  String _actorName(ActivityEntry entry) {
     final actor = directory[entry.actorId];
-    final name = entry.actorName ??
-        (actor != null
-            ? (actor.displayName ?? actor.email)
-            : 'Unknown');
-
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Timeline spine
-          Column(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                margin: const EdgeInsets.only(top: 6),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _dotColor(entry.status),
-                ),
-              ),
-              if (!isLast)
-                Expanded(
-                  child: Container(
-                    width: 1,
-                    margin: const EdgeInsets.symmetric(vertical: 3),
-                    color: AppColors.darkBorder,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(width: AppSpacing.md),
-          // Content
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        _statusLabel(entry.status),
-                        style: AppTypography.label
-                            .copyWith(color: _dotColor(entry.status)),
-                      ),
-                      const Spacer(),
-                      Text(
-                        _timeLabel(entry.at),
-                        style: AppTypography.caption,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Text(name, style: AppTypography.bodySmall),
-                  if ((entry.note ?? '').isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      entry.note!,
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.textSecondary, height: 1.4),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return entry.actorName ??
+        (actor != null ? (actor.displayName ?? actor.email) : 'Unknown');
   }
-
-  Color _dotColor(String status) => switch (status) {
-        'approved' => AppColors.success,
-        'rejected' => AppColors.error,
-        'started' || 'waitingReview' => AppColors.textPrimary,
-        _ => AppColors.textTertiary,
-      };
-
-  String _statusLabel(String s) => switch (s) {
-        'pending' => 'Created',
-        'started' => 'Started',
-        'completed' => 'Completed',
-        'waitingReview' => 'Submitted for review',
-        'approved' => 'Approved',
-        'rejected' => 'Rework requested',
-        _ => s,
-      };
-
-  String _timeLabel(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-    if (diff.inDays < 1) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${dt.day} ${_months[dt.month - 1]}';
-  }
-
-  static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
 }
 
 // ─── Employee action area ───────────────────────────────────────────

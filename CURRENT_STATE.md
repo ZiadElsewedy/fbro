@@ -11,8 +11,32 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-19 (admin tasks setState fix + lint cleanup)
+**Last updated:** 2026-06-19 (Admin command-center redesign + reusable component library)
 **Version:** 1.0.0+1 · **Branch:** `feature/tasks-improvements` (DROP — monochrome enterprise UX)
+
+> **Admin command-center redesign + component library (2026-06-19):** Premium
+> rebuild of the **Admin** experience on a new shared component library — keeping
+> the existing **strictly-monochrome** `AppColors` (owner kept the palette).
+> **New `core/widgets`:** `GlassContainer` (the one shared premium surface —
+> gradient·border·depth·press/hover; `HeroStatCard` + `AdminUserCard` refactored
+> onto it), `DashboardMetricCard`, `ActionCard`, `AdminSectionHeader`,
+> `TimelineTile` (generic vertical timeline). The `TaskStatusChip` requirement is
+> met by the existing `StatusBadge.task`. **Admin Home** (`admin_dashboard_screen.dart`)
+> rebuilt into a command center: greeting header → focal **hero** (pending
+> approvals → reviews → overdue → all-clear, with metric·summary·progress·CTA) →
+> `DashboardMetricCard` overview grid → `ActionCard` quick actions → pending-
+> approvals preview (read-only `AdminUsersCubit.pendingUsers()`) → recent-activity
+> feed (`TimelineTile` from the live task `activityLog`) → Manage grid. Reads
+> `StatisticsCubit` + the `TaskCubit` all-branches stream + pending users.
+> **Employees page** now uses a new `EmployeeCard` (identity + active badge +
+> Completed/Pending/Rate/Late metric strip) — metrics derived from the task stream
+> via the pure `computeEmployeeMetrics` (`admin/presentation/employee_metrics.dart`,
+> unit-tested). Task-details timeline + admin feed share `TimelineTile` +
+> `activity_format.dart` (`activityTitle`/`activityColor`/`relativeTime`). The
+> spec's event-based task timeline is **already** the `activityLog`/`ActivityEntry`
+> model (rendered dynamically — missing/optional steps + rework loops supported).
+> No schema/route/entity/rule change; no codegen. `flutter analyze` clean (0
+> issues); **17 tests pass** (12 + 5 new in `employee_metrics_test.dart`).
 
 > **Admin tasks setState fix (2026-06-19):** `AdminTaskOverviewScreen._load()` was
 > calling `setState(() => _branchesFuture = context.read<TaskCubit>().branches())`
@@ -139,7 +163,7 @@
 | Profile          | ✅ Complete    | View/edit (Full Name · Bio · avatar+cover). **Username removed (2026-06-18)** from editing/validation — no operational value (legacy social field); dormant model field + `CheckUsername` use case remain as harmless legacy |
 | Settings         | ✅ Complete    | Settings page + change password + delete account              |
 | Role shells      | ✅ Live        | All three role dashboards show live operational stats (Phase 6); Admin shell hosts the full admin module (Phase 5) |
-| Design system    | ✅ Complete    | **Strictly monochrome** black / white / grey dark UI (`AppColors.primary` = white, the only accent; `onPrimary`/`primarySurface`/flat `primaryGlow`), **dark-mode only**; branded **DROP** (`DropLogo` wordmark, preserved). Role chrome is a **bottom navigation bar** (`AppBottomNav` + rebuilt `RoleScaffold`: Home · Tasks · Schedule · Profile). Signature screens: splash brand lockup, breathing-clock Pending Approval. **Phase 9:** premium glass cards, reusable `UserAvatar`/`AvatarStack`, `EntranceFade` motion, `AppSearchField` |
+| Design system    | ✅ Complete    | **Strictly monochrome** black / white / grey dark UI (`AppColors.primary` = white, the only accent; `onPrimary`/`primarySurface`/flat `primaryGlow`), **dark-mode only**; branded **DROP** (`DropLogo` wordmark, preserved). Role chrome is a **bottom navigation bar** (`AppBottomNav` + rebuilt `RoleScaffold`: Home · Tasks · Schedule · Profile). Signature screens: splash brand lockup, breathing-clock Pending Approval. **Phase 9:** premium glass cards, reusable `UserAvatar`/`AvatarStack`, `EntranceFade` motion, `AppSearchField`. **Admin redesign (2026-06-19):** shared component library — `GlassContainer` (the one premium surface), `DashboardMetricCard`, `ActionCard`, `AdminSectionHeader`, `TimelineTile` (+`EmployeeCard`, `StatusBadge.task` as the task-status chip) |
 | Security rules   | ✅ In repo     | `firestore.rules` + `storage.rules` — committed, need deploy   |
 | Social fields    | ⛔ Legacy      | Counter/presence fields linger in schema but are unused — **FBRO is not a social app** |
 
@@ -595,8 +619,14 @@ week's Sunday), so a week is addressed directly without a query.
 
 ## Testing
 
-- Only `test/widget_test.dart` exists and is an **empty placeholder**
-  (`void main() {}`). No automated test coverage yet.
+- **Unit/widget tests (17 passing):** `test/task_checklist_test.dart` (checklist
+  completion rule, multi-assignee (de)serialization + legacy fallback,
+  template→task checklist), `test/employee_metrics_test.dart` (per-employee
+  performance derivation — completed/pending/rate/late, multi-assignee, deadline
+  lateness), `test/user_model_test.dart` (malformed-doc hardening),
+  `test/app_search_field_test.dart` and `test/task_card_layout_test.dart`
+  (layout regressions). `test/widget_test.dart` remains an empty placeholder.
+  Cubit/router tests are still a gap (see suggested next steps).
 - **Manual QA:** [`QA_CHECKLIST.md`](QA_CHECKLIST.md) — an executable, on-device
   checklist covering the Employee / Manager / Admin workflows, real-time, offline,
   and UI/branding, with the deploy/Storage preconditions a tester must do first.
