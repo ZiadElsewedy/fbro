@@ -12,6 +12,105 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-06-20 — Premium UI redesign: Branch Schedule, Admin Home, Task timeline)
+
+A visual/product-refinement pass — monochrome, token-driven, no schema/logic change.
+`flutter analyze` clean (0 issues); 35 tests pass.
+
+- **Branch Schedule** (`manager_schedule_view.dart`) — denser, premium rebuild. The
+  oversized day cards are replaced by a compact **calendar date-rail + two shift
+  lanes** layout (`_dateRail` / `_shiftLane`): a fixed date tile (today fills
+  white), a hairline divider, then Morning/Night lanes each with an icon, label,
+  live count, a round **+** add affordance, and refined avatar chips (full-radius,
+  circular remove target). Padding tightened (lg→md) so more of the week fits on
+  screen. Broken-reference chips keep their amber treatment.
+- **Admin Home** (`admin_dashboard_screen.dart`) — premium tightening. Greeting
+  collapsed to a single line ("Good morning, Ziad", `h1`) instead of a stacked
+  `h2`+`display`; section gaps reduced (xxl→xl) to cut dead space; the **hero** now
+  places the big metric **beside** its title+summary (one block) with the daily
+  throughput moved to the eyebrow row — less vertical sprawl, clearer hierarchy.
+- **Task timeline** (`task_details_screen.dart`) — the plain `TimelineTile` rows
+  are replaced by rich **event cards** strung on a spine: a status badge (icon +
+  colour from `activityFormat`, new `activityIcon`), timestamp, **actor with avatar
+  + role**, a quoted note block (accent left-border), and an **attachment
+  thumbnail** (the submitted proof surfaces on the submission event).
+
+### Fixed (2026-06-20 — Product/UI verification pass: visibility, orphans, admin swap reachability)
+
+A product-engineer verification pass driven by real-UI review — every change here
+fixes something that was **wired in code but broken or unreachable in the actual
+flow**. `flutter analyze` clean (0 issues); **35 tests pass** (25 + 10 new,
+including headless **widget** tests that render the affected UI).
+
+- **Admin "Pending Actions" was invisible.** The whole section was gated behind
+  `if (pendingActions > 0)`, so on empty/zero data it silently vanished — looking
+  like the feature wasn't there. It's now **always rendered**, with an explicit
+  "You're all caught up" state. The panel was also **extracted to a public,
+  testable widget** ([pending_actions.dart](lib/features/admin/presentation/widgets/pending_actions.dart))
+  and covered by a widget test that actually pumps it
+  ([pending_actions_widget_test.dart](test/pending_actions_widget_test.dart)).
+- **Branch Schedule "Unknown" employees → explicit broken-reference handling.**
+  Root cause: `getUsersByBranch` returns only users whose **current** `branchId`
+  matches, so a uid left in a schedule slot after its owner was moved to another
+  branch / removed resolves to a silent `"Unknown"`. Now those orphaned
+  assignments are **detected** (`isOrphanAssignment`), **surfaced explicitly** (a
+  top-of-week warning banner + a distinct warning chip — "Unknown member · <uid>",
+  never a fake name), and **resolvable** (tap → confirm → remove the stale entry,
+  then reassign a current employee via "Add"). The employee "Working with" list
+  already dropped orphans (no fake name leaked there).
+- **Admin could not see or approve swap requests at all.** `ScheduleManagementScreen`
+  had no swap tab — only the manager screen did. It's now a **two-tab screen**
+  (Schedule · Swap Requests) with an **all-branches** queue
+  (`ShiftSwapCubit.loadAll()` + `SwapScope.all` + `getAllSwaps`), each card
+  labelled with its **branch** (`showBranch`, resolved via `BranchCubit`), plus the
+  same auto-refresh-on-approval `BlocListener` the manager screen has. The Pending
+  Actions "Swap Requests" row now lands somewhere the admin can actually act.
+- **Employee was offered "Swap" on past shifts.** The week rows showed an active
+  Swap button on every non-today, non-off day — including days already past this
+  week. Past/in-progress slots now show a muted "Past" label instead, keeping the
+  offered action in lock-step with `SwapEligibility` (the send-time + cubit + rules
+  gates from the previous entry remain as the backstop).
+
+### Added / Changed (2026-06-20 — Shift-swap hardening + Admin Pending Actions)
+
+First slice of the Operations refinement spec — **shift-swap correctness** (spec
+§2) and **admin operational visibility** (spec §1). No schema/entity/route change;
+no codegen. `flutter analyze` clean (**0 issues**); **25 tests pass** (17 + 8 new).
+
+**§2 — "Future shifts only" swap validation (the spec's critical rule), enforced
+in three layers:**
+- **Domain (source of truth):** new pure helper
+  [`SwapEligibility`](lib/features/schedule/domain/swap_eligibility.dart) —
+  `slotStart(weekStart, day, shift)` derives a slot's concrete start instant
+  (week's Sunday + day offset + shift start: morning 08:30 / night 16:30, mirroring
+  `ScheduleShift.timeRange`) and `isRequestable(...)` is true only when that start
+  is **strictly in the future**. Unit-tested
+  ([swap_eligibility_test.dart](test/swap_eligibility_test.dart), 8 cases:
+  yesterday → invalid, today-already-started → invalid, today-later/tomorrow/next-week
+  → valid, exact-start boundary → invalid).
+- **Cubit (authoritative client gate):** `ShiftSwapCubit.requestSwap` now rejects a
+  past/in-progress slot with a clear error (`SwapEligibility.pastShiftMessage`)
+  before any write.
+- **UI (immediate feedback):** the Request-Swap sheet (`swap_view.dart`) validates
+  on send and shows the same message.
+- **Firestore rules (server backstop):** `shift_swaps` **create** now requires
+  `swapSlotInFuture(request.resource.data)` — the rule recomputes the slot start
+  from `weekStart`/`day`/`shift` (via `swapDayOffset` + `swapShiftMinutes` +
+  `duration.value`) and requires it `> request.time`. ⚠️ Needs deploy.
+
+**§1 — Admin Home "Pending Actions" (replaces "Recent activity"):** the low-value
+activity feed on `admin_dashboard_screen.dart` is gone; in its place a consolidated,
+**actionable** queue right under the hero — Swap Requests · Employee Approvals ·
+Tasks Waiting Review · Overdue Tasks. Each non-empty queue is one tappable row
+(`_ActionRow`) that jumps straight to where it's resolved; the section header shows
+the total ("Pending Actions · N awaiting you"); empty queues are hidden.
+
+**Admin swap visibility plumbing (spec §2 — "Admin must see swap requests"):** new
+`ScheduleRepository.getAllSwaps()` (+ datasource + impl) — every branch's swaps —
+and `ShiftSwapCubit.pendingSwaps()`, a one-shot fetch of all **open** (non-resolved)
+swaps that powers the Pending Actions count without disturbing the cubit's
+list state (mirrors `AdminUsersCubit.pendingUsers`).
+
 ### Changed (2026-06-19 — Admin command-center redesign + reusable component library)
 
 A premium-operations pass on the **Admin** experience (enterprise / Apple-inspired

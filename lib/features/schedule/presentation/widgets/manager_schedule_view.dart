@@ -6,6 +6,7 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/app_dialog.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
 import 'package:fbro/core/widgets/user_avatar.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
@@ -178,13 +179,72 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
     if (schedule == null) {
       return _emptySchedule();
     }
+    final orphans = _orphanUids(schedule, members);
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, 0,
           AppSpacing.pagePadding, AppSpacing.xxxl),
       children: [
+        if (orphans.isNotEmpty) _orphanBanner(orphans.length),
         for (final day in ScheduleDay.values)
           _dayCard(day, schedule, members),
       ],
+    );
+  }
+
+  /// Every assigned uid in the week that no longer resolves to a branch member —
+  /// a broken/orphaned reference (employee moved branch, removed, or deleted).
+  Set<String> _orphanUids(
+      WeeklyScheduleEntity schedule, List<UserEntity> members) {
+    final out = <String>{};
+    for (final day in ScheduleDay.values) {
+      for (final shift in ScheduleShift.values) {
+        for (final uid in schedule.employeesFor(day, shift)) {
+          if (isOrphanAssignment(uid, members)) out.add(uid);
+        }
+      }
+    }
+    return out;
+  }
+
+  /// Explicit, dismissable-by-fixing warning that the roster contains stale
+  /// references — surfaced at the top of the week so it isn't missed.
+  Widget _orphanBanner(int count) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withAlpha(28),
+        borderRadius: AppRadius.cardAll,
+        border: Border.all(color: AppColors.warning.withAlpha(120)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.report_problem_outlined,
+              size: 18, color: AppColors.warning),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  count == 1
+                      ? '1 broken shift assignment'
+                      : '$count broken shift assignments',
+                  style: AppTypography.label
+                      .copyWith(color: AppColors.warning),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'These reference employees no longer in this branch. '
+                  'Tap a flagged chip to remove or reassign it.',
+                  style: AppTypography.caption,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -225,13 +285,10 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
     List<UserEntity> members,
   ) {
     final isToday = ScheduleDay.today() == day;
-    final covered = {
-      for (final shift in ScheduleShift.values)
-        ...schedule.employeesFor(day, shift),
-    }.length;
+    final date = schedule.weekStart.add(Duration(days: day.index));
     return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.lg),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [AppColors.darkSurfaceElevated, AppColors.darkSurface],
@@ -240,59 +297,71 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         ),
         borderRadius: AppRadius.cardAll,
         border: Border.all(
-            color: isToday ? AppColors.primary : AppColors.darkBorder),
+          color: isToday ? AppColors.primary.withAlpha(110) : AppColors.darkBorder,
+        ),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _dateRail(day, date, isToday),
+            const SizedBox(width: AppSpacing.md),
+            Container(width: 1, color: AppColors.darkBorder),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                children: [
+                  _shiftLane(day, ScheduleShift.morning, schedule, members),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                    child: Divider(height: 1, color: AppColors.darkBorder),
+                  ),
+                  _shiftLane(day, ScheduleShift.night, schedule, members),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Compact calendar tile — weekday + date number; today fills white.
+  Widget _dateRail(ScheduleDay day, DateTime date, bool isToday) {
+    return Container(
+      width: 46,
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: isToday ? AppColors.primary : AppColors.darkBg,
+        borderRadius: AppRadius.mdAll,
+        border: isToday ? null : Border.all(color: AppColors.darkBorder),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Row(
-            children: [
-              Text(day.label, style: AppTypography.label),
-              if (isToday) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withAlpha(28),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text('Today',
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.primary)),
-                ),
-              ],
-              const Spacer(),
-              // Coverage indicator.
-              Icon(
-                covered == 0
-                    ? Icons.error_outline_rounded
-                    : Icons.people_alt_outlined,
-                size: 14,
-                color:
-                    covered == 0 ? AppColors.warning : AppColors.textTertiary,
-              ),
-              const SizedBox(width: 4),
-              Text('$covered',
-                  style: AppTypography.caption.copyWith(
-                    color: covered == 0
-                        ? AppColors.warning
-                        : AppColors.textSecondary,
-                  )),
-            ],
+          Text(
+            day.shortLabel.toUpperCase(),
+            style: AppTypography.caption.copyWith(
+              color: isToday ? AppColors.onPrimary : AppColors.textTertiary,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          for (final shift in ScheduleShift.values) ...[
-            _shiftRow(day, shift, schedule, members),
-            if (shift != ScheduleShift.values.last)
-              const SizedBox(height: AppSpacing.md),
-          ],
+          const SizedBox(height: 2),
+          Text(
+            '${date.day}',
+            style: AppTypography.h3.copyWith(
+              color: isToday ? AppColors.onPrimary : AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _shiftRow(
+  /// One shift's lane: icon · label · count · add, then the assigned chips.
+  Widget _shiftLane(
     ScheduleDay day,
     ScheduleShift shift,
     WeeklyScheduleEntity schedule,
@@ -305,61 +374,74 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       children: [
         Row(
           children: [
-            // Shift badge.
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              width: 26,
+              height: 26,
               decoration: BoxDecoration(
-                color: AppColors.darkSurface,
-                borderRadius: BorderRadius.circular(20),
+                color: AppColors.darkBg,
+                shape: BoxShape.circle,
                 border: Border.all(color: AppColors.darkBorder),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isMorning
-                        ? Icons.wb_sunny_outlined
-                        : Icons.nightlight_outlined,
-                    size: 14,
-                    color: isMorning ? AppColors.warning : AppColors.primary,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(shift.label, style: AppTypography.labelSmall),
-                ],
+              child: Icon(
+                isMorning ? Icons.wb_sunny_rounded : Icons.nightlight_round,
+                size: 13,
+                color: isMorning ? AppColors.warning : AppColors.textSecondary,
               ),
             ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(shift.label, style: AppTypography.label.copyWith(fontSize: 13)),
+            const SizedBox(width: 6),
+            Text('· ${uids.length}',
+                style: AppTypography.caption.copyWith(
+                  color: uids.isEmpty
+                      ? AppColors.warning
+                      : AppColors.textTertiary,
+                )),
             const Spacer(),
-            TextButton.icon(
-              onPressed: () => _pickEmployee(day, shift, schedule, members),
-              icon: const Icon(Icons.person_add_alt_1_outlined, size: 16),
-              label: const Text('Add'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                textStyle: AppTypography.caption,
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            // Premium add affordance.
+            InkWell(
+              onTap: () => _pickEmployee(day, shift, schedule, members),
+              borderRadius: BorderRadius.circular(99),
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: const BoxDecoration(
+                  color: AppColors.primarySurface,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.add_rounded,
+                    size: 16, color: AppColors.primary),
               ),
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.xs),
         if (uids.isEmpty)
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 2),
-            child: Text('No one assigned', style: AppTypography.caption),
+            padding: const EdgeInsets.only(left: 34, top: AppSpacing.xs),
+            child: Text('No one assigned',
+                style: AppTypography.caption
+                    .copyWith(color: AppColors.textTertiary)),
           )
         else
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.xs,
-            children: [
-              for (final uid in uids)
-                _employeeChip(
-                    uid,
-                    nameForUid(uid, members),
-                    userForUid(uid, members),
-                    () =>
-                        context.read<ScheduleCubit>().remove(day, shift, uid)),
-            ],
+          Padding(
+            padding: const EdgeInsets.only(left: 34, top: AppSpacing.sm),
+            child: Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: [
+                for (final uid in uids)
+                  if (isOrphanAssignment(uid, members))
+                    _brokenChip(uid, () => _resolveOrphan(day, shift, uid))
+                  else
+                    _employeeChip(
+                        uid,
+                        nameForUid(uid, members),
+                        userForUid(uid, members),
+                        () => context
+                            .read<ScheduleCubit>()
+                            .remove(day, shift, uid)),
+              ],
+            ),
           ),
       ],
     );
@@ -368,34 +450,92 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   Widget _employeeChip(
       String uid, String name, UserEntity? user, VoidCallback onRemove) {
     return Container(
-      padding: const EdgeInsets.only(left: 5, right: 6, top: 5, bottom: 5),
+      padding: const EdgeInsets.only(left: 4, right: 4, top: 4, bottom: 4),
       decoration: BoxDecoration(
-        color: AppColors.darkSurfaceElevated,
-        borderRadius: BorderRadius.circular(20),
+        color: AppColors.darkBg,
+        borderRadius: AppRadius.fullAll,
         border: Border.all(color: AppColors.darkBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (user != null)
-            UserAvatar.fromUser(user,
-                size: 22, ringColor: AppColors.darkSurfaceElevated)
+            UserAvatar.fromUser(user, size: 22, ringColor: AppColors.darkBg)
           else
-            UserAvatar(
-                name: name,
-                size: 22,
-                ringColor: AppColors.darkSurfaceElevated),
+            UserAvatar(name: name, size: 22, ringColor: AppColors.darkBg),
           const SizedBox(width: 6),
-          Text(name, style: AppTypography.caption),
-          const SizedBox(width: 4),
+          Text(name,
+              style: AppTypography.caption
+                  .copyWith(color: AppColors.textPrimary)),
+          const SizedBox(width: 6),
+          // Refined remove — a small circular hit target.
           GestureDetector(
             onTap: onRemove,
-            child: const Icon(Icons.close_rounded,
-                size: 14, color: AppColors.textSecondary),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 18,
+              height: 18,
+              decoration: const BoxDecoration(
+                color: AppColors.darkSurfaceElevated,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close_rounded,
+                  size: 12, color: AppColors.textSecondary),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  /// A broken-reference chip — a uid that no longer maps to a branch member.
+  /// Visually distinct (warning) and never shows a fake name. Tap to resolve.
+  Widget _brokenChip(String uid, VoidCallback onResolve) {
+    return GestureDetector(
+      onTap: onResolve,
+      child: Container(
+        padding: const EdgeInsets.only(left: 8, right: 8, top: 5, bottom: 5),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withAlpha(28),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.warning.withAlpha(120)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.person_off_outlined,
+                size: 15, color: AppColors.warning),
+            const SizedBox(width: 6),
+            Text('Unknown member',
+                style: AppTypography.caption
+                    .copyWith(color: AppColors.warning)),
+            const SizedBox(width: 4),
+            Text('· ${shortUid(uid)}', style: AppTypography.caption),
+            const SizedBox(width: 4),
+            const Icon(Icons.close_rounded,
+                size: 14, color: AppColors.warning),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Resolve an orphaned assignment — confirm, then remove the stale uid from the
+  /// slot (the admin can then reassign a real employee via "Add").
+  Future<void> _resolveOrphan(
+      ScheduleDay day, ScheduleShift shift, String uid) async {
+    final cubit = context.read<ScheduleCubit>();
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Remove broken assignment?',
+      message:
+          'This shift slot references an employee (${shortUid(uid)}) who is no '
+          'longer in this branch. Remove the stale entry? You can then assign a '
+          'current employee with "Add".',
+      confirmLabel: 'Remove',
+      destructive: true,
+    );
+    if (confirmed) await cubit.remove(day, shift, uid);
   }
 
   void _pickEmployee(

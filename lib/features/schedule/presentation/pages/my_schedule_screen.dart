@@ -10,6 +10,7 @@ import 'package:fbro/core/widgets/user_avatar.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/core/extensions/context_extensions.dart';
 import 'package:fbro/features/schedule/domain/entities/weekly_schedule_entity.dart';
+import 'package:fbro/features/schedule/domain/swap_eligibility.dart';
 import 'package:fbro/features/schedule/presentation/cubit/schedule_cubit.dart';
 import 'package:fbro/features/schedule/presentation/cubit/schedule_state.dart';
 import 'package:fbro/features/schedule/presentation/cubit/shift_swap_cubit.dart';
@@ -1007,7 +1008,7 @@ class _WeekDayRow extends StatelessWidget {
                 ),
               ),
             )
-          else
+          else if (_canSwap(shift))
             GestureDetector(
               onTap: () => onSwap(day, shift),
               child: Row(
@@ -1023,11 +1024,25 @@ class _WeekDayRow extends StatelessWidget {
                   ),
                 ],
               ),
+            )
+          else
+            // Past / in-progress shift — not swappable, so don't offer it.
+            SizedBox(
+              width: 44,
+              child: Text('Past',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.caption
+                      .copyWith(color: AppColors.textTertiary)),
             ),
         ],
       ),
     );
   }
+
+  /// A shift is swappable only while its start is still in the future — keep the
+  /// offered action in lock-step with [SwapEligibility] (no swap on a past slot).
+  bool _canSwap(ScheduleShift? shift) =>
+      shift != null && SwapEligibility.isRequestable(weekStart, day, shift);
 }
 
 // ─── Day Chip ─────────────────────────────────────────────────────────────────

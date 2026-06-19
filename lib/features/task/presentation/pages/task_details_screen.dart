@@ -13,7 +13,6 @@ import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_dialog.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
-import 'package:fbro/core/widgets/timeline_tile.dart';
 import 'package:fbro/core/widgets/user_avatar.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
@@ -228,7 +227,7 @@ class _DetailsView extends StatelessWidget {
             _Section(
               icon: Icons.timeline_rounded,
               title: 'Activity',
-              child: _ActivityTimeline(log: task.activityLog, directory: directory),
+              child: _ActivityTimeline(task: task, directory: directory),
             ),
             const SizedBox(height: AppSpacing.xl),
           ],
@@ -753,35 +752,232 @@ class _SubmittedBlock extends StatelessWidget {
 // ─── Activity timeline ──────────────────────────────────────────────
 
 class _ActivityTimeline extends StatelessWidget {
-  const _ActivityTimeline({required this.log, required this.directory});
-  final List<ActivityEntry> log;
+  const _ActivityTimeline({required this.task, required this.directory});
+  final TaskEntity task;
   final Map<String, UserEntity> directory;
 
   @override
   Widget build(BuildContext context) {
-    // Show newest first — rendered purely from the event list (no hardcoded
+    // Newest first — rendered purely from the event list (no hardcoded
     // sequence), so missing/optional steps and rework loops just work.
-    final entries = log.reversed.toList();
+    final entries = task.activityLog.reversed.toList();
+    final proof = task.proofImageUrl ?? '';
     return Column(
       children: [
         for (var i = 0; i < entries.length; i++)
-          TimelineTile(
-            title: activityTitle(entries[i].status),
-            titleColor: activityColor(entries[i].status),
-            dotColor: activityColor(entries[i].status),
-            time: relativeTime(entries[i].at),
-            subtitle: _actorName(entries[i]),
-            note: entries[i].note,
+          _EventCard(
+            entry: entries[i],
+            actor: directory[entries[i].actorId],
+            // Surface the submitted proof on the submission event.
+            attachmentUrl:
+                (entries[i].status == 'waitingReview' && proof.isNotEmpty)
+                    ? proof
+                    : null,
             isLast: i == entries.length - 1,
           ),
       ],
     );
   }
+}
 
-  String _actorName(ActivityEntry entry) {
-    final actor = directory[entry.actorId];
-    return entry.actorName ??
-        (actor != null ? (actor.displayName ?? actor.email) : 'Unknown');
+/// A rich timeline event card — status badge, actor (avatar + role), timestamp,
+/// optional note and attachment thumbnail — strung on a vertical spine.
+class _EventCard extends StatelessWidget {
+  const _EventCard({
+    required this.entry,
+    required this.actor,
+    required this.attachmentUrl,
+    required this.isLast,
+  });
+
+  final ActivityEntry entry;
+  final UserEntity? actor;
+  final String? attachmentUrl;
+  final bool isLast;
+
+  String get _actorName =>
+      entry.actorName ??
+      (actor != null ? (actor!.displayName ?? actor!.email) : 'Someone');
+
+  String? get _roleLabel => switch (actor?.role) {
+        UserRole.admin => 'Admin',
+        UserRole.manager => 'Manager',
+        UserRole.employee => 'Employee',
+        null => null,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final color = activityColor(entry.status);
+    final note = entry.note ?? '';
+    final hasAttachment = (attachmentUrl ?? '').isNotEmpty;
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Spine ──────────────────────────────────────────────
+          Column(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: color.withAlpha(28),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color.withAlpha(90)),
+                ),
+                child: Icon(activityIcon(entry.status), size: 15, color: color),
+              ),
+              if (!isLast)
+                Expanded(
+                  child: Container(
+                    width: 1.5,
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    color: AppColors.darkBorder,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: AppSpacing.md),
+          // ── Event card ─────────────────────────────────────────
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : AppSpacing.md),
+              child: Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.darkSurfaceElevated,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.darkBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title + timestamp
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            activityTitle(entry.status),
+                            style: AppTypography.label
+                                .copyWith(color: color, fontSize: 13),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text(relativeTime(entry.at),
+                            style: AppTypography.caption),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    // Actor
+                    Row(
+                      children: [
+                        if (actor != null)
+                          UserAvatar.fromUser(actor!, size: 20)
+                        else
+                          UserAvatar(name: _actorName, size: 20),
+                        const SizedBox(width: AppSpacing.sm),
+                        Flexible(
+                          child: Text(
+                            _roleLabel != null
+                                ? '$_actorName · $_roleLabel'
+                                : _actorName,
+                            style: AppTypography.caption
+                                .copyWith(color: AppColors.textSecondary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Note
+                    if (note.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                        decoration: BoxDecoration(
+                          color: AppColors.darkBg,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border(
+                            left: BorderSide(color: color.withAlpha(120), width: 2),
+                          ),
+                        ),
+                        child: Text(
+                          note,
+                          style: AppTypography.caption.copyWith(
+                              color: AppColors.textSecondary, height: 1.45),
+                        ),
+                      ),
+                    ],
+                    // Attachment
+                    if (hasAttachment) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      _EventAttachment(url: attachmentUrl!),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A compact attachment row inside a timeline event — thumbnail + label.
+class _EventAttachment extends StatelessWidget {
+  const _EventAttachment({required this.url});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.network(
+            url,
+            width: 40,
+            height: 40,
+            fit: BoxFit.cover,
+            cacheWidth: 200,
+            loadingBuilder: (context, child, progress) => progress == null
+                ? child
+                : Container(
+                    width: 40,
+                    height: 40,
+                    color: AppColors.darkBg,
+                    alignment: Alignment.center,
+                    child: const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  ),
+            errorBuilder: (ctx, err, st) => Container(
+              width: 40,
+              height: 40,
+              color: AppColors.darkBg,
+              alignment: Alignment.center,
+              child: const Icon(Icons.broken_image_outlined,
+                  size: 16, color: AppColors.textTertiary),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Row(
+          children: [
+            const Icon(Icons.attachment_rounded,
+                size: 13, color: AppColors.textTertiary),
+            const SizedBox(width: 4),
+            Text('1 attachment', style: AppTypography.caption),
+          ],
+        ),
+      ],
+    );
   }
 }
 

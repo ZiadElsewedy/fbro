@@ -168,18 +168,46 @@ service cloud.firestore {
     // ── Shift swaps (Phase 7) ──────────────────────────────────────
     // A swap request between two employees, approved by the branch manager.
     //   read   — admin/own-branch manager, OR the requester/target employee.
-    //   create — the requester themself, for a swap in their own branch.
+    //   create — the requester themself, for a swap in their own branch, only for
+    //            an UPCOMING shift (past/in-progress shifts can't be swapped —
+    //            spec §2; the precise rule also lives client-side in
+    //            SwapEligibility, this is the server backstop).
     //   update — admin/own-branch manager (approve/reject), OR either involved
     //            employee (coworker approve / requester cancel / decline). The
     //            exact status flow is validated client-side (ShiftSwapCubit).
     //   delete — admin/own-branch manager only.
+
+    // Day offset within the week (Sunday=0 … Saturday=6), matching ScheduleDay.
+    function swapDayOffset(d) {
+      return d == 'monday' ? 1
+        : d == 'tuesday' ? 2
+        : d == 'wednesday' ? 3
+        : d == 'thursday' ? 4
+        : d == 'friday' ? 5
+        : d == 'saturday' ? 6
+        : 0; // sunday / unknown
+    }
+    // Shift start, minutes past midnight (mirrors SwapEligibility / timeRange):
+    // morning 08:30, night 16:30.
+    function swapShiftMinutes(s) {
+      return s == 'night' ? (16 * 60 + 30) : (8 * 60 + 30);
+    }
+    // The slot's start instant must be strictly after the request time. weekStart
+    // is the week's Sunday 00:00 (a Timestamp).
+    function swapSlotInFuture(data) {
+      return data.weekStart
+          + duration.value(swapDayOffset(data.get('day', 'sunday')), 'd')
+          + duration.value(swapShiftMinutes(data.get('shift', 'morning')), 'm')
+        > request.time;
+    }
     match /shift_swaps/{swapId} {
       allow read: if canReachBranch(resource.data.get('branchId', ''))
         || resource.data.get('requesterId', '') == request.auth.uid
         || resource.data.get('targetId', '') == request.auth.uid;
       allow create: if isSignedIn()
         && request.resource.data.get('requesterId', '') == request.auth.uid
-        && request.resource.data.get('branchId', '') == selfBranch();
+        && request.resource.data.get('branchId', '') == selfBranch()
+        && swapSlotInFuture(request.resource.data);
       allow update: if canReachBranch(resource.data.get('branchId', ''))
         || resource.data.get('requesterId', '') == request.auth.uid
         || resource.data.get('targetId', '') == request.auth.uid;

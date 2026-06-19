@@ -11,8 +11,52 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-19 (Admin command-center redesign + reusable component library)
+**Last updated:** 2026-06-20 (Premium UI redesign — Schedule · Admin Home · Task timeline)
 **Version:** 1.0.0+1 · **Branch:** `feature/tasks-improvements` (DROP — monochrome enterprise UX)
+
+> **Premium UI redesign (2026-06-20):** Visual refinement pass (monochrome,
+> token-driven, no schema/logic change). ① **Branch Schedule** rebuilt for
+> density/premium — compact **date-rail + shift-lane** day cards (`_dateRail`/
+> `_shiftLane`), round **+** add affordance, refined avatar chips, tighter padding.
+> ② **Admin Home** tightened — single-line greeting (`h1`), reduced section gaps,
+> a denser hero (metric beside title+summary, throughput in the eyebrow). ③ **Task
+> timeline** upgraded to rich **event cards** (status badge + `activityIcon`,
+> actor avatar + role, quoted note, attachment thumbnail). `flutter analyze` clean;
+> 35 tests pass.
+
+> **Product/UI verification pass (2026-06-20):** Driven by real-UI review — fixed
+> things that were coded but **broken/unreachable in the actual flow**. ① **Admin
+> Pending Actions was invisible** (gated behind `if (count > 0)`); now **always
+> rendered** with an "all caught up" state, and **extracted to a public, widget-
+> tested** component
+> ([pending_actions.dart](lib/features/admin/presentation/widgets/pending_actions.dart)).
+> ② **Branch Schedule "Unknown"** is a stale-reference bug (a uid whose owner left
+> the branch); now **detected** (`isOrphanAssignment`), **surfaced** (warning
+> banner + distinct "Unknown member · <uid>" chip), and **resolvable** (tap →
+> confirm → remove, then reassign). ③ **Admin had no UI to see/approve swaps** —
+> `ScheduleManagementScreen` is now a **two-tab** screen (Schedule · Swap Requests)
+> with an **all-branches** queue (`ShiftSwapCubit.loadAll`/`SwapScope.all`/
+> `getAllSwaps`), branch-labelled cards, and auto-refresh on approval. ④ **Employee
+> no longer offered "Swap" on past shifts** (muted "Past" label, in lock-step with
+> `SwapEligibility`). `flutter analyze` clean; **35 tests pass** (25 + 10 new incl.
+> headless widget tests). ⚠️ True on-device click-through still requires a seeded
+> admin + live Firebase (see QA note below) — Flutter UI isn't renderable in CI.
+
+> **Shift-swap hardening + Admin Pending Actions (2026-06-20):** First slice of the
+> Operations refinement spec. **§2 "future shifts only" swap validation** is now
+> enforced in three layers — domain (new pure
+> [`SwapEligibility`](lib/features/schedule/domain/swap_eligibility.dart):
+> `slotStart` + `isRequestable`), the `ShiftSwapCubit.requestSwap` gate, the
+> Request-Swap sheet, and a `firestore.rules` `shift_swaps` create backstop
+> (`swapSlotInFuture` recomputes the slot start from `weekStart`/`day`/`shift` and
+> requires `> request.time`). A past or in-progress shift can no longer be swapped.
+> **§1 Admin Home "Pending Actions"** replaces the low-value "Recent activity" feed:
+> a consolidated, actionable queue (Swap Requests · Employee Approvals · Tasks
+> Waiting Review · Overdue Tasks), each a tappable row jumping to where it's
+> resolved. New `ScheduleRepository.getAllSwaps()` + `ShiftSwapCubit.pendingSwaps()`
+> give the admin all-branch swap visibility. No schema/entity/route change; no
+> codegen. `flutter analyze` clean (0 issues); **25 tests pass** (17 + 8 new in
+> `swap_eligibility_test.dart`). ⚠️ Deploy `firestore.rules` for the server backstop.
 
 > **Admin command-center redesign + component library (2026-06-19):** Premium
 > rebuild of the **Admin** experience on a new shared component library — keeping
@@ -153,7 +197,7 @@
 | Roles & routing  | ✅ Complete    | `UserRole` enum, role dispatch + guards; **admin ⊇ manager** hierarchy + branch-scoped access model (admin global · manager own-branch · employee self) |
 | Shifts (Phase 2) | ❌ Removed (Phase 10) | The unused `shift` foundation (data/domain + placeholder screens + `shifts/{shiftId}` rules + `/admin\|manager/shifts`·`/my-shift` routes + DI) was **deleted** as dead code. The **Weekly Schedule** (Phase 7) is the production roster |
 | Weekly Schedule (Phase 7) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit` + manager editor / admin override / employee my-week view. Roster `day → morning/night → employees`; `weekly_schedules/{id}` rules. Reuses Role/Branch systems |
-| Shift Swap (Phase 7) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected |
+| Shift Swap (Phase 7, +2026-06-20 hardening) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected. **2026-06-20:** **future-shifts-only** validation (`SwapEligibility`) in domain + cubit + UI + rules; admin all-branch visibility via `getAllSwaps()` / `pendingSwaps()` feeding the Admin Pending Actions panel |
 | Tasks (Phase 3–4, +Stabilization, +Phase 9, +Workflow Upgrade) | ✅ Full operations workflow | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens, client-side status-transition rules, proof upload, **live Firestore streams**, admin branch dropdown, multi-assignee, checklist+completion gate. **Workflow Upgrade (2026-06-18):** **recurring tasks** (`RecurrenceConfig`, auto-spawn on approve), **activity timeline** (`ActivityEntry[]` embedded in task), **Task Details Screen** (full-screen view for all roles), **employee My Tasks redesign** (tabbed/sectioned/animated with Details navigation) |
 | Task / Checklist Templates (Stabilization, +Phase 9) | ✅ Complete | Reusable blueprints ("Open Shop", "Close Shop"). **Phase 9:** templates are now **checklists** — `TaskTemplateEntity.checklistItems` (`ChecklistItemTemplate`: id/title/isRequired) with a checklist editor; creating a task generates its `checklist`. `task_templates/{id}` rules (admin global/any · manager own-branch). New Task → Blank vs. From a template + Manage Templates sheet |
 | Branches (Phase 5, +Phase 9) | ✅ Complete   | `BranchEntity`/`Model`/`Repository`/`RemoteDataSource` + `BranchCubit`; admin CRUD + activate/deactivate + soft delete; `branches/{id}` rules. **Phase 9:** premium cards (manager + employee count + status) + search |
@@ -619,11 +663,16 @@ week's Sunday), so a week is addressed directly without a query.
 
 ## Testing
 
-- **Unit/widget tests (17 passing):** `test/task_checklist_test.dart` (checklist
+- **Unit/widget tests (35 passing):** `test/task_checklist_test.dart` (checklist
   completion rule, multi-assignee (de)serialization + legacy fallback,
   template→task checklist), `test/employee_metrics_test.dart` (per-employee
   performance derivation — completed/pending/rate/late, multi-assignee, deadline
-  lateness), `test/user_model_test.dart` (malformed-doc hardening),
+  lateness), `test/swap_eligibility_test.dart` (the future-shifts-only swap rule —
+  slot-start derivation + 8 boundary cases),
+  `test/pending_actions_widget_test.dart` (renders the Admin Pending Actions panel
+  headlessly — rows, tap callbacks, all-clear state),
+  `test/schedule_helpers_test.dart` (name resolution + orphan/broken-reference
+  detection), `test/user_model_test.dart` (malformed-doc hardening),
   `test/app_search_field_test.dart` and `test/task_card_layout_test.dart`
   (layout regressions). `test/widget_test.dart` remains an empty placeholder.
   Cubit/router tests are still a gap (see suggested next steps).

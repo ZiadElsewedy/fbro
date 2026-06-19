@@ -28,6 +28,19 @@ Color activityColor(String status) => switch (status) {
       _ => AppColors.textTertiary,
     };
 
+/// Glyph for a task activity entry — used by the richer timeline event cards.
+IconData activityIcon(String status) => switch (status) {
+      'pending' => Icons.add_task_rounded,
+      'assigned' => Icons.person_add_alt_1_rounded,
+      'started' => Icons.play_arrow_rounded,
+      'completed' => Icons.check_rounded,
+      'waitingReview' => Icons.hourglass_top_rounded,
+      'approved' => Icons.verified_rounded,
+      'rejected' => Icons.replay_rounded,
+      'cancelled' => Icons.close_rounded,
+      _ => Icons.circle_outlined,
+    };
+
 const _months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',

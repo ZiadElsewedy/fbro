@@ -13,16 +13,16 @@ import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/dashboard_metric_card.dart';
 import 'package:fbro/core/widgets/glass_container.dart';
 import 'package:fbro/core/widgets/status_badge.dart';
-import 'package:fbro/core/widgets/timeline_tile.dart';
 import 'package:fbro/core/widgets/user_avatar.dart';
 import 'package:fbro/features/admin/presentation/cubit/admin_users_cubit.dart';
+import 'package:fbro/features/admin/presentation/widgets/pending_actions.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
+import 'package:fbro/features/schedule/domain/entities/shift_swap_entity.dart';
+import 'package:fbro/features/schedule/presentation/cubit/shift_swap_cubit.dart';
 import 'package:fbro/features/statistics/domain/entities/statistics_entity.dart';
 import 'package:fbro/features/statistics/presentation/cubit/statistics_cubit.dart';
-import 'package:fbro/features/task/domain/entities/activity_entry.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
-import 'package:fbro/features/task/presentation/activity_format.dart';
 import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
 
 /// Admin Home — an operations **command center**. Pulls from three live sources
@@ -42,6 +42,7 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<UserEntity> _pending = const [];
+  List<ShiftSwapEntity> _pendingSwaps = const [];
 
   @override
   void initState() {
@@ -53,13 +54,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final user = context.currentUser;
     if (user == null) return;
     context.read<StatisticsCubit>().load(user);
-    // The all-branches task stream powers the activity feed + overdue count.
+    // The all-branches task stream powers the Pending Actions + overdue counts.
     final taskCubit = context.read<TaskCubit>();
     final taskLoaded =
         taskCubit.state.maybeWhen(loaded: (_, _, _) => true, orElse: () => false);
     if (!taskLoaded) taskCubit.load(user);
-    final pending = await context.read<AdminUsersCubit>().pendingUsers();
-    if (mounted) setState(() => _pending = pending);
+    // Capture cubits before awaiting so we don't touch context across the gap.
+    final usersCubit = context.read<AdminUsersCubit>();
+    final swapCubit = context.read<ShiftSwapCubit>();
+    final pending = await usersCubit.pendingUsers();
+    final swaps = await swapCubit.pendingSwaps();
+    if (mounted) {
+      setState(() {
+        _pending = pending;
+        _pendingSwaps = swaps;
+      });
+    }
   }
 
   @override
@@ -71,8 +81,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final taskState = context.watch<TaskCubit>().state;
     final tasks = taskState.maybeWhen(
         loaded: (t, _, _) => t, orElse: () => const <TaskEntity>[]);
-    final directory = taskState.maybeWhen(
-        loaded: (_, _, d) => d, orElse: () => const <String, UserEntity>{});
+    final overdue = _overdueCount(tasks);
+    final reviews = stats?.waitingReviews ?? 0;
+    final openSwaps = _pendingSwaps.length;
+    final pendingActions = _pending.length + openSwaps + reviews + overdue;
 
     var i = 0;
     Widget staggered(Widget child) =>
@@ -87,14 +99,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           staggered(_Greeting(stats: stats, name: context.currentUser?.displayName)),
           const SizedBox(height: AppSpacing.xl),
           staggered(_Hero(stats: stats, tasks: tasks)),
-          const SizedBox(height: AppSpacing.xxl),
+          const SizedBox(height: AppSpacing.xl),
+          // Always rendered — shows an all-clear state when empty, so the panel
+          // never silently disappears.
+          staggered(AdminSectionHeader(
+            title: 'Pending Actions',
+            subtitle: pendingActions > 0
+                ? '$pendingActions awaiting you'
+                : "You're all caught up",
+          )),
+          staggered(PendingActions(
+            swaps: openSwaps,
+            approvals: _pending.length,
+            reviews: reviews,
+            overdue: overdue,
+            onSwaps: () => context.push(RouteNames.adminSchedule),
+            onApprovals: () => context.push(RouteNames.adminApprovals),
+            onReviews: () => context.push(RouteNames.adminTasks),
+            onOverdue: () => context.push(RouteNames.adminTasks),
+          )),
+          const SizedBox(height: AppSpacing.xl),
           staggered(const AdminSectionHeader(title: 'Overview')),
           staggered(_metrics(stats)),
-          const SizedBox(height: AppSpacing.xxl),
+          const SizedBox(height: AppSpacing.xl),
           staggered(const AdminSectionHeader(title: 'Quick actions')),
           staggered(_quickActions()),
           if (_pending.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xxl),
+            const SizedBox(height: AppSpacing.xl),
             staggered(AdminSectionHeader(
               title: 'Pending approvals',
               subtitle: '${_pending.length} awaiting review',
@@ -103,13 +134,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             )),
             staggered(_PendingList(users: _pending)),
           ],
-          const SizedBox(height: AppSpacing.xxl),
-          staggered(const AdminSectionHeader(
-            title: 'Recent activity',
-            subtitle: 'Latest operational events',
-          )),
-          staggered(_RecentActivity(tasks: tasks, directory: directory)),
-          const SizedBox(height: AppSpacing.xxl),
+          const SizedBox(height: AppSpacing.xl),
           staggered(const AdminSectionHeader(title: 'Manage')),
           staggered(_manage()),
         ],
@@ -288,10 +313,9 @@ class _Greeting extends StatelessWidget {
         Text(_date.toUpperCase(),
             style: AppTypography.labelSmall
                 .copyWith(color: AppColors.textTertiary, letterSpacing: 1.0)),
-        const SizedBox(height: AppSpacing.sm),
-        Text('$_salutation,', style: AppTypography.h2),
-        Text(first, style: AppTypography.display),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.xs),
+        Text('$_salutation, $first', style: AppTypography.h1),
+        const SizedBox(height: AppSpacing.xs),
         Row(
           children: [
             const Icon(Icons.public_rounded,
@@ -312,24 +336,12 @@ class _Hero extends StatelessWidget {
   final StatisticsEntity? stats;
   final List<TaskEntity> tasks;
 
-  int get _overdue {
-    final now = DateTime.now();
-    return tasks.where((t) {
-      final d = t.deadline;
-      if (d == null) return false;
-      final open = t.status == TaskStatus.pending ||
-          t.status == TaskStatus.started ||
-          t.status == TaskStatus.rejected;
-      return open && d.isBefore(now);
-    }).length;
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = stats;
     final pending = s?.pendingApprovals ?? 0;
     final reviews = s?.waitingReviews ?? 0;
-    final overdue = _overdue;
+    final overdue = _overdueCount(tasks);
     final active = s?.activeTasks ?? 0;
     final doneToday = s?.completedTasksToday ?? 0;
     final totalToday = doneToday + active;
@@ -392,58 +404,67 @@ class _Hero extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
                   color: accent.withAlpha(28),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(icon, size: 21, color: accent),
+                child: Icon(icon, size: 20, color: accent),
               ),
               const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Text(
+                  highlight ? 'NEEDS ATTENTION' : 'ALL CLEAR',
+                  style: AppTypography.caption.copyWith(
+                    color: accent,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
               Text(
-                highlight ? 'NEEDS ATTENTION' : 'ALL CLEAR',
-                style: AppTypography.caption.copyWith(
-                  color: accent,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.0,
+                '$doneToday/$totalToday today',
+                style: AppTypography.caption
+                    .copyWith(color: AppColors.textTertiary),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          // Big metric beside its title + summary — one tight block, no dead space.
+          Row(
+            children: [
+              Text(value, style: AppTypography.displayMedium),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: AppTypography.h3),
+                    const SizedBox(height: 2),
+                    Text(summary,
+                        style: AppTypography.bodySmall.copyWith(
+                            color: AppColors.textSecondary, height: 1.4)),
+                  ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
-          Text(value, style: AppTypography.display),
-          Text(title, style: AppTypography.h3),
-          const SizedBox(height: AppSpacing.sm),
-          Text(summary,
-              style: AppTypography.body.copyWith(height: 1.5)),
-          const SizedBox(height: AppSpacing.lg),
-          // Today's throughput progress.
-          Row(
-            children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0, end: progress),
-                    duration: const Duration(milliseconds: 600),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, v, _) => LinearProgressIndicator(
-                      value: v,
-                      minHeight: 6,
-                      backgroundColor: AppColors.darkSurfaceElevated,
-                      valueColor:
-                          const AlwaysStoppedAnimation(AppColors.textPrimary),
-                    ),
-                  ),
-                ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: progress),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOutCubic,
+              builder: (context, v, _) => LinearProgressIndicator(
+                value: v,
+                minHeight: 6,
+                backgroundColor: AppColors.darkSurfaceElevated,
+                valueColor:
+                    const AlwaysStoppedAnimation(AppColors.textPrimary),
               ),
-              const SizedBox(width: AppSpacing.md),
-              Text(
-                '$doneToday/$totalToday today',
-                style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: AppSpacing.lg),
           AppButton(
@@ -523,61 +544,19 @@ class _PendingList extends StatelessWidget {
   }
 }
 
-// ─── Recent activity feed ───────────────────────────────────────────
+// ─── Overdue helper ─────────────────────────────────────────────────
 
-class _RecentActivity extends StatelessWidget {
-  const _RecentActivity({required this.tasks, required this.directory});
-  final List<TaskEntity> tasks;
-  final Map<String, UserEntity> directory;
-
-  @override
-  Widget build(BuildContext context) {
-    final events = <({String task, ActivityEntry e})>[];
-    for (final t in tasks) {
-      for (final e in t.activityLog) {
-        events.add((task: t.title, e: e));
-      }
-    }
-    events.sort((a, b) => b.e.at.compareTo(a.e.at));
-    final top = events.take(6).toList();
-
-    if (top.isEmpty) {
-      return GlassContainer(
-        child: Row(
-          children: [
-            const Icon(Icons.timeline_rounded,
-                size: 18, color: AppColors.textTertiary),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Text('No recent activity yet.',
-                  style: AppTypography.body),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return GlassContainer(
-      child: Column(
-        children: [
-          for (var i = 0; i < top.length; i++)
-            TimelineTile(
-              title: activityTitle(top[i].e.status),
-              titleColor: activityColor(top[i].e.status),
-              dotColor: activityColor(top[i].e.status),
-              time: relativeTime(top[i].e.at),
-              subtitle: '${_actor(top[i].e)} · ${top[i].task}',
-              note: top[i].e.note,
-              isLast: i == top.length - 1,
-            ),
-        ],
-      ),
-    );
-  }
-
-  String _actor(ActivityEntry e) {
-    final u = directory[e.actorId];
-    return e.actorName ??
-        (u != null ? (u.displayName ?? u.email) : 'Someone');
-  }
+/// Count of open tasks (pending/started/rejected) that are past their deadline —
+/// the operational "needs attention" signal. Shared by the hero + Pending Actions.
+int _overdueCount(List<TaskEntity> tasks) {
+  final now = DateTime.now();
+  return tasks.where((t) {
+    final d = t.deadline;
+    if (d == null) return false;
+    final open = t.status == TaskStatus.pending ||
+        t.status == TaskStatus.started ||
+        t.status == TaskStatus.rejected;
+    return open && d.isBefore(now);
+  }).length;
 }
+

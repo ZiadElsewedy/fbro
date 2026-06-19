@@ -19,3 +19,15 @@ UserEntity? userForUid(String uid, List<UserEntity> members) {
   }
   return null;
 }
+
+/// True when [uid] is assigned to a slot but no longer belongs to the branch —
+/// a **broken/orphaned reference** (the employee was moved to another branch,
+/// removed, or their account is gone, while the schedule slot still holds their
+/// uid). These must be surfaced explicitly and resolved, never masked as a name.
+bool isOrphanAssignment(String uid, List<UserEntity> members) =>
+    userForUid(uid, members) == null;
+
+/// A short, readable fragment of a uid for surfacing a broken reference
+/// (e.g. `a1b2c3…`), so an admin can identify the stale entry.
+String shortUid(String uid) =>
+    uid.length <= 6 ? uid : '${uid.substring(0, 6)}…';
