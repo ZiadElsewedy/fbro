@@ -113,4 +113,103 @@ void main() {
       expect(map['branchId'], 'branch-9');
     });
   });
+
+  group('BroadcastModel — Phase 2 (direct message, category, delivery)', () {
+    test('a direct message stores the non-branch marker + targetUserId', () {
+      final model = BroadcastModel.fromEntity(const BroadcastEntity(
+        id: 'd1',
+        title: 'See me',
+        message: 'Drop by the office.',
+        senderId: 'mgr-1',
+        senderName: 'Manager',
+        senderRole: UserRole.manager,
+        audience: BroadcastAudience.user,
+        targetUserId: 'emp-9',
+      ));
+
+      // The marker keeps a DM out of every branch/all feed query.
+      expect(model.branchId, BroadcastModel.directBranchMarker);
+      expect(model.branchId, isNot(''));
+      expect(model.targetUserId, 'emp-9');
+      expect(model.toMap()['audience'], 'user');
+      expect(model.toMap()['targetUserId'], 'emp-9');
+    });
+
+    test('toEntity maps the direct marker back to a null branch, keeps target',
+        () {
+      final entity = BroadcastModel.fromMap({
+        'title': 't',
+        'message': 'm',
+        'senderId': 'mgr-1',
+        'senderName': 'Manager',
+        'senderRole': 'manager',
+        'audience': 'user',
+        'branchId': BroadcastModel.directBranchMarker,
+        'targetUserId': 'emp-9',
+      }, id: 'd2').toEntity();
+
+      expect(entity.audience, BroadcastAudience.user);
+      expect(entity.isDirect, isTrue);
+      expect(entity.branchId, isNull);
+      expect(entity.targetUserId, 'emp-9');
+    });
+
+    test('category + recipientCount round-trip; default category is general',
+        () {
+      expect(const BroadcastModel(
+        id: 'c1',
+        title: 't',
+        message: 'm',
+        senderId: 'u',
+        senderName: 'n',
+      ).category, 'general');
+
+      final entity = BroadcastModel.fromMap(const {
+        'title': 't',
+        'message': 'm',
+        'senderId': 'u',
+        'senderName': 'n',
+        'audience': 'branch',
+        'branchId': 'b1',
+        'category': 'alert',
+        'recipientCount': 24,
+        'deliveredCount': 21,
+      }).toEntity();
+
+      expect(entity.category, 'alert');
+      expect(entity.recipientCount, 24);
+      expect(entity.deliveredCount, 21);
+    });
+
+    test('toCallablePayload sends intent only (body, no branchId for a DM)', () {
+      final dm = BroadcastModel.fromEntity(const BroadcastEntity(
+        id: '',
+        title: 'Hi',
+        message: 'Body text',
+        senderId: 'u',
+        senderName: 'n',
+        audience: BroadcastAudience.user,
+        targetUserId: 'emp-2',
+        category: 'general',
+      )).toCallablePayload();
+
+      expect(dm['title'], 'Hi');
+      expect(dm['body'], 'Body text');
+      expect(dm['audience'], 'user');
+      expect(dm['targetUserId'], 'emp-2');
+      // branchId is only meaningful for a branch send.
+      expect(dm['branchId'], '');
+
+      final branch = BroadcastModel.fromEntity(const BroadcastEntity(
+        id: '',
+        title: 'Hi',
+        message: 'B',
+        senderId: 'u',
+        senderName: 'n',
+        audience: BroadcastAudience.branch,
+        branchId: 'branch-5',
+      )).toCallablePayload();
+      expect(branch['branchId'], 'branch-5');
+    });
+  });
 }

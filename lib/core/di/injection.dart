@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -189,15 +190,21 @@ class AppDependencies {
       getUsersByBranch: GetUsersByBranch(authRepository),
     );
 
-    // ─── Communications Center (Phase 1) ──────────────────────
-    // Hybrid cubit (like TaskCubit): the SendBroadcast use case for the write,
-    // the repository directly for the realtime feed stream.
+    // ─── Communications Center (Phase 1 + Phase 2 send engine) ─
+    // Hybrid cubit (like TaskCubit): the SendBroadcast use case for the write
+    // (→ the callable `sendBroadcast` Cloud Function), the repository directly
+    // for the realtime feed stream (Firestore).
     final BroadcastRepository broadcastRepository = BroadcastRepositoryImpl(
-      BroadcastRemoteDataSourceImpl(FirebaseFirestore.instance),
+      BroadcastRemoteDataSourceImpl(
+        FirebaseFirestore.instance,
+        FirebaseFunctions.instance,
+      ),
     );
     broadcastCubit = BroadcastCubit(
       repository: broadcastRepository,
       sendBroadcast: SendBroadcast(broadcastRepository),
+      branchRepository: branchRepository,
+      getUsersByBranch: GetUsersByBranch(authRepository),
     );
 
     notificationService = NotificationService(

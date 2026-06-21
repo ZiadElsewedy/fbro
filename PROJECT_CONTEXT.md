@@ -60,6 +60,7 @@ the role chrome.
 | State management   | `flutter_bloc` (Cubits only, no Blocs)                       |
 | Navigation         | `go_router` (declarative, auth-aware redirects)             |
 | Backend            | Firebase: Auth, Cloud Firestore, Storage, Google Sign-In    |
+| Push / server      | Firebase Cloud Messaging (`firebase_messaging`) + **Cloud Functions** (Node.js, `functions/`) called via `cloud_functions` — the Communications Center send engine |
 | Immutable models   | `freezed` + `freezed_annotation` (entities & states)        |
 | Media              | `image_picker`                                              |
 | Secure storage     | `flutter_secure_storage`                                    |
@@ -100,7 +101,7 @@ lib/
 ├── core/
 │   ├── constants/            # app_constants.dart (appName, collection names)
 │   ├── di/                   # injection.dart — AppDependencies service locator
-│   ├── enums/                # user_role · approval_status · task_* · recurrence_frequency · notification_type · schedule_day · schedule_shift · swap_status · broadcast_audience
+│   ├── enums/                # user_role · approval_status · task_* · recurrence_frequency · notification_type · schedule_day · schedule_shift · swap_status · broadcast_audience · broadcast_category
 │   ├── extensions/           # context_extensions (currentUser/currentRole) · firestore_extensions (Map.date — Timestamp→DateTime)
 │   ├── services/             # notification_service.dart (FCM foundation, Phase 6)
 │   ├── errors/               # exceptions.dart (data layer) / failures.dart (domain)
@@ -116,7 +117,7 @@ lib/
     ├── statistics/           # Statistics feature — entity/model/repo/datasource + StatisticsCubit; powers all 3 dashboards (Phase 6, +Phase 7 schedule figures)
     ├── schedule/             # Weekly schedule + shift swaps (Phase 7) — full slice + ScheduleCubit & ShiftSwapCubit; weekly_schedules + shift_swaps
     ├── operations/           # Branch Operations cockpit (task-centric → operations-centric redesign, 2026-06-21). domain: `ShiftFilter` · `EmployeeWorkload` · `BranchSummary` · `computeBranchWorkload` (joins the branch task stream × getUsersByBranch × today's weekly_schedule, overload-first). presentation: `BranchOperationsCubit` (read/derive — repo-direct; writes still via TaskCubit) + `BranchOperationsState`; pages `BranchOperationsScreen` (the cockpit: summary header · shift toggle · workload cards · FAB), `ManagerOperationsScreen` (manager's own branch), `EmployeeDetailScreen` (drill — tasks by status); widget `WorkloadCard`
-    ├── communications/       # Communications Center (Phase 1, 2026-06-21) — Broadcast vertical slice: data/domain (`BroadcastEntity`/`BroadcastModel`/`BroadcastRepository(+Impl)`/`BroadcastRemoteDataSource`) + `SendBroadcast` use case + `BroadcastCubit`; `broadcasts` collection. Backend foundation only — no UI/routes yet (later phase)
+    ├── communications/       # Communications Center (Phase 1 slice + Phase 2 engine + Phase 3 UI, 2026-06-21) — Broadcast slice: data/domain (`BroadcastEntity`/`BroadcastModel`/`BroadcastRepository(+Impl)`/`BroadcastRemoteDataSource`) + `SendBroadcast` use case + `BroadcastCubit` (+ `branches()`/`branchUsers()` pickers) + `domain/broadcast_permissions.dart`. **Phase 2:** send via the callable `sendBroadcast` Cloud Function (`functions/index.js`); audiences allBranches/branch/**user (DM)**. **Phase 3 UI:** `presentation/pages/` (`communications_screen` feed · `compose_broadcast_screen` role-gated form · `broadcast_detail_screen`) + `widgets/broadcast_card.dart` + `communications_format.dart`; route `/communications` (admin + manager)
     ├── manager/              # ManagerShell + ManagerHomeScreen (live branch dashboard, Phase 6)
     ├── employee/             # EmployeeShell + EmployeeHomeScreen (live command center: progress-ring hero + actionable task list; redesign v2)
     └── settings/             # Settings + change password (presentation only)
@@ -354,13 +355,16 @@ Firestore branches/{id}   Firestore users/{uid}     aggregates users/tasks/shift
   live `TaskCubit` list instead (the ground truth — `employeeStats` does not
   populate `activeTasks`).
 - **Notifications** (`core/services/notification_service.dart`, FCM): requests
-  permission, persists the device `fcmToken` on `users/{uid}` (best-effort), and
-  surfaces foreground pushes as in-app snackbars (wired in `main.dart` via a
-  `scaffoldMessengerKey` + an `AuthCubit` listener that registers/forgets the
-  token on auth changes). `core/enums/notification_type.dart` is the event
-  contract. **Sending** the events needs a server trigger (out of scope — no
-  Cloud Functions / Node.js); this is the client foundation only. No history /
-  inbox / chat.
+  permission, persists the device token in `users/{uid}.fcmTokens` (an **array**,
+  multi-device + refresh-aware, since Phase 2; the legacy single `fcmToken` is
+  still read server-side for back-compat), surfaces **foreground** pushes as
+  in-app snackbars, and routes **tap** opens (`onMessageTap`) — wired in
+  `main.dart` via a `scaffoldMessengerKey` + an `AuthCubit` listener that
+  registers/forgets the token on auth changes. `core/enums/notification_type.dart`
+  is the event contract. **Sending is now implemented** for the Communications
+  Center via the callable `sendBroadcast` Cloud Function (`functions/index.js`,
+  Phase 2 — the first server-side push engine); other `NotificationType` events
+  still have no server trigger. No history / inbox / chat.
 
 ### Schedule chain (Phase 7 — full vertical slice)
 
@@ -432,41 +436,77 @@ TaskRepository.watchTasksByBranch  ⨯  GetUsersByBranch  ⨯  ScheduleRepositor
   route (cockpit + drills are `Navigator.push`); the one schema delta is
   `tasks.shift`.
 
-### Communications Center chain (Phase 1 — Broadcast vertical slice)
+### Communications Center chain (Phase 1 slice + Phase 2 send engine)
 
 ```
-BroadcastCubit  + BroadcastState                             (presentation/cubit)
-        ↓  SendBroadcast use case for the WRITE; repository directly for the feed STREAM
-SendBroadcast (domain/usecases — wraps BroadcastRepository.sendBroadcast)
-BroadcastRepository.watchBroadcasts({branchId})              (realtime feed)
-        ↓
-BroadcastRepository (abstract)                               (domain/repositories)
-        ↓   AppDependencies.broadcastCubit  (composed in injection.dart)
-BroadcastRepositoryImpl                                      (data/repositories)
-        ↓
-BroadcastRemoteDataSource                                    (data/datasources)
-        ↓
-Cloud Firestore  broadcasts/{broadcastId}
+SEND (write)                                  RECEIVE (feed read)
+BroadcastCubit.send(...)                       BroadcastCubit.load({branchId})
+  ↓ client guard: BroadcastPermissions          ↓ repository directly (stream)
+SendBroadcast use case                         BroadcastRepository.watchBroadcasts
+  ↓                                              ↓
+BroadcastRepository.sendBroadcast(entity)      BroadcastRemoteDataSource
+  ↓                                              ↓
+BroadcastRemoteDataSource (FirebaseFunctions)  Cloud Firestore broadcasts/{id}
+  ↓ httpsCallable('sendBroadcast')              (admin: orderBy createdAt ·
+══════════ Cloud Function (Node.js) ══════════  branch: whereIn[branch,''])
+functions/index.js  sendBroadcast (onCall):
+  validate sender perms → resolve recipients →
+  write broadcasts/{id} → gather users.fcmTokens →
+  messaging.sendEachForMulticast → prune dead tokens →
+  return { success, recipientCount, deliveredCount, broadcastId }
+  ↓ push (notification + data)
+Device  ← NotificationService (foreground · background · tap)
 ```
 
-- Full vertical slice, **hybrid cubit** (mirrors `TaskCubit`): `BroadcastCubit`
-  (app-wide, provided in `main.dart`) injects the **`SendBroadcast` use case**
-  for the write and the **`BroadcastRepository` directly** for the realtime feed
-  stream. Datasource throws `ServerException`; repo → `ServerFailure`; maps
-  `BroadcastModel → BroadcastEntity`.
-- **A broadcast is a one-way announcement.** A manager/admin "sends" a broadcast
-  scoped to a single branch (`BroadcastAudience.branch`) or to every branch
-  (`BroadcastAudience.allBranches`, **admin-only**); branch members read it. The
-  queryable targeting field is `branchId` — a branch id scopes it, the **empty
-  string `''`** is the all-branches sentinel.
-- **Index-free, rules-safe reads.** The admin feed is
-  `orderBy('createdAt', descending: true)` (single-field, index-free). A branch
-  member's feed is `where('branchId', whereIn: [selfBranch, ''])` — one query
-  returning their branch's broadcasts **plus** all-branches ones, every returned
-  doc provably allowed by the `broadcasts/{id}` read rule (no composite index;
-  ordered client-side newest-first, just-sent doc pinned on top). WHO may send is
-  enforced in `firestore.rules`: admin any/all-branches, own-branch manager their
-  branch only, employees read-only.
+- **Hybrid cubit** (mirrors `TaskCubit`): `BroadcastCubit` (app-wide, in
+  `main.dart`) injects the **`SendBroadcast` use case** for the write and the
+  **`BroadcastRepository` directly** for the realtime feed. Datasource throws
+  `ServerException` (from `FirebaseFunctionsException`/`FirebaseException`); repo
+  → `ServerFailure`; maps `BroadcastModel ⇄ BroadcastEntity`.
+- **Send is server-authoritative (Phase 2).** The client never writes the
+  broadcast doc — `BroadcastRemoteDataSource.sendBroadcast` invokes the
+  **callable `sendBroadcast` Cloud Function** (`functions/index.js`), which
+  validates the sender's permissions, resolves recipients, **writes** the
+  `broadcasts/{id}` doc (Admin SDK), pushes the FCM notification, prunes dead
+  tokens, and returns the **delivery summary** (`{ success, recipientCount }`).
+  `firestore.rules` therefore **deny all client writes** to `broadcasts`.
+- **Recipient-resolution matrix** (pure `domain/broadcast_permissions.dart`,
+  re-enforced in the function): **admin** → all users / any branch / any user;
+  **manager** → their own branch / a user inside it; **employee** → none. The
+  client guard gates the UI + the send call; the function is the authority.
+- **Three audiences.** `BroadcastAudience.allBranches` (every user, admin-only),
+  `branch` (one branch), and **`user`** (a direct message). The branch/all feed's
+  queryable field is `branchId` (`''` = all-branches sentinel); a **DM** uses a
+  non-branch `branchId` marker (`'__direct__'`) + `targetUserId`, so it never
+  surfaces in a branch/all feed and is read only by the recipient + admin.
+- **Index-free, rules-safe reads** (unchanged from Phase 1): admin feed
+  `orderBy('createdAt', descending: true)`; branch member feed
+  `where('branchId', whereIn: [selfBranch, ''])`, client-sorted newest-first.
+- **FCM device + delivery** lives in `core/services/notification_service.dart`:
+  permission, the device token kept in `users/{uid}.fcmTokens` (**array**,
+  multi-device, `arrayUnion` on register/refresh, `arrayRemove` on sign-out), and
+  message routing — **foreground** (`onMessage` → in-app snackbar), **background**
+  (top-level handler in `main.dart`; the OS renders the `notification` block),
+  and **tap** (`onMessageOpenedApp` + `getInitialMessage` → `onMessageTap`,
+  wired in `main.dart` to navigate + log the `broadcastId`). The backend
+  (`functions/`) is a Node.js Cloud Functions codebase deployed separately
+  (`firebase deploy --only functions`).
+- **UI (Phase 3).** A single `/communications` area (admin + manager; employees
+  blocked by the router's `_isCommunicationsArea` guard), entered from the
+  `RoleScaffold` header's campaign icon (shown only to admin/manager). Screens:
+  `CommunicationsScreen` (the feed — `BroadcastCard`s from the cubit stream, a
+  "New Broadcast" FAB), `ComposeBroadcastScreen` (role-gated form: audience via
+  `BroadcastPermissions.allowedAudiences` → branch dropdown / searchable
+  recipient picker / category chips / title / multiline body → `BroadcastCubit.send`
+  → success snackbar with the recipient count → `pop`), and `BroadcastDetailScreen`
+  (`/communications/:broadcastId`, resolved from the tapped entity via `extra`
+  with a live-feed fallback). The compose pickers read `BroadcastCubit.branches()`
+  / `branchUsers()` (repo-direct, mirroring `TaskCubit`). Built entirely on the
+  shared design system (`GlassContainer`, `AppButton`, `AppTextField` (now with a
+  `maxLines` option), `AppDropdownField`, `AppSearchField`, `UserAvatar`,
+  `AppEmptyState`, `EntranceFade`) — strictly monochrome, colour only for an
+  urgent category. Delivery stats (`recipientCount` / `deliveredCount`) are
+  written by the function and shown on the card + detail.
 
 ### Shared (core) dependencies
 
@@ -514,6 +554,7 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Task screens (admin/manager/employee)** | `lib/features/task/presentation/pages/` (`my_tasks_screen` employee · `branch_tasks_screen`/`task_management_screen` → shared `widgets/manager_tasks_view.dart`) |
 | **Task UI actions (create/assign/review/complete) + card** | `lib/features/task/presentation/widgets/` (`task_action_sheets.dart`, `task_card.dart`, `task_empty_state.dart`) |
 | **Multi-assignee (assigneeIds[]) — schema/logic** | `task_entity.dart` (`assigneeIds`, `isAssigned`) + `task_model.dart` (writes `assigneeIds` + primary `assignedEmployeeId` mirror; reads with legacy fallback) → `assign_task.dart` use case → `TaskCubit.assignEmployees` → multi-select `_AssignSheet` in `task_action_sheets.dart`; rules `tasks/{id}` (`assigneeIds arrayContains`); stats `employeeStats` |
+| **Assign-on-create (in the task form)** | `task_action_sheets.dart` `_AssigneePicker` + `_EmployeeChip` (compact team chips, "Whole team"/"Clear all", loaded via `TaskCubit.branchEmployees`; admin reloads + clears on branch change) → `_save()` passes `assigneeIds` to `TaskCubit.createTask` (new optional param, seeded onto the `TaskEntity`) / `editTask` (`copyWith`). No separate create-then-assign step needed |
 | **Checklist (template + task) schema/logic** | `lib/features/task/domain/entities/checklist_item.dart` (`ChecklistItem` + `ChecklistItemTemplate`) + `task_template_entity.dart` (`checklistItems`, `buildTaskChecklist`) + `task_entity.dart` (`checklist`, `requiredChecklistComplete`/progress getters); serialization in `task_template_model.dart` / `task_model.dart`; completion gate + toggling in `TaskCubit` (`completeAndSubmit`/`toggleChecklistItem`); checklist editor in `task_template_sheets.dart` |
 | **Assignee identity on cards (uid → user)** | `TaskCubit` directory (`_ensureDirectory` via `GetUsersByBranch`) → `TaskState.loaded.directory` → `task_card.dart` (`resolveAssignees`, `_AssigneesRow`) |
 | **Reliable avatars (image + initials fallback)** | `lib/core/widgets/user_avatar.dart` (`UserAvatar`, `UserAvatar.fromUser`, `AvatarStack`, `avatarInitials`) — used by task cards, admin user cards, schedule chips/pickers |
@@ -550,12 +591,21 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Schedule grid / cell / sheets (reusable widgets)** | `lib/features/schedule/presentation/widgets/`: `schedule_grid.dart` (`ScheduleGrid`) · `shift_cell.dart` (`ShiftCell` — assigned-count density tile, no quota) · `employee_row.dart` (`EmployeeRow`) · `shift_details_sheet.dart` (`showShiftDetailsSheet`) · `swap_alert_card.dart` (`SwapAlertCard` + `showSwapQueueSheet`) · `broken_assignment_banner.dart` · `employee_picker_sheet.dart` (`showEmployeePicker`) · `sheet_chrome.dart` (`SheetHandle`). Tested in `test/schedule_grid_test.dart` |
 | **Schedule routes / role entry point**    | `lib/core/routes/route_names.dart` (`adminSchedule`/`managerSchedule`/`mySchedule` + `scheduleForRole`) + `app_router.dart` + `role_scaffold.dart` (calendar icon → Schedule) |
 | **Schedule/swap DI wiring**               | `lib/core/di/injection.dart` (`scheduleCubit`/`shiftSwapCubit`) + `main.dart` providers |
-| **Broadcast schema / serialization**      | `lib/features/communications/domain/entities/broadcast_entity.dart` + `data/models/broadcast_model.dart` (then run codegen) + `lib/core/enums/broadcast_audience.dart` (`BroadcastAudience` — allBranches/branch; `''` branchId sentinel = all-branches) |
-| **Broadcast reads/writes (Firestore)**    | `lib/features/communications/data/datasources/broadcast_remote_datasource.dart` (`broadcasts/{id}`; admin feed `orderBy(createdAt)`, branch feed `where('branchId', whereIn:[branch,''])` client-sorted) |
-| **Broadcast repository contract / impl**  | `lib/features/communications/domain/repositories/broadcast_repository.dart` (+impl) — wired in `core/di/injection.dart` (`broadcastCubit`) |
-| **Send a broadcast (use case)**           | `lib/features/communications/domain/usecases/send_broadcast.dart` (`SendBroadcast`) → `BroadcastCubit.send` |
-| **Broadcast logic / feed + send / state** | `lib/features/communications/presentation/cubit/broadcast_cubit.dart` (`load({branchId})` subscribes the feed; `send(...)` via `SendBroadcast`) + `broadcast_state.dart` |
-| **Broadcast DI wiring / provider**        | `lib/core/di/injection.dart` (`broadcastCubit`) + `main.dart` provider + `AppConstants.broadcastsCollection` + `firestore.rules` (`broadcasts/{id}`) |
+| **Broadcast schema / serialization**      | `lib/features/communications/domain/entities/broadcast_entity.dart` (+ `category`/`targetUserId`/`recipientCount`, Phase 2) + `data/models/broadcast_model.dart` (then run codegen) + `lib/core/enums/broadcast_audience.dart` (`BroadcastAudience` — allBranches/branch/**user**; `''` = all-branches sentinel, `'__direct__'` = DM marker) |
+| **Broadcast recipient-resolution / permissions** | `lib/features/communications/domain/broadcast_permissions.dart` (`BroadcastPermissions.canSend`/`allowedAudiences`/`validate` — admin: all/branch/user · manager: own-branch/user-in-branch · employee: none) — the client guard; **re-enforced in `functions/index.js`** + `firestore.rules`. Tested in `test/broadcast_permissions_test.dart` |
+| **Broadcast SEND engine (Cloud Function)** | `functions/index.js` (callable `sendBroadcast`: validate perms → resolve recipients → write `broadcasts/{id}` → gather `users.fcmTokens` → `messaging.sendEachForMulticast` → prune dead tokens → return `{success, recipientCount, deliveredCount, broadcastId}`) + `functions/package.json` + `firebase.json` (`functions`). Deploy: `firebase deploy --only functions` |
+| **Broadcast send (client path)**          | `BroadcastCubit.send(...)` (client guard via `BroadcastPermissions`, returns recipientCount) → `SendBroadcast` use case → `BroadcastRepositoryImpl` → `BroadcastRemoteDataSource.sendBroadcast` (invokes the callable via `FirebaseFunctions`, `toCallablePayload()`) |
+| **Broadcast feed (Firestore read)**       | `lib/features/communications/data/datasources/broadcast_remote_datasource.dart` `watchBroadcasts` (`broadcasts/{id}`; admin `orderBy(createdAt)`, branch `where('branchId', whereIn:[branch,''])` client-sorted; DMs excluded via the `'__direct__'` marker) → `BroadcastCubit.load({branchId})` |
+| **Broadcast repository / use case / state** | `domain/repositories/broadcast_repository.dart` (+impl) · `domain/usecases/send_broadcast.dart` (`SendBroadcast`) · `presentation/cubit/broadcast_cubit.dart` + `broadcast_state.dart` |
+| **Broadcast DI wiring / provider**        | `lib/core/di/injection.dart` (`broadcastCubit`; datasource takes `FirebaseFirestore` + `FirebaseFunctions`) + `main.dart` provider + `AppConstants.broadcastsCollection` + `firestore.rules` (`broadcasts/{id}` — **client writes denied**, function-owned) |
+| **FCM device token storage (multi-device)** | `lib/core/services/notification_service.dart` — `registerToken`/`_rotateToken` (`users/{uid}.fcmTokens` `arrayUnion`, refresh-aware), `forgetUser` (`arrayRemove` on sign-out). Read server-side by `functions/index.js`. Wired in `main.dart` (`AuthCubit` listener) |
+| **FCM receive handling (fg/bg/tap)**      | `lib/core/services/notification_service.dart` (`onMessage` → `onForeground`; `onMessageOpenedApp` + `getInitialMessage` → `onMessageTap`) + `lib/main.dart` (background top-level handler, foreground snackbar via `_messengerKey`, tap → `_router.go(home)` + log `broadcastId`) |
+| **Communications Center UI (feed/compose/detail)** | `lib/features/communications/presentation/pages/` (`communications_screen.dart` feed + FAB · `compose_broadcast_screen.dart` role-gated form · `broadcast_detail_screen.dart`) + `widgets/broadcast_card.dart` + `presentation/communications_format.dart` (time/audience/category formatting). Card render tested in `test/broadcast_card_test.dart` |
+| **Communications routes / entry point**   | `route_names.dart` (`communications` `/communications` · `communicationsCompose` `/communications/compose` · `communicationsDetailPattern` `/communications/:broadcastId` + `communicationsDetail(id)`) + `app_router.dart` (3 routes, declared compose-before-detail; `_isCommunicationsArea` guard — admin + manager, employees bounced) + `role_scaffold.dart` (campaign icon, admin/manager only) |
+| **Broadcast category (announcement/alert/reminder/emergency)** | `lib/core/enums/broadcast_category.dart` (`BroadcastCategory` — value/label/isUrgent/fromString; pure Dart, icon+colour mapping in `communications_format.dart`). Tested in `test/broadcast_category_test.dart` |
+| **Broadcast compose pickers (branch/recipient)** | `BroadcastCubit.branches()` / `branchUsers(branchId)` (repo-direct, `BranchRepository` + `GetUsersByBranch`, mirrors `TaskCubit`) — wired in `injection.dart` |
+| **Broadcast delivery stats (recipient/delivered)** | `recipientCount` (write time) + `deliveredCount` (post-multicast `broadcastRef.update`) on `broadcasts/{id}` — set by `functions/index.js`, read via `BroadcastModel`/`BroadcastEntity`, shown on `broadcast_card.dart` + `broadcast_detail_screen.dart` |
+| **Multiline text field**                  | `lib/features/auth/presentation/widgets/app_text_field.dart` (`maxLines`/`minLines`, default 1; ignored when `obscureText`) — used by the broadcast body |
 | **Dashboard screens (live stats)**        | `admin_dashboard_screen.dart` (**command center, 2026-06-19** — `DashboardMetricCard` grid + hero + activity feed; see "Admin Home (command center)") · `manager/.../manager_home_screen.dart` (shared `statistics/presentation/widgets/stat_grid.dart` — `StatGrid` + `StatGridSkeleton`, + `HeroStatCard`) · `employee/.../employee_home_screen.dart` (**bespoke, redesign v2** — own `_HeroTodayCard`/`_ProgressRing`/`_RingPainter`/`_StatStrip`/`_HomeTaskCard` with inline actions; task counts from the live `TaskCubit` list, shift from `StatisticsCubit`) |
 | **Push notifications (FCM)**              | `lib/core/services/notification_service.dart` + `core/enums/notification_type.dart`; wired in `main.dart` (background handler, init, token register on auth, foreground snackbar) |
 | **Admin routes**                          | `lib/core/routes/route_names.dart` (`adminBranches`/`adminManagers`/`adminEmployees`/`adminAnalytics`/`adminApprovals`) + `app_router.dart` (under `_isAdminArea`) |
@@ -766,13 +816,14 @@ Patterns below are established across the codebase and **must be reused**.
   team); a swap is read/written by the two involved employees and the branch
   manager/admin, with **create** restricted to the requester in their own branch
   (the status order is validated client-side in `ShiftSwapCubit`).
-  **`broadcasts/{id}` (Communications Center — Phase 1)** is targeted by
-  `branchId` (`''` = all branches): **read** = admin, OR an all-branches
-  broadcast (visible to every signed-in user), OR a branch member whose branch
-  matches; **create** = the sender themself, with an admin allowed any
-  branch/all-branches and an own-branch manager only their own branch (never
-  all-branches); **update/delete** = admin or the owning-branch manager
-  (employees never write broadcasts).
+  **`broadcasts/{id}` (Communications Center — Phase 1 + Phase 2 engine)**:
+  **read** = admin, OR the individual recipient of a direct message
+  (`targetUserId`), OR a branch member of a branch/all-branches broadcast
+  (`branchId == '' || branchId == selfBranch()`). **All client writes are
+  denied** (`create, update, delete: if false`) — the `sendBroadcast` Cloud
+  Function (Admin SDK, which bypasses rules) is the sole writer and enforces the
+  send-permission matrix server-side. A DM carries the `'__direct__'` branchId
+  marker so it never appears in a branch/all feed query.
 - Routes are role-guarded in the GoRouter `redirect`: admin areas are
   admin-only, manager areas admit **manager + admin** (the hierarchy), the
   employee home (`/`) is employee-only. Add a new role area as a path prefix

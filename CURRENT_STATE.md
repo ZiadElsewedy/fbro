@@ -11,8 +11,69 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-21 (Communications Center — Phase 1: Broadcast vertical slice)
+**Last updated:** 2026-06-21 (Communications Center — Phase 3: Center UI)
 **Version:** 1.0.0+1 · **Branch:** `feature/tasks-improvements` (DROP — monochrome enterprise UX)
+
+> **Communications Center · Phase 3 — Center UI (2026-06-21):** The role-gated
+> UI on the Phase 1 + 2 backend (no backend-architecture change beyond what the
+> UI required). **Entry point:** a campaign icon in the `RoleScaffold` header
+> (admin + manager only) → new **`/communications`** area; the router's
+> `_isCommunicationsArea` guard **blocks employees**. **Feed**
+> (`CommunicationsScreen`): live broadcast cards (title · body preview · sender ·
+> audience · time · delivery `recipientCount`/`deliveredCount`) from the cubit
+> stream + a **New Broadcast** FAB; admin sees all, manager their branch +
+> all-branches. **Compose** (`ComposeBroadcastScreen`): a role-gated form —
+> audience chips from `BroadcastPermissions.allowedAudiences` (admin: Everyone /
+> Branch / Individual · manager: Branch (own) / Individual (in-branch);
+> unauthorized options **hidden**), an admin branch dropdown, a **searchable
+> recipient picker**, category chips (announcement / alert / reminder /
+> emergency), title + multiline body, and a sticky **Send Broadcast** CTA →
+> `BroadcastCubit.send` → success snackbar *"Broadcast sent to N recipients"* →
+> back. **Detail** (`/communications/:broadcastId`): full message · sender ·
+> category · audience · sent date · recipient + delivered counts (resolved from
+> the tapped entity via `extra`, live-feed fallback). New `BroadcastCategory`
+> enum; `deliveredCount` now persisted by the function; `BroadcastCubit` gains
+> `branches()`/`branchUsers()` pickers; `AppTextField` gains `maxLines`. Built on
+> the shared design system (`GlassContainer`, `AppButton`, `AppDropdownField`,
+> `AppSearchField`, `UserAvatar`, `EntranceFade`), strictly monochrome.
+> `flutter analyze` clean (0 issues); **101 tests pass** (+6:
+> `broadcast_category_test` + `broadcast_card_test` widget render +
+> `broadcast_model` deliveredCount). ⚠️ Deploy `functions` for the delivered-count
+> write. **Communications Center is now end-to-end** (compose → push → feed →
+> detail). The Phase 2 deploy notes still apply (Blaze plan, iOS APNs).
+
+> **Communications Center · Phase 2 — notification send engine (2026-06-21):**
+> Built the **push delivery engine** on the Phase 1 slice (architecture
+> preserved). **① Recipient resolution / permissions** — pure
+> `domain/broadcast_permissions.dart` (`BroadcastPermissions`): admin → all
+> users / any branch / any user; manager → own branch / a user inside it;
+> employee → none. Client guard + UI affordance, **re-enforced authoritatively**
+> server-side. **② FCM token storage** migrated to a **`users/{uid}.fcmTokens`
+> array** (multi-device): `NotificationService` `arrayUnion`s on register +
+> token-refresh (rotating the stale token) and `arrayRemove`s this device on
+> sign-out; registered on login/app-start via the `AuthCubit` listener. **③
+> Cloud Function `sendBroadcast`** (`functions/index.js`, callable, Node.js +
+> firebase-admin) — the new **backend send engine**: validates sender
+> permissions, resolves recipients, **writes** `broadcasts/{id}` (Admin SDK),
+> gathers recipient `fcmTokens`, pushes via `sendEachForMulticast`, prunes dead
+> tokens, and returns `{ success, recipientCount, deliveredCount, broadcastId }`.
+> Clients no longer write the doc — `BroadcastRemoteDataSource.sendBroadcast`
+> invokes the callable; `firestore.rules` now **deny all client writes** to
+> `broadcasts`. **④ Payload** carries title · body · category · senderId ·
+> broadcastId. **⑤ Flutter receive handling** — foreground (snackbar),
+> background (OS-rendered), and tap (`onMessageOpenedApp` + `getInitialMessage`
+> → navigate + log) in `NotificationService` + `main.dart`. New
+> `BroadcastAudience.user` (DM, stored with a `'__direct__'` branchId marker +
+> `targetUserId` so it never leaks into a branch/all feed). New dep
+> `cloud_functions`; new `functions/` codebase + `firebase.json` functions
+> config. `flutter analyze` clean (0 issues); **95 tests pass** (+15:
+> `broadcast_permissions_test.dart` + extended `broadcast_model_test.dart`);
+> `node --check functions/index.js` valid. ⚠️ **Deploy required:**
+> `firebase deploy --only functions,firestore:rules`; the function needs the
+> **Blaze** plan; iOS needs APNs + the `remote-notification` background mode
+> (console/native — not set here). **Next phase:** the Communications Center UI
+> (compose with audience/recipient pickers + feed) and a broadcast detail route
+> for deep-linked taps.
 
 > **Communications Center · Phase 1 (2026-06-21):** First slice of the
 > Communications Center — a **one-way broadcast** foundation. **Backend +
@@ -35,6 +96,14 @@
 > Center UI (compose + feed screens, role entry point/route) and optional
 > notification fan-out on send. ⚠️ Deploy `firestore.rules` for the `broadcasts`
 > collection before use.
+
+> **Assign-on-create (2026-06-21):** The New/Edit Task form now has an **"Assign
+> to"** picker (`_AssigneePicker` + `_EmployeeChip` in `task_action_sheets.dart`) —
+> a manager/admin selects branch employees as they create a task (no more "create
+> first, then assign"). `TaskCubit.createTask` gained an `assigneeIds` param (also
+> threaded through `editTask`); the picker loads `branchEmployees(branchId)`
+> (manager: fixed branch; admin: the picked branch, cleared on change). `flutter
+> analyze` clean (0 issues); **80 tests pass**.
 
 > **Branch Operations redesign — cockpit shipped (2026-06-21, steps 1–3):** The
 > task-centric → **operations-centric** rework. The standalone task list is
@@ -372,8 +441,8 @@
 | Branches (Phase 5, +Phase 9) | ✅ Complete   | `BranchEntity`/`Model`/`Repository`/`RemoteDataSource` + `BranchCubit`; admin CRUD + activate/deactivate + soft delete; `branches/{id}` rules. **Phase 9:** premium cards (manager + employee count + status) + search |
 | Admin module (Phase 5, +Phase 9 UX) | ✅ Complete | Branch / manager / employee management + **admin-only** pending-user approval + branch assignment. `AdminUsersCubit`, `UserAdminRepository` over `users/{uid}`. **Phase 9:** Admin Home restructured to **4 KPIs** + module nav; new **Analytics** page (`/admin/analytics`); avatar-led user cards; search + active/inactive/branch filters |
 | Dashboards / Statistics (Phase 6, +Phase 7) | ✅ Complete | `statistics` feature (`StatisticsCubit`) drives **live** admin / manager / employee dashboards. **Phase 7:** shift/coverage figures read the weekly schedule. **Phase 9:** the full metric wall moved to the Analytics page; the Admin Home shows only 4 headline KPIs |
-| Notifications (Phase 6, +Phase 7) | 🟡 Foundation | FCM client foundation: permission + device-token persistence + foreground snackbars. `NotificationType` extended with Phase 7 swap/schedule events. **Sending** the events needs a server trigger (out of scope) |
-| Communications Center (Phase 1) | 🟡 Backend foundation | `communications` feature — **Broadcast** vertical slice: `BroadcastEntity`/`Model`/`Repository(+Impl)`/`RemoteDataSource` + `SendBroadcast` use case + hybrid `BroadcastCubit` (use case for the write, repo stream for the feed); `BroadcastAudience` enum (allBranches/branch). `broadcasts/{id}` collection + rules (admin all · own-branch manager sends their branch · everyone reads all-branches · employees read-only); admin feed `orderBy(createdAt)`, branch feed `whereIn:[branch,'']` (index-free). **No UI/routes yet** — compose + feed screens are a later phase |
+| Notifications (Phase 6, +Phase 7, +Phase 2 push) | 🟡 Foundation + send | FCM client: permission + **multi-device token array** (`fcmTokens`) + foreground/background/tap handling. **Sending now exists** for broadcasts via the `sendBroadcast` Cloud Function (`functions/index.js`) — the first server-side push engine. Other `NotificationType` events still have no server trigger |
+| Communications Center (Phase 1 + 2 engine + 3 UI) | ✅ End-to-end | `communications` slice + callable `sendBroadcast` Cloud Function + **full UI**. **Phase 2:** recipient-resolution matrix (`BroadcastPermissions`), audiences allBranches/branch/**user (DM)**, function validates/resolves/persists/pushes, returns `{success, recipientCount}`; `broadcasts/{id}` client writes **denied**. **Phase 3 UI:** `/communications` (admin + manager, employees blocked) — feed (`CommunicationsScreen` + `BroadcastCard`) · compose (`ComposeBroadcastScreen`, role-gated audience/branch/recipient/category) · detail (`/communications/:broadcastId`); entry via the `RoleScaffold` campaign icon. `BroadcastCategory` enum; `deliveredCount` persisted. Push/Function still need deploy (Blaze) + iOS APNs |
 | Profile          | ✅ Complete    | View/edit (Full Name · Bio · avatar+cover). **Username removed (2026-06-18)** from editing/validation — no operational value (legacy social field); dormant model field + `CheckUsername` use case remain as harmless legacy |
 | Settings         | ✅ Complete    | Settings page + change password + delete account              |
 | Role shells      | ✅ Live        | All three role dashboards show live operational stats (Phase 6); Admin shell hosts the full admin module (Phase 5) |
@@ -512,9 +581,47 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
   `flutter analyze` clean (0 issues); **80 tests pass** (+6 in
   `broadcast_model_test.dart`). No regressions to existing features (additive
   slice only). **Next phase:** the Communications Center UI + role entry point.
+- **Communications Center — Phase 2: notification send engine (2026-06-21,
+  branch `feature/tasks-improvements`)** — the push delivery engine on the
+  Phase 1 slice (architecture preserved, additive). **Recipient resolution** in
+  pure `domain/broadcast_permissions.dart` (`BroadcastPermissions` — admin
+  all/branch/user · manager own-branch/user-in-branch · employee none).
+  **FCM tokens** moved to the `users/{uid}.fcmTokens` **array** in
+  `NotificationService` (arrayUnion on register + refresh-rotation, arrayRemove
+  on sign-out). **Backend** `functions/` Node.js codebase: the callable
+  `sendBroadcast` (firebase-admin) validates perms → resolves recipients →
+  writes `broadcasts/{id}` → pushes via `sendEachForMulticast` → prunes dead
+  tokens → returns `{success, recipientCount, deliveredCount, broadcastId}`.
+  `BroadcastRemoteDataSource` now invokes the callable (via `cloud_functions`);
+  `broadcasts` client writes **denied** in `firestore.rules`. New
+  `BroadcastAudience.user` (DM, `'__direct__'` marker + `targetUserId`).
+  **Receive handling** (fg snackbar · bg OS-rendered · tap → navigate + log) in
+  `NotificationService` + `main.dart`. New dep `cloud_functions`;
+  `firebase.json` gains a `functions` config. `flutter analyze` clean (0 issues);
+  **95 tests pass** (+15); `node --check functions/index.js` valid.
+- **Communications Center — Phase 3: Center UI (2026-06-21, branch
+  `feature/tasks-improvements`)** — the role-gated UI on the Phase 1 + 2 backend.
+  New `/communications` area (admin + manager; `_isCommunicationsArea` blocks
+  employees) entered from the `RoleScaffold` campaign icon. Screens:
+  `CommunicationsScreen` (feed of `BroadcastCard`s + New Broadcast FAB),
+  `ComposeBroadcastScreen` (audience chips from
+  `BroadcastPermissions.allowedAudiences`, admin branch dropdown, searchable
+  recipient picker, category chips, title + multiline body, sticky Send CTA →
+  `BroadcastCubit.send` → "Broadcast sent to N recipients" → pop), and
+  `BroadcastDetailScreen` (`/communications/:broadcastId`). New `BroadcastCategory`
+  enum + `communications_format.dart`; `deliveredCount` persisted by the function
+  (`broadcastRef.update`) and read on the card/detail; `BroadcastCubit` gains
+  `branches()`/`branchUsers()` (repo-direct pickers, DI updated); `AppTextField`
+  gains a `maxLines` option. Reuses the shared design system; strictly monochrome.
+  `flutter analyze` clean (0 issues); **101 tests pass** (+6); `node --check`
+  valid. **Communications Center is now end-to-end.**
 - **Action needed:** deploy `firestore.rules` / `storage.rules` (now incl. the
-  **`broadcasts/{id}`** rules) and enable Firebase Storage; bootstrap the first
-  admin (set `role/approvalStatus/isActive` in the console) before production.
+  **`broadcasts/{id}`** rules — client writes denied) and **`functions`**
+  (`firebase deploy --only functions,firestore:rules`; the Cloud Function
+  requires the **Blaze** plan); enable Firebase Storage; for iOS push, add the
+  APNs key + the `remote-notification` background mode (console/native, not set
+  here); bootstrap the first admin (set `role/approvalStatus/isActive` in the
+  console) before production.
 
 ---
 
@@ -541,6 +648,9 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
 | adminEmployees      | `/admin/employees`           | `EmployeeManagementScreen`| **admin**   |
 | adminAnalytics      | `/admin/analytics`           | `AdminAnalyticsScreen`  | **admin**     |
 | adminApprovals      | `/admin/approvals`           | `PendingApprovalsScreen`| **admin**     |
+| communications      | `/communications`            | `CommunicationsScreen`  | **admin + manager** |
+| communicationsCompose | `/communications/compose`  | `ComposeBroadcastScreen`| **admin + manager** |
+| communicationsDetail | `/communications/:broadcastId` | `BroadcastDetailScreen` | **admin + manager** |
 | login               | `/login`                     | `LoginPage`             | unauth (landing) |
 | register            | `/register`                  | `RegisterPage`          | unauth        |
 | phone               | `/phone`                     | `PhoneOtpPage`          | unauth        |
@@ -606,14 +716,28 @@ landing is **Login** (the social Welcome page was removed).
   `ShiftSwapCubit`). **`task_templates/{id}` (Stabilization)**: read = any
   admin/manager; create = admin (global/any) or own-branch manager;
   update/delete = admin or the owning-branch manager (employees don't read
-  templates). **`broadcasts/{id}` (Communications Center — Phase 1)**: read =
-  admin, OR any all-branches broadcast (`branchId == ''`, visible to every
-  signed-in user), OR a branch member whose branch matches; create = the sender
-  themself (admin any branch/all-branches; own-branch manager their branch only,
-  never all-branches); update/delete = admin or the owning-branch manager
-  (employees never write broadcasts). Reusable `isAdmin()` / `isManager()` /
-  `canReachBranch()` helpers remain for future collections. ⚠️ Still need to be
-  **deployed** (`firebase deploy --only firestore:rules,storage`).
+  templates). **`broadcasts/{id}` (Communications Center — Phase 1 + Phase 2)**:
+  read = admin, OR the individual recipient of a direct message (`targetUserId`),
+  OR a branch member of a branch/all-branches broadcast (`branchId == '' ||
+  branchId == selfBranch()`); **all client writes are denied** (`create, update,
+  delete: if false`) — the `sendBroadcast` Cloud Function (Admin SDK) is the sole
+  writer and enforces the send-permission matrix server-side. Reusable `isAdmin()`
+  / `isManager()` / `canReachBranch()` helpers remain for future collections.
+  ⚠️ Still need to be **deployed**
+  (`firebase deploy --only firestore:rules,storage,functions`).
+
+- **Cloud Functions (Phase 2)** — ✅ **In the repo:** [`functions/`](functions/)
+  (Node.js 20, `firebase-admin` + `firebase-functions` v2), registered in
+  [`firebase.json`](firebase.json) (`functions.source = functions`). One callable:
+  **`sendBroadcast`** — the Communications Center send engine (validate sender
+  permissions → resolve recipients → write `broadcasts/{id}` → gather recipient
+  `fcmTokens` → `messaging.sendEachForMulticast` → prune dead tokens → return
+  `{ success, recipientCount, deliveredCount, broadcastId }`). Called from
+  `BroadcastRemoteDataSource` via `cloud_functions` (default region
+  `us-central1`, matching the client). ⚠️ **Not deployed/runnable** in this repo
+  state: needs `cd functions && npm install`, the **Blaze** billing plan, and
+  `firebase deploy --only functions`. Verified by `node --check` (syntax) only —
+  Flutter CI can't exercise it.
 
 ### Firestore schema — `users/{uid}`
 
@@ -627,7 +751,8 @@ Shared by the auth (`UserModel`) and profile (`ProfileModel`) layers.
 | `assignedShift`                                        | string?   | **Phase 1/2** — references the assigned `shifts/{shiftId}`; null until a manager assigns one |
 | `isActive`                                             | bool      | **Phase 1** — activation/soft-disable. **New sign-ups seeded `false`** (pending approval); set `true` on approval |
 | `approvalStatus`                                       | string    | **Approval** — `pending` / `approved` / `rejected`. New sign-ups seeded `pending`; missing → treated as `approved` (legacy). **Flipped by admin only (Phase 6)** |
-| `fcmToken`, `fcmTokenUpdatedAt`                        | string? / Timestamp? | **Phase 6** — device push token (self-written, best-effort) |
+| `fcmTokens`                                            | string[]  | **Phase 2** — device push tokens (multi-device; self-written via `arrayUnion`/`arrayRemove`, refresh-aware). Read server-side by the `sendBroadcast` function |
+| `fcmToken`, `fcmTokenUpdatedAt`                        | string? / Timestamp? | **Phase 6 (legacy single token)** — superseded by `fcmTokens`; still read by the function for back-compat; `fcmTokenUpdatedAt` still stamped on register |
 | `displayName`, `photoUrl`                              | string    | **legacy** auth keys, kept in sync |
 | `fullName`, `username`, `profileImage`, `coverImage`   | string    | profile identity               |
 | `phoneNumber`, `bio`, `gender`, `country`, `city`, `website` | string?  | personal                       |
@@ -761,27 +886,37 @@ week's Sunday), so a week is addressed directly without a query.
 > may reject. Status order is validated client-side (`ShiftSwapCubit`); WHO may
 > write is enforced by `firestore.rules` (`shift_swaps/{id}`).
 
-### Firestore schema — `broadcasts/{broadcastId}` (Communications Center — Phase 1)
+### Firestore schema — `broadcasts/{broadcastId}` (Communications Center — Phase 1 + 2 + 3)
 
-| Field        | Type       | Notes                                                          |
-| ------------ | ---------- | ------------------------------------------------------------- |
-| `id`         | string     | mirrors the doc id (set on create)                            |
-| `title`      | string     | broadcast headline                                            |
-| `message`    | string     | broadcast body                                                |
-| `senderId`   | string     | uid of the sender (must equal `request.auth.uid` on create)   |
-| `senderName` | string     | denormalized sender name for display                          |
-| `senderRole` | string     | `admin` / `manager` / `employee` (sender's role at send time) |
-| `audience`   | string     | `allBranches` / `branch` (the addressing intent)              |
-| `branchId`   | string     | target branch id; **`''` (empty) = all branches** (the queryable sentinel) |
-| `createdAt`  | Timestamp  | server timestamp (set by the datasource)                      |
+**Written exclusively by the `sendBroadcast` Cloud Function** (Admin SDK); client
+writes are denied by the rules.
 
-> A one-way announcement. Targeting is by `branchId`: a branch id scopes it to
-> that branch (its manager + employees + any admin); the empty string `''` means
-> **all branches** (admin-only to send; readable by every signed-in user). The
-> admin feed reads `orderBy('createdAt', descending)`; a branch member reads
-> `where('branchId', whereIn: [selfBranch, ''])` (their branch + all-branches in
-> one index-free, rules-safe query, sorted newest-first client-side). WHO may
-> send/edit is enforced by `firestore.rules` (`broadcasts/{id}`).
+| Field           | Type       | Notes                                                          |
+| --------------- | ---------- | ------------------------------------------------------------- |
+| `id`            | string     | mirrors the doc id                                            |
+| `title`         | string     | broadcast headline (push title)                              |
+| `message`       | string     | broadcast body (push body)                                   |
+| `category`      | string     | notification category — `announcement` / `alert` / `reminder` / `emergency` (Phase 3 `BroadcastCategory`; legacy default `general`); rides in the push `data` |
+| `senderId`      | string     | uid of the sender (`request.auth.uid` in the function)       |
+| `senderName`    | string     | denormalized sender name for display                         |
+| `senderRole`    | string     | `admin` / `manager` (sender's role at send time)             |
+| `audience`      | string     | `allBranches` / `branch` / **`user`** (the addressing intent) |
+| `branchId`      | string     | `''` = all branches · a branch id = that branch · **`'__direct__'`** = a direct message (Phase 2) |
+| `targetUserId`  | string     | **Phase 2** — the recipient uid for an `audience == 'user'` direct message; `''` otherwise |
+| `recipientCount`| number     | **Phase 2** — how many users the engine resolved as recipients |
+| `deliveredCount`| number     | **Phase 3** — how many devices the push reached (written after the FCM multicast); shown as "delivered M / N" on the feed card + detail |
+| `createdAt`     | Timestamp  | server timestamp                                             |
+
+> A one-way announcement / direct message. For the branch/all feed, targeting is
+> by `branchId`: a branch id scopes it to that branch; `''` means **all branches**
+> (admin-only to send). A **direct message** (`audience == 'user'`) carries
+> `targetUserId` + the non-branch `'__direct__'` marker, so it never appears in a
+> branch/all feed and is read only by the recipient + an admin. The admin feed
+> reads `orderBy('createdAt', descending)`; a branch member reads
+> `where('branchId', whereIn: [selfBranch, ''])` (index-free, rules-safe, sorted
+> client-side). The **send** (validate · resolve · persist · push · summary) is
+> owned by the callable `sendBroadcast` Cloud Function; the permission matrix is
+> `BroadcastPermissions` (client) re-enforced server-side.
 
 ### Storage schema
 

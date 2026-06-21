@@ -214,33 +214,29 @@ service cloud.firestore {
       allow delete: if canReachBranch(resource.data.get('branchId', ''));
     }
 
-    // ── Broadcasts (Communications Center — Phase 1) ───────────────
-    // A one-way announcement from a manager/admin to a single branch or to every
-    // branch. The targeting dimension is `branchId`: a branch id scopes it to
-    // that branch; the empty string '' means ALL branches (admin-only to send).
-    //   read   — admin (all), OR an all-branches broadcast (branchId == '',
-    //            visible to every signed-in user), OR a branch member whose
-    //            branch matches the broadcast's branchId. A branch member's
+    // ── Broadcasts (Communications Center — Phase 1 + Phase 2 engine) ──
+    // A one-way announcement to every branch, a single branch, or one individual.
+    // The targeting dimension for the branch/all feed is `branchId`: a branch id
+    // scopes it to that branch; the empty string '' means ALL branches. A direct
+    // message to one user carries `targetUserId` + a non-branch `branchId` marker
+    // ('__direct__'), so it never surfaces in a branch/all feed.
+    //
+    //   read   — admin (all), OR the individual recipient (`targetUserId`), OR a
+    //            branch member of a branch/all-branches broadcast (a non-DM doc
+    //            whose branchId is '' or their own branch). A branch member's
     //            `whereIn: [selfBranch, '']` query is provably safe under this.
-    //   create — sender must be self; admin may target any branch / all-branches,
-    //            an own-branch manager only their own branch (never all-branches).
-    //   update/delete — admin, OR the owning-branch manager. (Employees never
-    //            write broadcasts.)
+    //   write  — OWNED BY THE `sendBroadcast` Cloud Function (Admin SDK, which
+    //            bypasses these rules). Clients never write broadcast docs
+    //            directly — the function validates sender permissions, resolves
+    //            recipients, persists the doc, and pushes the notification.
     match /broadcasts/{broadcastId} {
       allow read: if isAdmin()
-        || resource.data.get('branchId', '') == ''
-        || resource.data.get('branchId', '') == selfBranch();
+        || resource.data.get('targetUserId', '') == request.auth.uid
+        || (resource.data.get('targetUserId', '') == ''
+            && (resource.data.get('branchId', '') == ''
+                || resource.data.get('branchId', '') == selfBranch()));
 
-      allow create: if request.resource.data.get('senderId', '') == request.auth.uid
-        && (isAdmin()
-            || (isManager()
-                && request.resource.data.get('branchId', '') != ''
-                && request.resource.data.get('branchId', '') == selfBranch()));
-
-      allow update, delete: if isAdmin()
-        || (isManager()
-            && resource.data.get('branchId', '') != ''
-            && resource.data.get('branchId', '') == selfBranch());
+      allow create, update, delete: if false;
     }
   }
 }

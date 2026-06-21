@@ -26,6 +26,10 @@ import 'package:fbro/features/profile/presentation/pages/profile_page.dart';
 import 'package:fbro/features/profile/presentation/pages/edit_profile_page.dart';
 import 'package:fbro/features/settings/presentation/pages/settings_page.dart';
 import 'package:fbro/features/settings/presentation/pages/change_password_page.dart';
+import 'package:fbro/features/communications/domain/entities/broadcast_entity.dart';
+import 'package:fbro/features/communications/presentation/pages/communications_screen.dart';
+import 'package:fbro/features/communications/presentation/pages/compose_broadcast_screen.dart';
+import 'package:fbro/features/communications/presentation/pages/broadcast_detail_screen.dart';
 import 'route_names.dart';
 
 GoRouter createRouter(AuthCubit authCubit) {
@@ -81,6 +85,10 @@ GoRouter createRouter(AuthCubit authCubit) {
         // Shared routes (/profile, /settings) stay open to all roles.
         if (_isAdminArea(loc) && !user.role.isAdmin) return roleHome;
         if (_isManagerArea(loc) && !(user.role.isManager || user.role.isAdmin)) {
+          return roleHome;
+        }
+        // Communications Center is admin + manager only; employees are bounced.
+        if (_isCommunicationsArea(loc) && user.role.isEmployee) {
           return roleHome;
         }
         if (loc == RouteNames.home && !user.role.isEmployee) {
@@ -229,6 +237,36 @@ GoRouter createRouter(AuthCubit authCubit) {
           const PendingApprovalsScreen(),
         ),
       ),
+      // ─── Communications Center (Phase 3) ───────────────────────
+      // admin + manager (employees blocked by `_isCommunicationsArea`). The
+      // static `/compose` route is declared BEFORE the `:broadcastId` detail
+      // route so it is never captured as an id.
+      GoRoute(
+        path: RouteNames.communications,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const CommunicationsScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.communicationsCompose,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const ComposeBroadcastScreen(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.communicationsDetailPattern,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          BroadcastDetailScreen(
+            broadcastId: state.pathParameters['broadcastId'] ?? '',
+            broadcast: state.extra is BroadcastEntity
+                ? state.extra as BroadcastEntity
+                : null,
+          ),
+        ),
+      ),
       GoRoute(
         path: RouteNames.login,
         pageBuilder: (context, state) => _slideTransition(
@@ -347,6 +385,12 @@ bool _isAdminArea(String loc) =>
 bool _isManagerArea(String loc) =>
     loc == RouteNames.managerHome ||
     loc.startsWith('${RouteNames.managerHome}/');
+
+/// True when [loc] is anywhere inside the Communications Center
+/// (`/communications` or `/communications/...`) — admin + manager only.
+bool _isCommunicationsArea(String loc) =>
+    loc == RouteNames.communications ||
+    loc.startsWith('${RouteNames.communications}/');
 
 class _AuthStateNotifier extends ChangeNotifier {
   _AuthStateNotifier(AuthCubit cubit) {

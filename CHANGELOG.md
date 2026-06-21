@@ -12,6 +12,113 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-06-21 — Communications Center · Phase 3: Center UI)
+
+The role-gated UI on the Phase 1 + 2 backend (no backend-architecture change
+beyond what the UI needed). Built entirely on the shared DROP design system —
+strictly monochrome, colour only for an urgent category. `flutter analyze` clean
+(0 issues); **101 tests pass** (+6); `node --check functions/index.js` valid.
+
+- **Entry point + route** — a campaign icon in the `RoleScaffold` header (shown
+  only to admin + manager) opens the new **`/communications`** area. The router
+  gains `_isCommunicationsArea` and a redirect guard that **bounces employees**;
+  three `GoRoute`s (`/communications`, `/communications/compose`,
+  `/communications/:broadcastId`) with compose declared before the param route.
+- **Feed** ([communications_screen.dart](lib/features/communications/presentation/pages/communications_screen.dart))
+  — a live list of [BroadcastCard](lib/features/communications/presentation/widgets/broadcast_card.dart)s
+  (title · body preview · sender · audience · time · delivery
+  `recipientCount`/`deliveredCount`) from the cubit stream, with a **New
+  Broadcast** FAB, pull-to-refresh, skeleton + empty/error states. Admin sees all
+  branches; a manager sees their branch + all-branches.
+- **Compose** ([compose_broadcast_screen.dart](lib/features/communications/presentation/pages/compose_broadcast_screen.dart))
+  — a role-gated form: audience chips from
+  `BroadcastPermissions.allowedAudiences` (admin: Everyone / Branch / Individual ·
+  manager: Branch (own, fixed) / Individual (in-branch); **unauthorized options
+  are hidden**), an admin branch dropdown, a **searchable recipient picker**
+  (`AppSearchField` + user tiles), category chips (announcement / alert /
+  reminder / emergency), a title field and a **multiline** body, and a sticky
+  **Send Broadcast** CTA. Send → `BroadcastCubit.send` (client permission guard +
+  loading) → success snackbar *"Broadcast sent to N recipients"* → `pop`; errors
+  surface via a `BlocListener`.
+- **Detail** ([broadcast_detail_screen.dart](lib/features/communications/presentation/pages/broadcast_detail_screen.dart))
+  — full message · sender · category · audience · sent date · recipient +
+  delivered counts. Resolves the broadcast from the tapped entity (`extra`) with
+  a live-feed fallback by id; graceful "unavailable" state otherwise.
+- **`BroadcastCategory` enum** ([broadcast_category.dart](lib/core/enums/broadcast_category.dart))
+  — announcement / alert / reminder / emergency (pure Dart; icon + colour mapping
+  in `communications_format.dart`, which also formats relative/full time and the
+  audience label). Tested in
+  [broadcast_category_test.dart](test/broadcast_category_test.dart).
+- **`deliveredCount` persisted** — the `sendBroadcast` Cloud Function now writes
+  `deliveredCount` back to the doc after the multicast (`broadcastRef.update`), so
+  the feed/detail can show "delivered M / N". Added to `BroadcastEntity`/`Model`.
+- **Compose pickers on the cubit** — `BroadcastCubit.branches()` /
+  `branchUsers(branchId)` (repo-direct via `BranchRepository` + `GetUsersByBranch`,
+  mirroring `TaskCubit`; DI updated).
+- **Shared-widget reuse** — `AppTextField` gains an optional `maxLines`/`minLines`
+  (default 1; ignored when obscured) for the body; everything else reuses
+  `GlassContainer`, `AppButton`, `AppDropdownField`, `AppSearchField`,
+  `UserAvatar`, `AppEmptyState`, `EntranceFade`, `ListSkeleton`, `AppSnackbar`.
+- **Tests** — `broadcast_card_test.dart` (headless render: title/body/sender/
+  audience/category/delivery + tap), `broadcast_category_test.dart`, and a
+  `deliveredCount` round-trip added to `broadcast_model_test.dart`.
+
+### Added (2026-06-21 — Communications Center · Phase 2: notification send engine)
+
+The **push delivery engine** on top of the Phase 1 slice — recipient resolution,
+FCM, a Cloud Function send pipeline, and Flutter receive handling. The Phase 1
+architecture (entity / repository / use case / cubit) is **preserved**; the send
+path now routes through a callable Cloud Function instead of a direct Firestore
+write. `flutter analyze` clean (0 issues); **95 tests pass** (+15);
+`node --check functions/index.js` valid. New dependency: `cloud_functions`.
+
+- **Recipient resolution / permissions** — pure
+  [`broadcast_permissions.dart`](lib/features/communications/domain/broadcast_permissions.dart)
+  (`BroadcastPermissions.canSend` / `allowedAudiences` / `validate`): admin →
+  all users / any branch / any individual; manager → their **own** branch / an
+  individual **inside** it; employee → none. It is the client guard (UI
+  affordance + pre-send validation) and is **re-enforced authoritatively** in the
+  Cloud Function + `firestore.rules`. Tested in
+  [broadcast_permissions_test.dart](test/broadcast_permissions_test.dart).
+- **Individual (direct-message) audience** — new `BroadcastAudience.user`.
+  `BroadcastEntity`/`Model` gain `targetUserId`, `category`, and `recipientCount`.
+  A DM is persisted with a non-branch `branchId` marker (`'__direct__'`) +
+  `targetUserId`, so it never surfaces in a branch/all feed query and is readable
+  only by the recipient + an admin (read rule updated; feed queries unchanged).
+- **FCM token storage → array** — `NotificationService` now keeps the device
+  token in **`users/{uid}.fcmTokens`** (`arrayUnion` on register and on
+  `onTokenRefresh`, rotating out the stale token; `arrayRemove` on sign-out), so
+  multiple devices per user are supported and dead tokens don't accumulate.
+  Registered on login / app-start via the existing `AuthCubit` listener. The
+  legacy single `fcmToken` is no longer written but is still **read** by the
+  function for back-compat.
+- **Backend send engine** — new Node.js [`functions/`](functions/) codebase
+  (firebase-admin + firebase-functions v2), registered in `firebase.json`. The
+  callable **`sendBroadcast`** ([functions/index.js](functions/index.js)):
+  validates the sender's permissions, resolves recipients (all / branch /
+  individual), **writes** `broadcasts/{id}` (Admin SDK), gathers recipient
+  `fcmTokens`, sends via `messaging.sendEachForMulticast`, prunes
+  permanently-invalid tokens, and returns the **delivery summary**
+  `{ success, recipientCount, deliveredCount, broadcastId }`.
+- **Client send path** — `BroadcastRemoteDataSource.sendBroadcast` now invokes
+  the callable (`cloud_functions`, `toCallablePayload()`) instead of writing
+  Firestore; `BroadcastCubit.send` gained `audience` / `targetUserId` /
+  `targetUserBranchId` / `category`, applies the client permission guard, and
+  returns the resolved **recipient count**. `firestore.rules` now **deny all
+  client writes** to `broadcasts` (the function is the sole writer).
+- **Notification payload** — `notification: { title, body }` + `data: { type,
+  category, senderId, broadcastId, title, body }` (all strings).
+- **Flutter receive handling** — `NotificationService` routes **foreground**
+  (`onMessage` → in-app snackbar), **background** (top-level handler in
+  `main.dart`; the OS renders the `notification` block), and **tap**
+  (`onMessageOpenedApp` + `getInitialMessage` → `onMessageTap`, wired in
+  `main.dart` to navigate home + log the `broadcastId` for the future
+  deep-link). The router is now created once so the tap handler can navigate.
+- ⚠️ **Deploy** `firebase deploy --only functions,firestore:rules` (the function
+  needs the **Blaze** plan; `cd functions && npm install` first). iOS push also
+  needs an APNs key + the `remote-notification` background mode (console/native,
+  not set in this repo).
+
 ### Added (2026-06-21 — Communications Center · Phase 1: Broadcast vertical slice)
 
 First slice of the **Communications Center** — a one-way **broadcast**
@@ -58,6 +165,22 @@ pass** (+6 new).
   (employees never write broadcasts). ⚠️ Deploy `firestore.rules`.
 - **Next phase:** the Communications Center UI (compose + feed screens + role
   entry point/route) and optional notification fan-out on send.
+
+### Added (2026-06-21 — Assign employees while creating a task)
+
+The New/Edit Task form now has an **"Assign to"** picker, so a manager/admin can
+assign one or more of the branch's employees *as they create the task* — no more
+"create first, then assign". `flutter analyze` clean; 80 tests pass.
+
+- **`createTask` gains `assigneeIds`** (`TaskCubit`) — seeded onto the new
+  `TaskEntity` so the assignment persists in the same create write; edit threads
+  `assigneeIds` through `editTask`'s `copyWith`.
+- **`_AssigneePicker` + `_EmployeeChip`** in `task_action_sheets.dart` — a compact
+  selectable-chip team picker (avatar · name · toggle, with "Whole team" / "Clear
+  all") loaded via `TaskCubit.branchEmployees(branchId)`. Manager: branch fixed;
+  admin: loads the picked branch and **clears the selection when the branch
+  changes**. Seeded from the task's existing assignees when editing. The standalone
+  `_AssignSheet` (quick reassign from a card) is unchanged.
 
 ### Added / Changed (2026-06-21 — Branch Operations cockpit · steps 2–3: cubit + screens)
 

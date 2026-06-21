@@ -39,6 +39,21 @@ class RouteNames {
   static const String managerSchedule = '/manager/schedule';
   static const String mySchedule = '/my-schedule';
 
+  // ─── Communications Center (Phase 3) ────────────────────────
+  // A single area for admin + manager (employees are blocked by the router's
+  // `_isCommunicationsArea` guard). Not under /admin or /manager because both
+  // roles share it.
+  static const String communications = '/communications';
+  static const String communicationsCompose = '/communications/compose';
+
+  /// The broadcast-detail route pattern (`/communications/:broadcastId`).
+  static const String communicationsDetailPattern =
+      '/communications/:broadcastId';
+
+  /// The concrete detail path for [broadcastId].
+  static String communicationsDetail(String broadcastId) =>
+      '/communications/$broadcastId';
+
   // ─── Admin module (Phase 5) ─────────────────────────────────
   // All under the admin area, so the existing `_isAdminArea` guard covers them.
   static const String adminBranches = '/admin/branches';

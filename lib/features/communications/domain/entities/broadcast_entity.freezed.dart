@@ -28,8 +28,22 @@ mixin _$BroadcastEntity {
   BroadcastAudience get audience => throw _privateConstructorUsedError;
 
   /// Target branch when [audience] is [BroadcastAudience.branch]; null for an
-  /// all-branches broadcast.
+  /// all-branches or individual broadcast.
   String? get branchId => throw _privateConstructorUsedError;
+
+  /// The individual recipient when [audience] is [BroadcastAudience.user].
+  String? get targetUserId => throw _privateConstructorUsedError;
+
+  /// Notification category (drives client-side routing/grouping of the push).
+  String get category => throw _privateConstructorUsedError;
+
+  /// How many users the send engine resolved as recipients (set by the
+  /// function on send; null on an unsent/legacy doc).
+  int? get recipientCount => throw _privateConstructorUsedError;
+
+  /// How many devices the push was actually delivered to (set by the function
+  /// after the FCM multicast completes; null until then / legacy).
+  int? get deliveredCount => throw _privateConstructorUsedError;
   DateTime? get createdAt => throw _privateConstructorUsedError;
 
   /// Create a copy of BroadcastEntity
@@ -55,6 +69,10 @@ abstract class $BroadcastEntityCopyWith<$Res> {
     UserRole senderRole,
     BroadcastAudience audience,
     String? branchId,
+    String? targetUserId,
+    String category,
+    int? recipientCount,
+    int? deliveredCount,
     DateTime? createdAt,
   });
 }
@@ -82,6 +100,10 @@ class _$BroadcastEntityCopyWithImpl<$Res, $Val extends BroadcastEntity>
     Object? senderRole = null,
     Object? audience = null,
     Object? branchId = freezed,
+    Object? targetUserId = freezed,
+    Object? category = null,
+    Object? recipientCount = freezed,
+    Object? deliveredCount = freezed,
     Object? createdAt = freezed,
   }) {
     return _then(
@@ -118,6 +140,22 @@ class _$BroadcastEntityCopyWithImpl<$Res, $Val extends BroadcastEntity>
                 ? _value.branchId
                 : branchId // ignore: cast_nullable_to_non_nullable
                       as String?,
+            targetUserId: freezed == targetUserId
+                ? _value.targetUserId
+                : targetUserId // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            category: null == category
+                ? _value.category
+                : category // ignore: cast_nullable_to_non_nullable
+                      as String,
+            recipientCount: freezed == recipientCount
+                ? _value.recipientCount
+                : recipientCount // ignore: cast_nullable_to_non_nullable
+                      as int?,
+            deliveredCount: freezed == deliveredCount
+                ? _value.deliveredCount
+                : deliveredCount // ignore: cast_nullable_to_non_nullable
+                      as int?,
             createdAt: freezed == createdAt
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
@@ -146,6 +184,10 @@ abstract class _$$BroadcastEntityImplCopyWith<$Res>
     UserRole senderRole,
     BroadcastAudience audience,
     String? branchId,
+    String? targetUserId,
+    String category,
+    int? recipientCount,
+    int? deliveredCount,
     DateTime? createdAt,
   });
 }
@@ -172,6 +214,10 @@ class __$$BroadcastEntityImplCopyWithImpl<$Res>
     Object? senderRole = null,
     Object? audience = null,
     Object? branchId = freezed,
+    Object? targetUserId = freezed,
+    Object? category = null,
+    Object? recipientCount = freezed,
+    Object? deliveredCount = freezed,
     Object? createdAt = freezed,
   }) {
     return _then(
@@ -208,6 +254,22 @@ class __$$BroadcastEntityImplCopyWithImpl<$Res>
             ? _value.branchId
             : branchId // ignore: cast_nullable_to_non_nullable
                   as String?,
+        targetUserId: freezed == targetUserId
+            ? _value.targetUserId
+            : targetUserId // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        category: null == category
+            ? _value.category
+            : category // ignore: cast_nullable_to_non_nullable
+                  as String,
+        recipientCount: freezed == recipientCount
+            ? _value.recipientCount
+            : recipientCount // ignore: cast_nullable_to_non_nullable
+                  as int?,
+        deliveredCount: freezed == deliveredCount
+            ? _value.deliveredCount
+            : deliveredCount // ignore: cast_nullable_to_non_nullable
+                  as int?,
         createdAt: freezed == createdAt
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
@@ -229,6 +291,10 @@ class _$BroadcastEntityImpl extends _BroadcastEntity {
     this.senderRole = UserRole.manager,
     this.audience = BroadcastAudience.allBranches,
     this.branchId,
+    this.targetUserId,
+    this.category = 'general',
+    this.recipientCount,
+    this.deliveredCount,
     this.createdAt,
   }) : super._();
 
@@ -252,15 +318,34 @@ class _$BroadcastEntityImpl extends _BroadcastEntity {
   final BroadcastAudience audience;
 
   /// Target branch when [audience] is [BroadcastAudience.branch]; null for an
-  /// all-branches broadcast.
+  /// all-branches or individual broadcast.
   @override
   final String? branchId;
+
+  /// The individual recipient when [audience] is [BroadcastAudience.user].
+  @override
+  final String? targetUserId;
+
+  /// Notification category (drives client-side routing/grouping of the push).
+  @override
+  @JsonKey()
+  final String category;
+
+  /// How many users the send engine resolved as recipients (set by the
+  /// function on send; null on an unsent/legacy doc).
+  @override
+  final int? recipientCount;
+
+  /// How many devices the push was actually delivered to (set by the function
+  /// after the FCM multicast completes; null until then / legacy).
+  @override
+  final int? deliveredCount;
   @override
   final DateTime? createdAt;
 
   @override
   String toString() {
-    return 'BroadcastEntity(id: $id, title: $title, message: $message, senderId: $senderId, senderName: $senderName, senderRole: $senderRole, audience: $audience, branchId: $branchId, createdAt: $createdAt)';
+    return 'BroadcastEntity(id: $id, title: $title, message: $message, senderId: $senderId, senderName: $senderName, senderRole: $senderRole, audience: $audience, branchId: $branchId, targetUserId: $targetUserId, category: $category, recipientCount: $recipientCount, deliveredCount: $deliveredCount, createdAt: $createdAt)';
   }
 
   @override
@@ -281,6 +366,14 @@ class _$BroadcastEntityImpl extends _BroadcastEntity {
                 other.audience == audience) &&
             (identical(other.branchId, branchId) ||
                 other.branchId == branchId) &&
+            (identical(other.targetUserId, targetUserId) ||
+                other.targetUserId == targetUserId) &&
+            (identical(other.category, category) ||
+                other.category == category) &&
+            (identical(other.recipientCount, recipientCount) ||
+                other.recipientCount == recipientCount) &&
+            (identical(other.deliveredCount, deliveredCount) ||
+                other.deliveredCount == deliveredCount) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt));
   }
@@ -296,6 +389,10 @@ class _$BroadcastEntityImpl extends _BroadcastEntity {
     senderRole,
     audience,
     branchId,
+    targetUserId,
+    category,
+    recipientCount,
+    deliveredCount,
     createdAt,
   );
 
@@ -321,6 +418,10 @@ abstract class _BroadcastEntity extends BroadcastEntity {
     final UserRole senderRole,
     final BroadcastAudience audience,
     final String? branchId,
+    final String? targetUserId,
+    final String category,
+    final int? recipientCount,
+    final int? deliveredCount,
     final DateTime? createdAt,
   }) = _$BroadcastEntityImpl;
   const _BroadcastEntity._() : super._();
@@ -343,9 +444,27 @@ abstract class _BroadcastEntity extends BroadcastEntity {
   BroadcastAudience get audience;
 
   /// Target branch when [audience] is [BroadcastAudience.branch]; null for an
-  /// all-branches broadcast.
+  /// all-branches or individual broadcast.
   @override
   String? get branchId;
+
+  /// The individual recipient when [audience] is [BroadcastAudience.user].
+  @override
+  String? get targetUserId;
+
+  /// Notification category (drives client-side routing/grouping of the push).
+  @override
+  String get category;
+
+  /// How many users the send engine resolved as recipients (set by the
+  /// function on send; null on an unsent/legacy doc).
+  @override
+  int? get recipientCount;
+
+  /// How many devices the push was actually delivered to (set by the function
+  /// after the FCM multicast completes; null until then / legacy).
+  @override
+  int? get deliveredCount;
   @override
   DateTime? get createdAt;
 

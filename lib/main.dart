@@ -1,23 +1,31 @@
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:fbro/core/di/injection.dart';
 import 'package:fbro/core/routes/app_router.dart';
+import 'package:fbro/core/routes/route_names.dart';
 import 'package:fbro/core/theme/app_theme.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_state.dart';
 import 'package:fbro/firebase_options.dart';
 
-/// Background FCM handler. Simple push — no background data processing needed;
-/// must be a top-level, vm:entry-point function.
+/// Background FCM handler. The push carries a `notification` block, so the OS
+/// renders it while the app is backgrounded/terminated — no background data
+/// processing is needed here. Must be a top-level, vm:entry-point function.
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 
 /// Lets the notification service surface foreground pushes as in-app snackbars.
 final GlobalKey<ScaffoldMessengerState> _messengerKey =
     GlobalKey<ScaffoldMessengerState>();
+
+/// The app router, created once so the FCM tap handler can navigate.
+late final GoRouter _router;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,8 +42,9 @@ void main() async {
   );
 
   AppDependencies.init();
+  _router = createRouter(AppDependencies.authCubit);
 
-  // FCM foundation (best-effort; never blocks startup).
+  // FCM engine (best-effort; never blocks startup).
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   AppDependencies.notificationService
     ..onForeground = (title, body) {
@@ -45,6 +54,18 @@ void main() async {
       if (text.isNotEmpty) {
         _messengerKey.currentState?.showSnackBar(SnackBar(content: Text(text)));
       }
+    }
+    ..onMessageTap = (data) {
+      // Notification tapped (from background or cold start). The broadcast
+      // detail screen lands in a later phase; for now open the app at the
+      // signed-in user's home (the router redirects to the right role shell)
+      // and log the payload so the future deep-link has what it needs.
+      developer.log(
+        'Notification tapped — broadcast=${data['broadcastId']} '
+        'category=${data['category']} sender=${data['senderId']}',
+        name: 'fcm',
+      );
+      _router.go(RouteNames.home);
     }
     ..init();
 
@@ -82,19 +103,14 @@ class App extends StatelessWidget {
             orElse: () {},
           );
         },
-        child: Builder(
-          builder: (context) {
-            final router = createRouter(AppDependencies.authCubit);
-            return MaterialApp.router(
-              title: 'DROP',
-              theme: AppTheme.dark,
-              darkTheme: AppTheme.dark,
-              themeMode: ThemeMode.dark,
-              scaffoldMessengerKey: _messengerKey,
-              routerConfig: router,
-              debugShowCheckedModeBanner: false,
-            );
-          },
+        child: MaterialApp.router(
+          title: 'DROP',
+          theme: AppTheme.dark,
+          darkTheme: AppTheme.dark,
+          themeMode: ThemeMode.dark,
+          scaffoldMessengerKey: _messengerKey,
+          routerConfig: _router,
+          debugShowCheckedModeBanner: false,
         ),
       ),
     );

@@ -159,6 +159,13 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   late final Future<List<BranchEntity>> _branchesFuture =
       widget.isAdmin ? widget.cubit.branches() : Future.value(const []);
 
+  /// Assign-on-create: the selected employee uids (seeded from the existing task
+  /// when editing) + the branch their list was loaded for, so an admin re-picking
+  /// a branch reloads the team and clears a now-irrelevant selection.
+  late final Set<String> _assignees = {...?widget.existing?.assigneeIds};
+  Future<List<UserEntity>>? _employeesFuture;
+  String _employeesBranch = '';
+
   String? _error;
 
   String? _initialBranch() {
@@ -173,6 +180,18 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   void initState() {
     super.initState();
     _initChecklist();
+    _syncEmployeesFuture();
+  }
+
+  /// (Re)loads the branch's employee list for the assignee picker when the
+  /// effective branch changes (manager: fixed; admin: the picked branch).
+  void _syncEmployeesFuture() {
+    final branch =
+        (widget.isAdmin ? _branchId : widget.defaultBranchId)?.trim() ?? '';
+    if (branch == _employeesBranch) return;
+    _employeesBranch = branch;
+    _employeesFuture =
+        branch.isEmpty ? null : widget.cubit.branchEmployees(branch);
   }
 
   void _initChecklist() {
@@ -275,6 +294,7 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
         priority: _priority,
         branchId: branchId,
         deadline: _deadline,
+        assigneeIds: _assignees.toList(),
         checklist: checklist,
         recurrence: _recurrence == RecurrenceFrequency.none
             ? null
@@ -287,6 +307,7 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
         priority: _priority,
         branchId: branchId,
         deadline: _deadline,
+        assigneeIds: _assignees.toList(),
         checklist: checklist,
       ));
     }
@@ -337,9 +358,31 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
             _BranchDropdown(
               future: _branchesFuture,
               value: _branchId,
-              onChanged: (v) => setState(() => _branchId = v),
+              onChanged: (v) => setState(() {
+                _branchId = v;
+                _assignees.clear(); // employees differ per branch
+                _syncEmployeesFuture();
+              }),
             ),
           ],
+          const SizedBox(height: AppSpacing.md),
+          _AssigneePicker(
+            future: _employeesFuture,
+            selected: _assignees,
+            onToggle: (uid) => setState(() {
+              _assignees.contains(uid)
+                  ? _assignees.remove(uid)
+                  : _assignees.add(uid);
+            }),
+            onToggleAll: (all) => setState(() {
+              final ids = all.map((u) => u.uid);
+              if (ids.every(_assignees.contains)) {
+                _assignees.removeAll(ids);
+              } else {
+                _assignees.addAll(ids);
+              }
+            }),
+          ),
           const SizedBox(height: AppSpacing.md),
           _Dropdown<TaskPriority>(
             label: 'Priority',
@@ -634,6 +677,174 @@ class _ChecklistItemRow extends StatelessWidget {
                 size: 18, color: AppColors.textTertiary),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Assign-on-create picker shown inside the task form — select one or more of
+/// the branch's employees as you create the task (no more "create, then assign").
+/// State (the selected set + the loaded future) lives on [_TaskFormSheetState];
+/// this widget renders + calls back.
+class _AssigneePicker extends StatelessWidget {
+  const _AssigneePicker({
+    required this.future,
+    required this.selected,
+    required this.onToggle,
+    required this.onToggleAll,
+  });
+
+  final Future<List<UserEntity>>? future;
+  final Set<String> selected;
+  final ValueChanged<String> onToggle;
+  final ValueChanged<List<UserEntity>> onToggleAll;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurfaceElevated,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: future == null
+          ? _withHint('Pick a branch to choose who to assign.')
+          : FutureBuilder<List<UserEntity>>(
+              future: future,
+              builder: (context, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return _withHint('Loading team…');
+                }
+                final employees = snap.data ?? const <UserEntity>[];
+                if (employees.isEmpty) {
+                  return _withHint('No employees in this branch yet.');
+                }
+                final allSelected =
+                    employees.every((u) => selected.contains(u.uid));
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _headerRow(
+                      trailing: GestureDetector(
+                        onTap: () => onToggleAll(employees),
+                        child: Text(allSelected ? 'Clear all' : 'Whole team',
+                            style: AppTypography.caption
+                                .copyWith(color: AppColors.textSecondary)),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: [
+                        for (final u in employees)
+                          _EmployeeChip(
+                            user: u,
+                            selected: selected.contains(u.uid),
+                            onTap: () => onToggle(u.uid),
+                          ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _withHint(String hint) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _headerRow(),
+          const SizedBox(height: AppSpacing.sm),
+          Text(hint,
+              style:
+                  AppTypography.caption.copyWith(color: AppColors.textTertiary)),
+        ],
+      );
+
+  Widget _headerRow({Widget? trailing}) => Row(
+        children: [
+          const Icon(Icons.group_add_outlined,
+              size: 16, color: AppColors.textTertiary),
+          const SizedBox(width: AppSpacing.sm),
+          Text('Assign to', style: AppTypography.labelSmall),
+          if (selected.isNotEmpty) ...[
+            const SizedBox(width: AppSpacing.sm),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.darkBg,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.darkBorder),
+              ),
+              child: Text('${selected.length}', style: AppTypography.caption),
+            ),
+          ],
+          const Spacer(),
+          ?trailing,
+        ],
+      );
+}
+
+/// A selectable employee chip (avatar + name + toggle) used by [_AssigneePicker].
+class _EmployeeChip extends StatelessWidget {
+  const _EmployeeChip({
+    required this.user,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final UserEntity user;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (user.displayName != null && user.displayName!.isNotEmpty)
+        ? user.displayName!
+        : user.email;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.fromLTRB(4, 4, 10, 4),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary.withAlpha(28) : AppColors.darkBg,
+          borderRadius: BorderRadius.circular(AppRadius.full),
+          border: Border.all(
+              color: selected ? AppColors.primary : AppColors.darkBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            UserAvatar.fromUser(user, size: 24),
+            const SizedBox(width: AppSpacing.sm),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.caption.copyWith(
+                  color:
+                      selected ? AppColors.primary : AppColors.textPrimary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              selected
+                  ? Icons.check_circle_rounded
+                  : Icons.add_circle_outline_rounded,
+              size: 16,
+              color: selected ? AppColors.primary : AppColors.textTertiary,
+            ),
+          ],
+        ),
       ),
     );
   }

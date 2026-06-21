@@ -72,6 +72,14 @@ class RoleScaffold extends StatelessWidget {
         titleSpacing: 24,
         title: Text(title, style: AppTypography.h3),
         actions: [
+          // Communications Center — admin + manager only (employees can't access).
+          if (role.isAdmin || role.isManager)
+            IconButton(
+              icon: const Icon(Icons.campaign_outlined,
+                  color: AppColors.textSecondary),
+              tooltip: 'Communications',
+              onPressed: () => context.push(RouteNames.communications),
+            ),
           IconButton(
             icon: const Icon(Icons.notifications_none_rounded,
                 color: AppColors.textSecondary),

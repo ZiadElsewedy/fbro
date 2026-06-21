@@ -182,6 +182,7 @@ class TaskCubit extends Cubit<TaskState> {
     required TaskPriority priority,
     required String branchId,
     DateTime? deadline,
+    List<String> assigneeIds = const [],
     List<ChecklistItem> checklist = const [],
     RecurrenceConfig? recurrence,
   }) =>
@@ -192,6 +193,7 @@ class TaskCubit extends Cubit<TaskState> {
             type: type,
             priority: priority,
             branchId: branchId,
+            assigneeIds: assigneeIds,
             checklist: checklist,
             recurrence: recurrence,
             createdBy: _user?.uid,
