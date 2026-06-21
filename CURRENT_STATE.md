@@ -11,8 +11,60 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-20 (Premium UI redesign — Schedule · Admin Home · Task timeline)
+**Last updated:** 2026-06-20 (Task submission media upgrade — multi image/video on events)
 **Version:** 1.0.0+1 · **Branch:** `feature/tasks-improvements` (DROP — monochrome enterprise UX)
+
+> **Task submission media upgrade (2026-06-20):** Replaced the single proof image
+> with **multiple images + videos**, attached to **task events** (not the task
+> globally) per the preferred architecture. New `TaskAttachment` entity
+> (`id · url · type · uploadedAt · uploadedBy · uploadedByName`) + `AttachmentType`
+> enum (image/video); `ActivityEntry` now carries `List<TaskAttachment>
+> attachments`, so each submission / rework cycle keeps its own evidence.
+> **Storage:** `tasks/{taskId}/attachments/{id}.<ext>` — unique id per upload,
+> never overwritten (`storage.rules` widened to `{allPaths=**}`). **Submission
+> flow:** the employee picks multiple photos / videos (gallery **or** camera /
+> record) with validation (≤6 photos, ≤3 videos, ≤50 MB each via
+> `AttachmentLimits`); uploads run before the status write, so a failure aborts
+> the submit and keeps the selection. **Timeline:** manager/admin see media per
+> event via a premium `AttachmentGallery` (image grid + video tiles with play
+> overlay) → fullscreen `showAttachmentViewer` (swipeable, **pinch-zoom images**
+> via `InteractiveViewer`, **inline `video_player`**), each captioned "Uploaded by
+> X · 20 Jun 2026 • 4:32 PM". Legacy `proofImageUrl` is kept in sync (first image)
+> and surfaced as a synthesized attachment for old tasks (no double-render). New
+> dep **`video_player`**; new use case `UploadTaskAttachment` (replaces
+> `UploadTaskProof`). New iOS `NSMicrophoneUsageDescription`. `flutter analyze`
+> clean (0 issues); **48 tests pass** (+9 `task_attachment_test.dart`).
+> ⚠️ Deploy `storage.rules` (`firebase deploy --only storage`) for the nested
+> attachments path; video playback needs an on-device check.
+
+> **Schedule assignment-grid redesign (2026-06-20):** Re-architected the
+> manager/admin schedule from **first principles** — from vertical day cards to a
+> weekly **assignment grid**, an *operations-control surface* that answers
+> "who's on each shift, what's empty, what's broken, what needs approval" in
+> seconds. New mental model: **days = columns (Sun→Sat), shifts = rows
+> (Morning/Night)**; each cell is a tappable tile showing **how many employees
+> are assigned** — a monochrome **density tint** (more people = brighter), a
+> muted **"Empty"** state for unmanned shifts, a white ring on today, and an
+> orphan flag. Horizontally scrollable with a **pinned shift rail + day headers**
+> for mobile. **No staffing quotas / required-headcount / understaffed-vs-target
+> model** — the schedule represents *assignments*, and the admin assigns by
+> operational judgment, not fixed capacity. Tapping a cell opens a rich
+> **shift-details sheet** (neutral "N assigned" / "No one assigned yet", employees
+> as premium rows with double-booking conflicts, assign/remove, resolve). Broken
+> references are **excluded from the count and flagged**, never shown as a uid.
+> **Swap "Requests" tab removed** — swaps surface as a **floating
+> `SwapAlertCard`** that opens a queue modal (reusing `SwapListView`, with
+> submitted-time); cards show requester · branch · shift · reason · time.
+> **Broken assignments** are user-friendly: a `BrokenAssignmentBanner` → resolve
+> sheet with **Remove / Reassign** per slot, labelled `Day · Shift` + "Former
+> employee" (no uid, ever). Both host screens (`BranchScheduleScreen` manager,
+> `ScheduleManagementScreen` admin) are now a **single surface** (tabs gone). New
+> reusable widgets: `ScheduleGrid`, `ShiftCell`, `EmployeeRow`,
+> `ShiftDetailsSheet`, `SwapAlertCard`, `BrokenAssignmentBanner`, shared
+> `showEmployeePicker` + `SheetHandle`. `flutter analyze` clean (0 issues);
+> **39 tests pass** (incl. headless `schedule_grid_test.dart` proving rendered
+> assigned-count, empty state, orphan flag, no-uid-leak, cell-tap routing, shift
+> filter).
 
 > **Premium UI redesign (2026-06-20):** Visual refinement pass (monochrome,
 > token-driven, no schema/logic change). ① **Branch Schedule** rebuilt for
@@ -196,9 +248,9 @@
 | Account approval | ✅ Complete*   | New sign-ups seeded `pending` + inactive → **Pending Approval** screen; gate in router (`hasAppAccess`). *In-app approval UI (manager/admin) still pending — approve out of band (console) until Phase 5 |
 | Roles & routing  | ✅ Complete    | `UserRole` enum, role dispatch + guards; **admin ⊇ manager** hierarchy + branch-scoped access model (admin global · manager own-branch · employee self) |
 | Shifts (Phase 2) | ❌ Removed (Phase 10) | The unused `shift` foundation (data/domain + placeholder screens + `shifts/{shiftId}` rules + `/admin\|manager/shifts`·`/my-shift` routes + DI) was **deleted** as dead code. The **Weekly Schedule** (Phase 7) is the production roster |
-| Weekly Schedule (Phase 7) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit` + manager editor / admin override / employee my-week view. Roster `day → morning/night → employees`; `weekly_schedules/{id}` rules. Reuses Role/Branch systems |
-| Shift Swap (Phase 7, +2026-06-20 hardening) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected. **2026-06-20:** **future-shifts-only** validation (`SwapEligibility`) in domain + cubit + UI + rules; admin all-branch visibility via `getAllSwaps()` / `pendingSwaps()` feeding the Admin Pending Actions panel |
-| Tasks (Phase 3–4, +Stabilization, +Phase 9, +Workflow Upgrade) | ✅ Full operations workflow | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens, client-side status-transition rules, proof upload, **live Firestore streams**, admin branch dropdown, multi-assignee, checklist+completion gate. **Workflow Upgrade (2026-06-18):** **recurring tasks** (`RecurrenceConfig`, auto-spawn on approve), **activity timeline** (`ActivityEntry[]` embedded in task), **Task Details Screen** (full-screen view for all roles), **employee My Tasks redesign** (tabbed/sectioned/animated with Details navigation) |
+| Weekly Schedule (Phase 7, +2026-06-20 grid redesign) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit`. **Manager/admin view is now a weekly assignment grid** (`ScheduleGrid` + `ShiftCell`) — each cell shows **assigned head-count** (monochrome density tint + "Empty" state, **no staffing quota/target**); cell tap → `ShiftDetailsSheet` (assign/remove/resolve, conflicts). Single-surface screens (tabs removed). Employee keeps the My-Week view. Roster `day → morning/night → employees`; `weekly_schedules/{id}` rules |
+| Shift Swap (Phase 7, +2026-06-20 hardening & grid) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected. **future-shifts-only** validation (`SwapEligibility`) in domain + cubit + UI + rules; admin all-branch visibility via `getAllSwaps()` / `pendingSwaps()`. **Swap tab removed** — surfaced as a floating `SwapAlertCard` → queue modal (reuses `SwapListView`, now showing submitted-time) inside the schedule grid |
+| Tasks (Phase 3–4, +Stabilization, +Phase 9, +Workflow Upgrade, +Media Upgrade) | ✅ Full operations workflow | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens, client-side status-transition rules, **live Firestore streams**, admin branch dropdown, multi-assignee, checklist+completion gate. **Workflow Upgrade (2026-06-18):** recurring tasks, activity timeline (`ActivityEntry[]`), Task Details Screen, employee My Tasks redesign. **Media Upgrade (2026-06-20):** **multiple images + videos per submission**, attached to **task events** — `TaskAttachment` entity + `AttachmentType`; `ActivityEntry.attachments[]`; Storage `tasks/{id}/attachments/{id}.<ext>` (no overwrite); `AttachmentPickerField` (gallery/camera + limits), `AttachmentGallery` + fullscreen `AttachmentViewer` (zoom images, `video_player`). Legacy `proofImageUrl` kept in sync for back-compat |
 | Task / Checklist Templates (Stabilization, +Phase 9) | ✅ Complete | Reusable blueprints ("Open Shop", "Close Shop"). **Phase 9:** templates are now **checklists** — `TaskTemplateEntity.checklistItems` (`ChecklistItemTemplate`: id/title/isRequired) with a checklist editor; creating a task generates its `checklist`. `task_templates/{id}` rules (admin global/any · manager own-branch). New Task → Blank vs. From a template + Manage Templates sheet |
 | Branches (Phase 5, +Phase 9) | ✅ Complete   | `BranchEntity`/`Model`/`Repository`/`RemoteDataSource` + `BranchCubit`; admin CRUD + activate/deactivate + soft delete; `branches/{id}` rules. **Phase 9:** premium cards (manager + employee count + status) + search |
 | Admin module (Phase 5, +Phase 9 UX) | ✅ Complete | Branch / manager / employee management + **admin-only** pending-user approval + branch assignment. `AdminUsersCubit`, `UserAdminRepository` over `users/{uid}`. **Phase 9:** Admin Home restructured to **4 KPIs** + module nav; new **Analytics** page (`/admin/analytics`); avatar-led user cards; search + active/inactive/branch filters |

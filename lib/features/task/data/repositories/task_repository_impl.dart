@@ -1,10 +1,12 @@
 import 'dart:io';
 
+import 'package:fbro/core/enums/attachment_type.dart';
 import 'package:fbro/core/errors/exceptions.dart';
 import 'package:fbro/core/errors/failures.dart';
 import 'package:fbro/features/task/data/datasources/task_remote_datasource.dart';
 import 'package:fbro/features/task/data/models/task_model.dart';
 import 'package:fbro/features/task/data/models/task_template_model.dart';
+import 'package:fbro/features/task/domain/entities/task_attachment.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/domain/entities/task_template_entity.dart';
 import 'package:fbro/features/task/domain/repositories/task_repository.dart';
@@ -14,11 +16,27 @@ class TaskRepositoryImpl implements TaskRepository {
 
   TaskRepositoryImpl(this._remote);
 
+  /// Newest first. Firestore already orders by `createdAt` desc, but a task just
+  /// created locally has a *pending* server timestamp (null until the server
+  /// confirms), which Firestore would sort to the bottom — so we re-sort with
+  /// pending (null) treated as newest, keeping the new task on top instantly.
+  List<TaskEntity> _newestFirst(List<TaskModel> models) {
+    final tasks = models.map((m) => m.toEntity()).toList();
+    tasks.sort((a, b) {
+      final ad = a.createdAt;
+      final bd = b.createdAt;
+      if (ad == null && bd == null) return 0;
+      if (ad == null) return -1;
+      if (bd == null) return 1;
+      return bd.compareTo(ad);
+    });
+    return tasks;
+  }
+
   @override
   Future<List<TaskEntity>> getAllTasks() async {
     try {
-      final models = await _remote.getAllTasks();
-      return models.map((m) => m.toEntity()).toList();
+      return _newestFirst(await _remote.getAllTasks());
     } on ServerException catch (e) {
       throw ServerFailure(e.message);
     }
@@ -27,8 +45,7 @@ class TaskRepositoryImpl implements TaskRepository {
   @override
   Future<List<TaskEntity>> getTasksByBranch(String branchId) async {
     try {
-      final models = await _remote.getTasksByBranch(branchId);
-      return models.map((m) => m.toEntity()).toList();
+      return _newestFirst(await _remote.getTasksByBranch(branchId));
     } on ServerException catch (e) {
       throw ServerFailure(e.message);
     }
@@ -37,8 +54,7 @@ class TaskRepositoryImpl implements TaskRepository {
   @override
   Future<List<TaskEntity>> getEmployeeTasks(String employeeId) async {
     try {
-      final models = await _remote.getEmployeeTasks(employeeId);
-      return models.map((m) => m.toEntity()).toList();
+      return _newestFirst(await _remote.getEmployeeTasks(employeeId));
     } on ServerException catch (e) {
       throw ServerFailure(e.message);
     }
@@ -46,17 +62,15 @@ class TaskRepositoryImpl implements TaskRepository {
 
   @override
   Stream<List<TaskEntity>> watchAllTasks() =>
-      _remote.watchAllTasks().map((l) => l.map((m) => m.toEntity()).toList());
+      _remote.watchAllTasks().map(_newestFirst);
 
   @override
-  Stream<List<TaskEntity>> watchTasksByBranch(String branchId) => _remote
-      .watchTasksByBranch(branchId)
-      .map((l) => l.map((m) => m.toEntity()).toList());
+  Stream<List<TaskEntity>> watchTasksByBranch(String branchId) =>
+      _remote.watchTasksByBranch(branchId).map(_newestFirst);
 
   @override
-  Stream<List<TaskEntity>> watchEmployeeTasks(String employeeId) => _remote
-      .watchEmployeeTasks(employeeId)
-      .map((l) => l.map((m) => m.toEntity()).toList());
+  Stream<List<TaskEntity>> watchEmployeeTasks(String employeeId) =>
+      _remote.watchEmployeeTasks(employeeId).map(_newestFirst);
 
   @override
   Future<TaskEntity?> getTask(String taskId) async {
@@ -114,9 +128,21 @@ class TaskRepositoryImpl implements TaskRepository {
   }
 
   @override
-  Future<String> uploadProof(String taskId, File file) async {
+  Future<TaskAttachment> uploadAttachment({
+    required String taskId,
+    required File file,
+    required AttachmentType type,
+    required String uploadedBy,
+    String? uploadedByName,
+  }) async {
     try {
-      return await _remote.uploadProof(taskId, file);
+      return await _remote.uploadAttachment(
+        taskId: taskId,
+        file: file,
+        type: type,
+        uploadedBy: uploadedBy,
+        uploadedByName: uploadedByName,
+      );
     } on ServerException catch (e) {
       throw ServerFailure(e.message);
     }

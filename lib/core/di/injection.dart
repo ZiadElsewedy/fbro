@@ -38,7 +38,7 @@ import 'package:fbro/features/task/domain/usecases/create_task.dart';
 import 'package:fbro/features/task/domain/usecases/update_task.dart';
 import 'package:fbro/features/task/domain/usecases/delete_task.dart';
 import 'package:fbro/features/task/domain/usecases/assign_task.dart';
-import 'package:fbro/features/task/domain/usecases/upload_task_proof.dart';
+import 'package:fbro/features/task/domain/usecases/upload_task_attachment.dart';
 import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
 import 'package:fbro/features/branch/data/datasources/branch_remote_datasource.dart';
 import 'package:fbro/features/branch/data/repositories/branch_repository_impl.dart';
@@ -141,7 +141,7 @@ class AppDependencies {
       updateTask: UpdateTask(taskRepository),
       deleteTask: DeleteTask(taskRepository),
       assignTask: AssignTask(taskRepository),
-      uploadTaskProof: UploadTaskProof(taskRepository),
+      uploadTaskAttachment: UploadTaskAttachment(taskRepository),
       getUsersByBranch: GetUsersByBranch(authRepository),
     );
 

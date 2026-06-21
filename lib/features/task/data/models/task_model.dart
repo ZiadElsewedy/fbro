@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fbro/core/extensions/firestore_extensions.dart';
+import 'package:fbro/core/enums/attachment_type.dart';
 import 'package:fbro/core/enums/recurrence_frequency.dart';
 import 'package:fbro/core/enums/task_type.dart';
 import 'package:fbro/core/enums/task_status.dart';
@@ -7,6 +8,7 @@ import 'package:fbro/core/enums/task_priority.dart';
 import 'package:fbro/features/task/domain/entities/activity_entry.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
 import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
+import 'package:fbro/features/task/domain/entities/task_attachment.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 
 /// Firestore (de)serialization for [TaskEntity] — collection `tasks/{taskId}`.
@@ -295,6 +297,7 @@ class TaskModel {
           actorName: e['actorName'] as String?,
           at: at,
           note: e['note'] as String?,
+          attachments: _attachmentsFromList(e['attachments']),
         ));
       }
     }
@@ -311,6 +314,42 @@ class TaskModel {
             'actorName': e.actorName,
             'at': Timestamp.fromDate(e.at),
             'note': e.note,
+            'attachments': _attachmentsToList(e.attachments),
+          },
+      ];
+
+  static List<TaskAttachment> _attachmentsFromList(dynamic raw) {
+    if (raw is! List) return const [];
+    final result = <TaskAttachment>[];
+    for (final a in raw) {
+      if (a is Map) {
+        final url = a['url'] as String? ?? '';
+        if (url.isEmpty) continue;
+        result.add(TaskAttachment(
+          id: a['id'] as String? ?? '',
+          url: url,
+          type: AttachmentType.fromString(a['type'] as String?),
+          uploadedAt:
+              (a['uploadedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          uploadedBy: a['uploadedBy'] as String? ?? '',
+          uploadedByName: a['uploadedByName'] as String?,
+        ));
+      }
+    }
+    return result;
+  }
+
+  static List<Map<String, dynamic>> _attachmentsToList(
+          List<TaskAttachment> items) =>
+      [
+        for (final a in items)
+          {
+            'id': a.id,
+            'url': a.url,
+            'type': a.type.value,
+            'uploadedAt': Timestamp.fromDate(a.uploadedAt),
+            'uploadedBy': a.uploadedBy,
+            'uploadedByName': a.uploadedByName,
           },
       ];
 }

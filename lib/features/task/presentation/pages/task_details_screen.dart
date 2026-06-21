@@ -1,8 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:fbro/core/enums/task_priority.dart';
 import 'package:fbro/core/enums/task_status.dart';
 import 'package:fbro/core/enums/user_role.dart';
@@ -19,10 +16,14 @@ import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_text_field.dart';
 import 'package:fbro/features/task/domain/entities/activity_entry.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
+import 'package:fbro/features/task/domain/entities/task_attachment.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/presentation/activity_format.dart';
+import 'package:fbro/features/task/presentation/attachment_format.dart';
 import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
 import 'package:fbro/features/task/presentation/cubit/task_state.dart';
+import 'package:fbro/features/task/presentation/widgets/attachment_gallery.dart';
+import 'package:fbro/features/task/presentation/widgets/attachment_picker.dart';
 import 'package:fbro/features/task/presentation/widgets/task_action_sheets.dart';
 import 'package:fbro/features/task/presentation/widgets/task_card.dart';
 
@@ -184,8 +185,9 @@ class _DetailsView extends StatelessWidget {
             const SizedBox(height: AppSpacing.xl),
           ],
 
-          // ── Notes & proof ─────────────────────────────────────
-          if ((task.notes ?? '').isNotEmpty || (task.proofImageUrl ?? '').isNotEmpty) ...[
+          // ── Notes & media ─────────────────────────────────────
+          if ((task.notes ?? '').isNotEmpty ||
+              latestAttachments(task).isNotEmpty) ...[
             _Section(
               icon: Icons.rate_review_outlined,
               title: 'Submitted work',
@@ -695,7 +697,7 @@ class _SubmittedBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final notes = task.notes ?? '';
-    final proof = task.proofImageUrl ?? '';
+    final media = latestAttachments(task);
 
     return Container(
       width: double.infinity,
@@ -708,40 +710,13 @@ class _SubmittedBlock extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (notes.isNotEmpty) ...[
+          if (notes.isNotEmpty)
             Text(notes,
                 style: AppTypography.body
                     .copyWith(color: AppColors.textSecondary, height: 1.5)),
-          ],
-          if (proof.isNotEmpty) ...[
+          if (media.isNotEmpty) ...[
             if (notes.isNotEmpty) const SizedBox(height: AppSpacing.md),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                proof,
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                cacheWidth: 1200,
-                loadingBuilder: (context, child, progress) => progress == null
-                    ? child
-                    : Container(
-                        height: 200,
-                        color: AppColors.darkSurface,
-                        alignment: Alignment.center,
-                        child: const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2)),
-                      ),
-                errorBuilder: (ctx, err, st) => Container(
-                  height: 56,
-                  alignment: Alignment.centerLeft,
-                  child: Text('Proof image unavailable',
-                      style: AppTypography.caption),
-                ),
-              ),
-            ),
+            AttachmentGallery(attachments: media, tileSize: 84),
           ],
         ],
       ),
@@ -761,18 +736,14 @@ class _ActivityTimeline extends StatelessWidget {
     // Newest first — rendered purely from the event list (no hardcoded
     // sequence), so missing/optional steps and rework loops just work.
     final entries = task.activityLog.reversed.toList();
-    final proof = task.proofImageUrl ?? '';
     return Column(
       children: [
         for (var i = 0; i < entries.length; i++)
           _EventCard(
             entry: entries[i],
             actor: directory[entries[i].actorId],
-            // Surface the submitted proof on the submission event.
-            attachmentUrl:
-                (entries[i].status == 'waitingReview' && proof.isNotEmpty)
-                    ? proof
-                    : null,
+            // Media belongs to the event (with legacy proof back-compat).
+            attachments: attachmentsForEvent(entries[i], task),
             isLast: i == entries.length - 1,
           ),
       ],
@@ -786,13 +757,13 @@ class _EventCard extends StatelessWidget {
   const _EventCard({
     required this.entry,
     required this.actor,
-    required this.attachmentUrl,
+    required this.attachments,
     required this.isLast,
   });
 
   final ActivityEntry entry;
   final UserEntity? actor;
-  final String? attachmentUrl;
+  final List<TaskAttachment> attachments;
   final bool isLast;
 
   String get _actorName =>
@@ -810,7 +781,7 @@ class _EventCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = activityColor(entry.status);
     final note = entry.note ?? '';
-    final hasAttachment = (attachmentUrl ?? '').isNotEmpty;
+    final hasAttachment = attachments.isNotEmpty;
 
     return IntrinsicHeight(
       child: Row(
@@ -912,10 +883,10 @@ class _EventCard extends StatelessWidget {
                         ),
                       ),
                     ],
-                    // Attachment
+                    // Media attachments (images / videos) — belong to the event.
                     if (hasAttachment) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      _EventAttachment(url: attachmentUrl!),
+                      const SizedBox(height: AppSpacing.md),
+                      AttachmentGallery(attachments: attachments, tileSize: 64),
                     ],
                   ],
                 ),
@@ -924,59 +895,6 @@ class _EventCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// A compact attachment row inside a timeline event — thumbnail + label.
-class _EventAttachment extends StatelessWidget {
-  const _EventAttachment({required this.url});
-  final String url;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.network(
-            url,
-            width: 40,
-            height: 40,
-            fit: BoxFit.cover,
-            cacheWidth: 200,
-            loadingBuilder: (context, child, progress) => progress == null
-                ? child
-                : Container(
-                    width: 40,
-                    height: 40,
-                    color: AppColors.darkBg,
-                    alignment: Alignment.center,
-                    child: const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
-                  ),
-            errorBuilder: (ctx, err, st) => Container(
-              width: 40,
-              height: 40,
-              color: AppColors.darkBg,
-              alignment: Alignment.center,
-              child: const Icon(Icons.broken_image_outlined,
-                  size: 16, color: AppColors.textTertiary),
-            ),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Row(
-          children: [
-            const Icon(Icons.attachment_rounded,
-                size: 13, color: AppColors.textTertiary),
-            const SizedBox(width: 4),
-            Text('1 attachment', style: AppTypography.caption),
-          ],
-        ),
-      ],
     );
   }
 }
@@ -1028,7 +946,7 @@ class _CompleteButton extends StatefulWidget {
 }
 
 class _CompleteButtonState extends State<_CompleteButton> {
-  File? _proof;
+  List<PickedAttachment> _attachments = [];
   final _notes = TextEditingController();
   bool _expanded = false;
 
@@ -1038,29 +956,16 @@ class _CompleteButtonState extends State<_CompleteButton> {
     super.dispose();
   }
 
-  Future<void> _pickProof() async {
-    try {
-      final picked = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 70,
-        maxWidth: 1024,
-      );
-      if (picked != null) setState(() => _proof = File(picked.path));
-    } catch (_) {
-      if (mounted) AppSnackbar.error(context, 'Could not pick an image.');
-    }
-  }
-
   Future<void> _submit() async {
     final notes = _notes.text.trim();
     final ok = await widget.cubit.completeAndSubmit(
       widget.task,
       notes: notes.isEmpty ? null : notes,
-      proof: _proof,
+      attachments: _attachments,
     );
     // Only leave the screen on success. On failure the cubit already surfaced
-    // the real error and the selected photo is still attached here, so the
-    // employee can retry (or remove the photo) without losing their work.
+    // the real error and the selected media is still attached here, so the
+    // employee can retry (or remove a file) without losing their work.
     if (ok && mounted) Navigator.of(context).pop();
   }
 
@@ -1092,49 +997,9 @@ class _CompleteButtonState extends State<_CompleteButton> {
             prefixIcon: Icons.notes_rounded,
           ),
           const SizedBox(height: AppSpacing.md),
-          InkWell(
-            onTap: _pickProof,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              decoration: BoxDecoration(
-                color: AppColors.darkSurface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.darkBorder),
-              ),
-              child: Row(
-                children: [
-                  if (_proof != null)
-                    ClipRRect(
-                      borderRadius: AppRadius.cardAll,
-                      child: Image.file(_proof!,
-                          width: 44, height: 44, fit: BoxFit.cover),
-                    )
-                  else
-                    const Icon(Icons.add_a_photo_outlined,
-                        size: 22, color: AppColors.textTertiary),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Text(
-                      _proof == null
-                          ? 'Attach proof image (optional)'
-                          : 'Photo selected — tap to change',
-                      style: AppTypography.body,
-                    ),
-                  ),
-                  if (_proof != null)
-                    GestureDetector(
-                      onTap: () => setState(() => _proof = null),
-                      behavior: HitTestBehavior.opaque,
-                      child: const Padding(
-                        padding: EdgeInsets.only(left: AppSpacing.sm),
-                        child: Icon(Icons.close_rounded,
-                            size: 18, color: AppColors.textTertiary),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+          AttachmentPickerField(
+            attachments: _attachments,
+            onChanged: (list) => setState(() => _attachments = list),
           ),
           const SizedBox(height: AppSpacing.md),
           AppButton(

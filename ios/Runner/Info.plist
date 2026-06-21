@@ -38,9 +38,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>D R O P needs access to your camera so you can take a profile picture.</string>
+	<string>D R O P needs access to your camera so you can take a profile picture and capture task proof.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>D R O P needs access to your microphone so you can record video proof for tasks.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>D R O P needs access to your photos so you can set a profile picture and cover image.</string>
+	<string>D R O P needs access to your photos so you can set a profile picture and attach task proof.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

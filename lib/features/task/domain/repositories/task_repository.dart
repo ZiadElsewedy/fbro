@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:fbro/core/enums/attachment_type.dart';
+import 'package:fbro/features/task/domain/entities/task_attachment.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/domain/entities/task_template_entity.dart';
 
@@ -42,12 +44,21 @@ abstract class TaskRepository {
     String? assignedShiftId,
   });
 
-  /// Uploads a proof image to Storage for the task and returns its download URL.
+  /// Uploads one media file (image / video) to Storage under the task's
+  /// `attachments/` folder and returns the resolved [TaskAttachment]. Each call
+  /// creates a uniquely-named object (no overwrite).
   ///
   /// Status transitions (start / complete+submit / approve / reject) all flow
   /// through [updateTask] as a single write that also appends the activity-log
-  /// entry, so there is intentionally no separate status/review method here.
-  Future<String> uploadProof(String taskId, File file);
+  /// entry (with its attachments), so there is intentionally no separate
+  /// status/review method here.
+  Future<TaskAttachment> uploadAttachment({
+    required String taskId,
+    required File file,
+    required AttachmentType type,
+    required String uploadedBy,
+    String? uploadedByName,
+  });
 
   // ─── Task templates (reusable blueprints) ──────────────────────
   /// All task templates (manager/admin). Branch scoping is applied by the cubit.

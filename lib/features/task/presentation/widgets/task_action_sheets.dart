@@ -16,7 +16,9 @@ import 'package:fbro/features/task/domain/entities/checklist_item.dart';
 import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/domain/entities/task_template_entity.dart';
+import 'package:fbro/features/task/presentation/attachment_format.dart';
 import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
+import 'package:fbro/features/task/presentation/widgets/attachment_gallery.dart';
 
 /// Create or edit a task (manager/admin). For a manager the branch is fixed to
 /// [defaultBranchId]; an admin **picks** an existing branch from a dropdown
@@ -968,8 +970,8 @@ class _SubmittedWork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final notes = task.notes ?? '';
-    final proof = task.proofImageUrl ?? '';
-    if (notes.isEmpty && proof.isEmpty) return const SizedBox.shrink();
+    final media = latestAttachments(task);
+    if (notes.isEmpty && media.isEmpty) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.md),
@@ -989,37 +991,9 @@ class _SubmittedWork extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               Text(notes, style: AppTypography.bodySmall),
             ],
-            if (proof.isNotEmpty) ...[
+            if (media.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  proof,
-                  height: 180,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  cacheWidth: 900,
-                  loadingBuilder: (context, child, progress) => progress == null
-                      ? child
-                      : Container(
-                          height: 180,
-                          alignment: Alignment.center,
-                          color: AppColors.darkSurface,
-                          child: const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                  errorBuilder: (ctx, err, st) => Container(
-                    height: 56,
-                    alignment: Alignment.centerLeft,
-                    child: Text('Proof image unavailable',
-                        style: AppTypography.caption),
-                  ),
-                ),
-              ),
+              AttachmentGallery(attachments: media, tileSize: 80),
             ],
           ],
         ),

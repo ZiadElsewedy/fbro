@@ -132,8 +132,20 @@ class _SwapCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
-          Text('${swap.day.label} · ${swap.shift.label}',
-              style: AppTypography.bodySmall),
+          Row(
+            children: [
+              Text('${swap.day.label} · ${swap.shift.label}',
+                  style: AppTypography.bodySmall),
+              if (swap.createdAt != null) ...[
+                const SizedBox(width: AppSpacing.sm),
+                const Text('·',
+                    style: TextStyle(color: AppColors.textTertiary)),
+                const SizedBox(width: AppSpacing.sm),
+                Text(_relativeTime(swap.createdAt!),
+                    style: AppTypography.caption),
+              ],
+            ],
+          ),
           if (showBranch) ...[
             const SizedBox(height: AppSpacing.xs),
             _BranchLine(branchId: swap.branchId),
@@ -197,6 +209,16 @@ class _SwapCard extends StatelessWidget {
       Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.xs, children: buttons),
     ];
   }
+}
+
+/// Compact "submitted N ago" label for a swap's createdAt timestamp.
+String _relativeTime(DateTime t) {
+  final d = DateTime.now().difference(t);
+  if (d.inMinutes < 1) return 'just now';
+  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+  if (d.inHours < 24) return '${d.inHours}h ago';
+  if (d.inDays < 7) return '${d.inDays}d ago';
+  return '${(d.inDays / 7).floor()}w ago';
 }
 
 /// Resolves a swap's `branchId` to a branch name via [BranchCubit] (admin queue

@@ -12,6 +12,80 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-06-20 — Task submission media upgrade: multiple images & videos)
+
+Replaced the single proof image with multiple images + videos, attached to **task
+events** (not the task globally). `flutter analyze` clean (0 issues); 48 tests
+pass (+9 new). New dependency: `video_player`.
+
+- **Model** — new `TaskAttachment` entity (`id · url · type · uploadedAt ·
+  uploadedBy · uploadedByName`) + `AttachmentType` enum (image/video).
+  `ActivityEntry` gains `List<TaskAttachment> attachments`, so each submission /
+  rework cycle keeps its own evidence. `TaskModel` (de)serializes attachments
+  inside `activityLog`.
+- **Storage** — uploads go to `tasks/{taskId}/attachments/{id}.<ext>` with a
+  unique id per file (never overwritten); `storage.rules` widened from
+  `{file}` to `{allPaths=**}` to cover the nested folder. Content-type inferred
+  from extension.
+- **Submission** — `TaskCubit.completeAndSubmit` now takes
+  `List<PickedAttachment>`, uploads each before the status write (failure aborts
+  and keeps the selection), and attaches the result to the submission event.
+  First image mirrors to the legacy `proofImageUrl` for back-compat. New use case
+  `UploadTaskAttachment` replaces `UploadTaskProof`.
+- **Picker** — `AttachmentPickerField`: multi-photo, video, and camera capture
+  (photo / record) with validation via `AttachmentLimits` (≤6 photos, ≤3 videos,
+  ≤50 MB each). New iOS `NSMicrophoneUsageDescription`.
+- **Viewing** — `AttachmentGallery` (image grid + video tiles with play overlay)
+  on the timeline event cards, "Submitted work", and the review sheet; tapping
+  opens fullscreen `showAttachmentViewer` — swipeable, pinch-zoom images
+  (`InteractiveViewer`), inline `video_player`, each captioned "Uploaded by X ·
+  20 Jun 2026 • 4:32 PM". Helpers in `attachment_format.dart` resolve per-event
+  media with legacy-proof back-compat (no double-render).
+- **Tests** — `task_attachment_test.dart`: model round-trip + `attachmentsForEvent`
+  / `latestAttachments` / `attachmentSummary` / `attachmentTimestamp`.
+
+⚠️ Deploy `storage.rules` (`firebase deploy --only storage`); video playback
+needs an on-device check.
+
+### Changed (2026-06-20 — Schedule assignment-grid redesign, no staffing quotas)
+
+Re-architected the manager/admin schedule from first principles — from vertical
+day cards to a weekly **assignment grid** (an operations-control surface). The
+schedule represents **assignments, not staffing quotas** — no required-headcount
+or understaffed-vs-target model; the admin assigns by operational judgment.
+`flutter analyze` clean (0 issues); 39 tests pass.
+
+- **New mental model** — `ScheduleGrid`: days are columns (Sun→Sat), shifts are
+  rows (Morning/Night). Each `ShiftCell` shows **how many employees are assigned**
+  — a monochrome density tint (more people = brighter), a muted "Empty" state, a
+  white ring on today, and an orphan flag. Horizontally scrollable with a
+  **pinned shift rail + day headers** (mobile constraint).
+- **No quotas** — removed the `Staffing` domain model, `StaffingHealth`,
+  `StaffingBadge`, and all required/target/understaffed/critical concepts. Cells
+  and sheets show plain assignment counts; the only surfaced signals are **empty**
+  (a neutral fact) and **broken reference** (a data-integrity issue).
+- **Cell interaction** — tapping a cell opens `ShiftDetailsSheet`: a neutral
+  "N assigned" / "No one assigned yet", assigned employees as premium
+  `EmployeeRow`s (avatar · name · role · status dot) with double-booking
+  conflicts surfaced, plus assign / remove and broken-slot resolve — updates live.
+- **Swaps** — removed the separate "Swap Requests" tab; swaps now surface as a
+  floating `SwapAlertCard` inside the grid that opens a queue modal (reusing
+  `SwapListView`). Swap cards now show the **submitted time** alongside
+  requester · branch · shift · reason.
+- **Broken assignments** — `BrokenAssignmentBanner` → resolve sheet with
+  **Remove / Reassign** per slot, labelled `Day · Shift` + "Former employee"
+  (user-friendly; raw uids / "Unknown member" debug text gone).
+- **Screens** — `BranchScheduleScreen` (manager) and `ScheduleManagementScreen`
+  (admin) are now a single operations surface (DefaultTabController/TabBar gone);
+  the grid self-refreshes when a swap settles.
+- **Reusable widgets** (engineering req.) — `ScheduleGrid`, `ShiftCell`,
+  `EmployeeRow`, `ShiftDetailsSheet`, `SwapAlertCard`, `BrokenAssignmentBanner`,
+  shared `showEmployeePicker` + `SheetHandle`; presentation kept free of
+  business-rule assumptions.
+- **Tests** — headless `schedule_grid_test.dart` (renders assigned counts,
+  excludes/flags orphans, Empty state, no uid leak, cell-tap routing, shift
+  filter).
+
 ### Changed (2026-06-20 — Premium UI redesign: Branch Schedule, Admin Home, Task timeline)
 
 A visual/product-refinement pass — monochrome, token-driven, no schema/logic change.

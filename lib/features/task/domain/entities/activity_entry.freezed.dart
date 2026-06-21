@@ -30,6 +30,9 @@ mixin _$ActivityEntry {
   /// Optional note left with the action (review note, completion note, etc.).
   String? get note => throw _privateConstructorUsedError;
 
+  /// Media attached to this event (images / videos).
+  List<TaskAttachment> get attachments => throw _privateConstructorUsedError;
+
   /// Create a copy of ActivityEntry
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -50,6 +53,7 @@ abstract class $ActivityEntryCopyWith<$Res> {
     String? actorName,
     DateTime at,
     String? note,
+    List<TaskAttachment> attachments,
   });
 }
 
@@ -73,6 +77,7 @@ class _$ActivityEntryCopyWithImpl<$Res, $Val extends ActivityEntry>
     Object? actorName = freezed,
     Object? at = null,
     Object? note = freezed,
+    Object? attachments = null,
   }) {
     return _then(
       _value.copyWith(
@@ -96,6 +101,10 @@ class _$ActivityEntryCopyWithImpl<$Res, $Val extends ActivityEntry>
                 ? _value.note
                 : note // ignore: cast_nullable_to_non_nullable
                       as String?,
+            attachments: null == attachments
+                ? _value.attachments
+                : attachments // ignore: cast_nullable_to_non_nullable
+                      as List<TaskAttachment>,
           )
           as $Val,
     );
@@ -117,6 +126,7 @@ abstract class _$$ActivityEntryImplCopyWith<$Res>
     String? actorName,
     DateTime at,
     String? note,
+    List<TaskAttachment> attachments,
   });
 }
 
@@ -139,6 +149,7 @@ class __$$ActivityEntryImplCopyWithImpl<$Res>
     Object? actorName = freezed,
     Object? at = null,
     Object? note = freezed,
+    Object? attachments = null,
   }) {
     return _then(
       _$ActivityEntryImpl(
@@ -162,6 +173,10 @@ class __$$ActivityEntryImplCopyWithImpl<$Res>
             ? _value.note
             : note // ignore: cast_nullable_to_non_nullable
                   as String?,
+        attachments: null == attachments
+            ? _value._attachments
+            : attachments // ignore: cast_nullable_to_non_nullable
+                  as List<TaskAttachment>,
       ),
     );
   }
@@ -176,7 +191,8 @@ class _$ActivityEntryImpl implements _ActivityEntry {
     this.actorName,
     required this.at,
     this.note,
-  });
+    final List<TaskAttachment> attachments = const <TaskAttachment>[],
+  }) : _attachments = attachments;
 
   /// The [TaskStatus.value] string after the transition.
   @override
@@ -196,9 +212,21 @@ class _$ActivityEntryImpl implements _ActivityEntry {
   @override
   final String? note;
 
+  /// Media attached to this event (images / videos).
+  final List<TaskAttachment> _attachments;
+
+  /// Media attached to this event (images / videos).
+  @override
+  @JsonKey()
+  List<TaskAttachment> get attachments {
+    if (_attachments is EqualUnmodifiableListView) return _attachments;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_attachments);
+  }
+
   @override
   String toString() {
-    return 'ActivityEntry(status: $status, actorId: $actorId, actorName: $actorName, at: $at, note: $note)';
+    return 'ActivityEntry(status: $status, actorId: $actorId, actorName: $actorName, at: $at, note: $note, attachments: $attachments)';
   }
 
   @override
@@ -211,12 +239,23 @@ class _$ActivityEntryImpl implements _ActivityEntry {
             (identical(other.actorName, actorName) ||
                 other.actorName == actorName) &&
             (identical(other.at, at) || other.at == at) &&
-            (identical(other.note, note) || other.note == note));
+            (identical(other.note, note) || other.note == note) &&
+            const DeepCollectionEquality().equals(
+              other._attachments,
+              _attachments,
+            ));
   }
 
   @override
-  int get hashCode =>
-      Object.hash(runtimeType, status, actorId, actorName, at, note);
+  int get hashCode => Object.hash(
+    runtimeType,
+    status,
+    actorId,
+    actorName,
+    at,
+    note,
+    const DeepCollectionEquality().hash(_attachments),
+  );
 
   /// Create a copy of ActivityEntry
   /// with the given fields replaced by the non-null parameter values.
@@ -234,6 +273,7 @@ abstract class _ActivityEntry implements ActivityEntry {
     final String? actorName,
     required final DateTime at,
     final String? note,
+    final List<TaskAttachment> attachments,
   }) = _$ActivityEntryImpl;
 
   /// The [TaskStatus.value] string after the transition.
@@ -253,6 +293,10 @@ abstract class _ActivityEntry implements ActivityEntry {
   /// Optional note left with the action (review note, completion note, etc.).
   @override
   String? get note;
+
+  /// Media attached to this event (images / videos).
+  @override
+  List<TaskAttachment> get attachments;
 
   /// Create a copy of ActivityEntry
   /// with the given fields replaced by the non-null parameter values.

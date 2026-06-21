@@ -10,9 +10,11 @@ import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/auth/domain/usecases/get_users_by_branch.dart';
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
 import 'package:fbro/features/branch/domain/repositories/branch_repository.dart';
+import 'package:fbro/core/enums/attachment_type.dart';
 import 'package:fbro/features/task/domain/entities/activity_entry.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
 import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
+import 'package:fbro/features/task/domain/entities/task_attachment.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/domain/entities/task_template_entity.dart';
 import 'package:fbro/features/task/domain/repositories/task_repository.dart';
@@ -20,8 +22,17 @@ import 'package:fbro/features/task/domain/usecases/assign_task.dart';
 import 'package:fbro/features/task/domain/usecases/create_task.dart';
 import 'package:fbro/features/task/domain/usecases/delete_task.dart';
 import 'package:fbro/features/task/domain/usecases/update_task.dart';
-import 'package:fbro/features/task/domain/usecases/upload_task_proof.dart';
+import 'package:fbro/features/task/domain/usecases/upload_task_attachment.dart';
 import 'task_state.dart';
+
+/// A media file the employee has picked but not yet uploaded — the input to
+/// [TaskCubit.completeAndSubmit]. The cubit uploads each and turns it into a
+/// [TaskAttachment] on the submission event.
+class PickedAttachment {
+  const PickedAttachment(this.file, this.type);
+  final File file;
+  final AttachmentType type;
+}
 
 /// Drives the task workflow for all three roles. The list loaded depends on the
 /// signed-in user's role (admin: all · manager: own branch · employee: tasks
@@ -38,7 +49,7 @@ class TaskCubit extends Cubit<TaskState> {
   final UpdateTask _updateTask;
   final DeleteTask _deleteTask;
   final AssignTask _assignTask;
-  final UploadTaskProof _uploadTaskProof;
+  final UploadTaskAttachment _uploadTaskAttachment;
   final GetUsersByBranch _getUsersByBranch;
 
   UserEntity? _user;
@@ -61,7 +72,7 @@ class TaskCubit extends Cubit<TaskState> {
     required this._updateTask,
     required this._deleteTask,
     required this._assignTask,
-    required this._uploadTaskProof,
+    required this._uploadTaskAttachment,
     required this._getUsersByBranch,
   }) : super(const TaskState.initial());
 
@@ -308,16 +319,17 @@ class TaskCubit extends Cubit<TaskState> {
   /// Completes + submits a task for review in a single action (so the employee
   /// doesn't re-open the task to hit "Submit for Review").
   ///
-  /// Proof is uploaded **before** the status write: if the upload fails the
+  /// Media is uploaded **before** the status write: if any upload fails the
   /// whole transition is aborted — the task stays `started`, the real Storage
-  /// error is surfaced, and the employee keeps their selected photo to retry.
-  /// Proof is the evidence the review depends on, so a failed upload must never
-  /// silently submit evidence-less work. Returns true only when the submission
-  /// (and the proof, if one was attached) actually persisted.
+  /// error is surfaced, and the employee keeps their selected media to retry.
+  /// Evidence the review depends on must never be silently dropped. The uploaded
+  /// [attachments] are attached to the **submission event** (Phase 10), and the
+  /// first image also mirrors to the legacy `proofImageUrl` so older surfaces
+  /// keep working. Returns true only when the submission actually persisted.
   Future<bool> completeAndSubmit(
     TaskEntity task, {
     String? notes,
-    File? proof,
+    List<PickedAttachment> attachments = const [],
   }) async {
     if (task.status != TaskStatus.started) {
       _emitTransientError(
@@ -330,15 +342,33 @@ class TaskCubit extends Cubit<TaskState> {
       return false;
     }
     return _mutate(() async {
-      // Throws on failure → _mutate aborts the write and emits the real error.
-      final proofUrl =
-          proof == null ? null : await _uploadTaskProof(task.id, proof);
+      // Upload in parallel (order preserved by Future.wait) — several photos no
+      // longer queue behind each other. Any failure throws → _mutate aborts the
+      // write and surfaces the real error, keeping the employee's selection.
+      final uploaded = await Future.wait([
+        for (final a in attachments)
+          _uploadTaskAttachment(
+            taskId: task.id,
+            file: a.file,
+            type: a.type,
+            uploadedBy: _user?.uid ?? '',
+            uploadedByName: _user?.displayName,
+          ),
+      ]);
+      String? firstImage;
+      for (final a in uploaded) {
+        if (a.type == AttachmentType.image) {
+          firstImage = a.url;
+          break;
+        }
+      }
       final now = DateTime.now();
       await _updateTask(task.copyWith(
         status: TaskStatus.waitingReview,
         submittedAt: now,
         notes: notes ?? task.notes,
-        proofImageUrl: proofUrl ?? task.proofImageUrl,
+        // Mirror the first image to the legacy field for back-compat.
+        proofImageUrl: firstImage ?? task.proofImageUrl,
         activityLog: [
           ...task.activityLog,
           ActivityEntry(
@@ -347,6 +377,7 @@ class TaskCubit extends Cubit<TaskState> {
             actorName: _user?.displayName,
             at: now,
             note: notes,
+            attachments: uploaded,
           ),
           ActivityEntry(
             status: TaskStatus.waitingReview.value,
