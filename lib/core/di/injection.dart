@@ -57,6 +57,12 @@ import 'package:fbro/features/schedule/data/repositories/schedule_repository_imp
 import 'package:fbro/features/schedule/domain/repositories/schedule_repository.dart';
 import 'package:fbro/features/schedule/presentation/cubit/schedule_cubit.dart';
 import 'package:fbro/features/schedule/presentation/cubit/shift_swap_cubit.dart';
+import 'package:fbro/features/operations/presentation/cubit/branch_operations_cubit.dart';
+import 'package:fbro/features/communications/data/datasources/broadcast_remote_datasource.dart';
+import 'package:fbro/features/communications/data/repositories/broadcast_repository_impl.dart';
+import 'package:fbro/features/communications/domain/repositories/broadcast_repository.dart';
+import 'package:fbro/features/communications/domain/usecases/send_broadcast.dart';
+import 'package:fbro/features/communications/presentation/cubit/broadcast_cubit.dart';
 
 class AppDependencies {
   AppDependencies._();
@@ -75,6 +81,12 @@ class AppDependencies {
   // ─── Weekly schedule + shift swaps (Phase 7) ────────────────
   static late final ScheduleCubit scheduleCubit;
   static late final ShiftSwapCubit shiftSwapCubit;
+
+  // ─── Branch Operations cockpit (task→operations redesign) ───
+  static late final BranchOperationsCubit branchOperationsCubit;
+
+  // ─── Communications Center (Phase 1) ────────────────────────
+  static late final BroadcastCubit broadcastCubit;
 
   /// FCM foundation (Phase 6) — token registration + foreground handling.
   static late final NotificationService notificationService;
@@ -167,6 +179,26 @@ class AppDependencies {
     scheduleCubit =
         ScheduleCubit(scheduleRepository, GetUsersByBranch(authRepository));
     shiftSwapCubit = ShiftSwapCubit(scheduleRepository);
+
+    // ─── Branch Operations cockpit ────────────────────────────
+    // Read/derive cubit composing the task stream × branch members × today's
+    // roster; writes still flow through [taskCubit].
+    branchOperationsCubit = BranchOperationsCubit(
+      taskRepository: taskRepository,
+      scheduleRepository: scheduleRepository,
+      getUsersByBranch: GetUsersByBranch(authRepository),
+    );
+
+    // ─── Communications Center (Phase 1) ──────────────────────
+    // Hybrid cubit (like TaskCubit): the SendBroadcast use case for the write,
+    // the repository directly for the realtime feed stream.
+    final BroadcastRepository broadcastRepository = BroadcastRepositoryImpl(
+      BroadcastRemoteDataSourceImpl(FirebaseFirestore.instance),
+    );
+    broadcastCubit = BroadcastCubit(
+      repository: broadcastRepository,
+      sendBroadcast: SendBroadcast(broadcastRepository),
+    );
 
     notificationService = NotificationService(
       FirebaseMessaging.instance,

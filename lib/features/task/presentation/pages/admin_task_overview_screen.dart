@@ -9,12 +9,11 @@ import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
 import 'package:fbro/core/widgets/list_skeleton.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
+import 'package:fbro/features/operations/presentation/pages/branch_operations_screen.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
 import 'package:fbro/features/task/presentation/cubit/task_state.dart';
-import 'package:fbro/features/task/presentation/widgets/manager_task_card.dart';
 import 'package:fbro/features/task/presentation/widgets/task_empty_state.dart';
 import 'package:fbro/features/task/presentation/widgets/task_template_sheets.dart';
 
@@ -160,8 +159,10 @@ class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen> {
   }
 
   void _openBranch(_BranchRow row) {
+    // Drill into the operations cockpit (task→operations redesign) — the full
+    // per-branch task list is reachable from there via "All tasks".
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => _BranchTasksScreen(
+      builder: (_) => BranchOperationsScreen(
         branchId: row.branchId,
         branchName: row.name,
       ),
@@ -551,90 +552,3 @@ class _Metric extends StatelessWidget {
   }
 }
 
-/// Drill-down: every task in a single branch, with the full admin action set.
-/// Reads the already-loaded (all-branches) [TaskCubit] stream and filters to
-/// [branchId], so it stays live without a second query.
-class _BranchTasksScreen extends StatelessWidget {
-  const _BranchTasksScreen({required this.branchId, required this.branchName});
-  final String branchId;
-  final String branchName;
-
-  Future<void> _create(BuildContext context) => startNewTaskFlow(
-        context: context,
-        cubit: context.read<TaskCubit>(),
-        // Branch is fixed in this context, so behave like a branch-scoped form.
-        isAdmin: false,
-        defaultBranchId: branchId,
-        templateBranchFilter: branchId,
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
-        title: Text(branchName, style: AppTypography.h3),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _create(context),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.onPrimary,
-        icon: const Icon(Icons.add_rounded),
-        label: Text('New Task',
-            style: AppTypography.label.copyWith(color: AppColors.onPrimary)),
-      ),
-      body: BlocBuilder<TaskCubit, TaskState>(
-        builder: (context, state) => state.maybeWhen(
-          loading: () => const ListSkeleton(),
-          loaded: (tasks, busy, directory, _, _) =>
-              _list(context, tasks, busy, directory),
-          orElse: () => const SizedBox.shrink(),
-        ),
-      ),
-    );
-  }
-
-  Widget _list(
-    BuildContext context,
-    List<TaskEntity> all,
-    bool busy,
-    Map<String, UserEntity> directory,
-  ) {
-    final tasks = all.where((t) => (t.branchId ?? '') == branchId).toList();
-    return Column(
-      children: [
-        if (busy) const LinearProgressIndicator(minHeight: 2),
-        Expanded(
-          child: tasks.isEmpty
-              ? const TaskEmptyState(
-                  icon: Icons.assignment_outlined,
-                  message: 'No tasks in this branch yet.\nTap "New Task".',
-                )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.pagePadding,
-                    AppSpacing.lg,
-                    AppSpacing.pagePadding,
-                    AppSpacing.xxxl * 2,
-                  ),
-                  children: [
-                    for (var i = 0; i < tasks.length; i++)
-                      EntranceFade(
-                        delay: staggerDelay(i),
-                        child: ManagerTaskCard(
-                          task: tasks[i],
-                          directory: directory,
-                          isAdmin: true,
-                          defaultBranchId: branchId,
-                        ),
-                      ),
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-}

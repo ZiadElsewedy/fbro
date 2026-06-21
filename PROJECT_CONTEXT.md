@@ -100,7 +100,7 @@ lib/
 ├── core/
 │   ├── constants/            # app_constants.dart (appName, collection names)
 │   ├── di/                   # injection.dart — AppDependencies service locator
-│   ├── enums/                # user_role · approval_status · task_* · recurrence_frequency · notification_type · schedule_day · schedule_shift · swap_status
+│   ├── enums/                # user_role · approval_status · task_* · recurrence_frequency · notification_type · schedule_day · schedule_shift · swap_status · broadcast_audience
 │   ├── extensions/           # context_extensions (currentUser/currentRole) · firestore_extensions (Map.date — Timestamp→DateTime)
 │   ├── services/             # notification_service.dart (FCM foundation, Phase 6)
 │   ├── errors/               # exceptions.dart (data layer) / failures.dart (domain)
@@ -115,6 +115,8 @@ lib/
     ├── admin/                # Admin module — user-admin data/domain + AdminUsersCubit + dashboard/managers/employees/approvals (Phase 5). Admin redesign (2026-06-19): command-center Home (greeting · hero · metric grid · quick actions · pending preview · activity feed · manage), EmployeeCard + employee_metrics (computeEmployeeMetrics — per-employee perf from the task stream)
     ├── statistics/           # Statistics feature — entity/model/repo/datasource + StatisticsCubit; powers all 3 dashboards (Phase 6, +Phase 7 schedule figures)
     ├── schedule/             # Weekly schedule + shift swaps (Phase 7) — full slice + ScheduleCubit & ShiftSwapCubit; weekly_schedules + shift_swaps
+    ├── operations/           # Branch Operations cockpit (task-centric → operations-centric redesign, 2026-06-21). domain: `ShiftFilter` · `EmployeeWorkload` · `BranchSummary` · `computeBranchWorkload` (joins the branch task stream × getUsersByBranch × today's weekly_schedule, overload-first). presentation: `BranchOperationsCubit` (read/derive — repo-direct; writes still via TaskCubit) + `BranchOperationsState`; pages `BranchOperationsScreen` (the cockpit: summary header · shift toggle · workload cards · FAB), `ManagerOperationsScreen` (manager's own branch), `EmployeeDetailScreen` (drill — tasks by status); widget `WorkloadCard`
+    ├── communications/       # Communications Center (Phase 1, 2026-06-21) — Broadcast vertical slice: data/domain (`BroadcastEntity`/`BroadcastModel`/`BroadcastRepository(+Impl)`/`BroadcastRemoteDataSource`) + `SendBroadcast` use case + `BroadcastCubit`; `broadcasts` collection. Backend foundation only — no UI/routes yet (later phase)
     ├── manager/              # ManagerShell + ManagerHomeScreen (live branch dashboard, Phase 6)
     ├── employee/             # EmployeeShell + EmployeeHomeScreen (live command center: progress-ring hero + actionable task list; redesign v2)
     └── settings/             # Settings + change password (presentation only)
@@ -137,8 +139,10 @@ lib/
 > auth `GetUsersByBranch` use case for the member/assignee list). `TaskCubit` is
 > a hybrid: use cases for writes, **`TaskRepository` directly** for realtime list
 > streams + template CRUD, and **`BranchRepository`** for the admin branch
-> picker. All app-wide cubits are provided in `main.dart`
-> (`auth`/`profile`/`task`/`branch`/`adminUsers`/`statistics`/`schedule`/`shiftSwap`).
+> picker. `BroadcastCubit` (Communications Center) is the same hybrid: the
+> **`SendBroadcast` use case** for the write, **`BroadcastRepository` directly**
+> for the realtime feed stream. All app-wide cubits are provided in `main.dart`
+> (`auth`/`profile`/`task`/`branch`/`adminUsers`/`statistics`/`schedule`/`shiftSwap`/`branchOperations`/`broadcast`).
 
 ---
 
@@ -401,6 +405,69 @@ Cloud Firestore  weekly_schedules/{branchId_yyyy-MM-dd}    Cloud Firestore  shif
   shift, the manager scheduled/morning/night-today counts, and the admin schedule
   coverage (`ScheduleWeek` + `ScheduleDay` imported into statistics).
 
+### Branch Operations chain (task→operations redesign)
+
+```
+AdminTaskOverviewScreen (admin branch overview)  ManagerOperationsScreen (manager own branch)
+        └─────────────── drill / land ───────────────┘
+                          ↓ Navigator.push
+BranchOperationsScreen  (the cockpit: summary header · shift toggle · WorkloadCard list · FAB)
+        ↓ context.read<BranchOperationsCubit>()        ↓ tap employee (Navigator.push)
+BranchOperationsCubit + BranchOperationsState   EmployeeDetailScreen (tasks by status)
+        ↓ (repo-direct; reuses auth GetUsersByBranch)         ↓ tap task → TaskDetailsScreen
+TaskRepository.watchTasksByBranch  ⨯  GetUsersByBranch  ⨯  ScheduleRepository.getSchedule
+        ↓                          computeBranchWorkload (pure)
+   Cloud Firestore  tasks/{id}        users/{uid}        weekly_schedules/{id}
+```
+
+- **Read/derive only.** `BranchOperationsCubit` (app-wide, in `main.dart`)
+  subscribes the **live** `watchTasksByBranch` stream + one-shot branch members +
+  this week's roster, and emits `computeBranchWorkload(...)` (the pure domain
+  aggregation). The shift filter is cubit state applied as a **pure re-derive**
+  (no I/O). **All task writes** (create / assign / review) still go through
+  `TaskCubit`, which the cockpit also loads — both watch the same branch stream, so
+  a write shows on the cockpit immediately. The cockpit's New-Task FAB reuses
+  `startNewTaskFlow`; "All tasks" + the employee drill render the shared
+  `ManagerTaskCard` → `TaskDetailsScreen`. No new collection, no new go_router
+  route (cockpit + drills are `Navigator.push`); the one schema delta is
+  `tasks.shift`.
+
+### Communications Center chain (Phase 1 — Broadcast vertical slice)
+
+```
+BroadcastCubit  + BroadcastState                             (presentation/cubit)
+        ↓  SendBroadcast use case for the WRITE; repository directly for the feed STREAM
+SendBroadcast (domain/usecases — wraps BroadcastRepository.sendBroadcast)
+BroadcastRepository.watchBroadcasts({branchId})              (realtime feed)
+        ↓
+BroadcastRepository (abstract)                               (domain/repositories)
+        ↓   AppDependencies.broadcastCubit  (composed in injection.dart)
+BroadcastRepositoryImpl                                      (data/repositories)
+        ↓
+BroadcastRemoteDataSource                                    (data/datasources)
+        ↓
+Cloud Firestore  broadcasts/{broadcastId}
+```
+
+- Full vertical slice, **hybrid cubit** (mirrors `TaskCubit`): `BroadcastCubit`
+  (app-wide, provided in `main.dart`) injects the **`SendBroadcast` use case**
+  for the write and the **`BroadcastRepository` directly** for the realtime feed
+  stream. Datasource throws `ServerException`; repo → `ServerFailure`; maps
+  `BroadcastModel → BroadcastEntity`.
+- **A broadcast is a one-way announcement.** A manager/admin "sends" a broadcast
+  scoped to a single branch (`BroadcastAudience.branch`) or to every branch
+  (`BroadcastAudience.allBranches`, **admin-only**); branch members read it. The
+  queryable targeting field is `branchId` — a branch id scopes it, the **empty
+  string `''`** is the all-branches sentinel.
+- **Index-free, rules-safe reads.** The admin feed is
+  `orderBy('createdAt', descending: true)` (single-field, index-free). A branch
+  member's feed is `where('branchId', whereIn: [selfBranch, ''])` — one query
+  returning their branch's broadcasts **plus** all-branches ones, every returned
+  doc provably allowed by the `broadcasts/{id}` read rule (no composite index;
+  ordered client-side newest-first, just-sent doc pinned on top). WHO may send is
+  enforced in `firestore.rules`: admin any/all-branches, own-branch manager their
+  branch only, employees read-only.
+
 ### Shared (core) dependencies
 
 Every layer may import `core/errors` (failures/exceptions). Presentation
@@ -427,6 +494,13 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Auth ⇄ Profile sync (name/avatar)**     | `lib/features/profile/data/repositories/profile_repository_impl.dart`    |
 | **Task type/status/priority values**      | `lib/core/enums/task_type.dart` · `task_status.dart` · `task_priority.dart` |
 | **Task schema / serialization (incl. audit fields)** | `lib/features/task/domain/entities/task_entity.dart` + `data/models/task_model.dart` (then run codegen) |
+| **Task shift tag (morning/night/any)** | `task_entity.dart` (`shift` — nullable `ScheduleShift`, **null = "any"**) + `task_model.dart` (`'shift'` ↔ `ScheduleShift.fromStringOrNull`) + `core/enums/schedule_shift.dart` (`fromStringOrNull` — null-preserving parse). Drives the Branch Operations shift filter; supersedes the unused legacy `assignedShiftId`. Tested in `test/task_model_shift_test.dart` |
+| **Branch Operations workload (derive)** | `lib/features/operations/domain/branch_workload.dart` (`computeBranchWorkload` → `BranchWorkload`) + `employee_workload.dart` (`EmployeeWorkload`) + `branch_summary.dart` (`BranchSummary`) + `shift_filter.dart` (`ShiftFilter`). Pure/deterministic (`day`/`now` injectable), joins task stream × `getUsersByBranch` × today's `weekly_schedule`, sorts overload-first. Tested in `test/branch_workload_test.dart` |
+| **Branch Operations cubit / state** | `lib/features/operations/presentation/cubit/branch_operations_cubit.dart` + `branch_operations_state.dart` — read/derive only; subscribes `TaskRepository.watchTasksByBranch` + one-shot `GetUsersByBranch` + `ScheduleRepository.getSchedule`; `setFilter` re-derives without I/O. Repo-direct; wired in `injection.dart` + `main.dart`. **Writes stay in `TaskCubit`** (both watch the same branch stream, so writes propagate live) |
+| **Branch Operations cockpit (screen)** | `lib/features/operations/presentation/pages/branch_operations_screen.dart` (summary header · `_ShiftToggle` · `WorkloadCard` list · New-Task FAB via `startNewTaskFlow` · "All tasks" → `BranchTaskListScreen`) + widget `presentation/widgets/workload_card.dart` (`WorkloadCard`, widget-tested in `test/workload_card_test.dart`). Manager entry: `manager_operations_screen.dart`; admin entry: the branch-overview drill (`admin_task_overview_screen.dart` `_openBranch`) |
+| **Employee operations drill (tasks by status)** | `lib/features/operations/presentation/pages/employee_detail_screen.dart` — reads the loaded `TaskCubit` filtered to one employee, groups by status (Rework·In progress·Pending·Submitted·Completed), renders `ManagerTaskCard` (→ `TaskDetailsScreen`) |
+| **Full branch task list (incl. unassigned)** | `lib/features/task/presentation/pages/branch_task_list_screen.dart` (`BranchTaskListScreen` — extracted from the old admin drill; reached via the cockpit "All tasks"). The former `BranchTasksScreen` + `ManagerTasksView` (flat manager list) were **deleted** (retired by the cockpit) |
+| **Operations routing / nav entry** | Manager: `RouteNames.managerTasks` (`/manager/tasks`) now renders `ManagerOperationsScreen` (was `BranchTasksScreen`) in `app_router.dart`. Admin: `adminTasks` → `AdminTaskOverviewScreen` (branch overview) whose `_openBranch` drill opens `BranchOperationsScreen`. The cockpit + drills are `Navigator.push` (like `TaskDetailsScreen`), not go_router routes |
 | **Task reads/writes / media upload** | `lib/features/task/data/datasources/task_remote_datasource.dart` (Firestore + Storage `tasks/{id}/attachments/{id}.<ext>` via `uploadAttachment`) |
 | **Task list ordering (newest first)** | Admin query: Firestore `orderBy('createdAt', descending: true)` (index-free). Filtered branch/employee queries stay filter-only (a filter + `orderBy` needs a composite index → broke loading, reverted) and are ordered by `sortTasksNewestFirst` (`domain/task_ordering.dart`, pending-timestamp on top) in the repo. Tested in `test/task_ordering_test.dart` |
 | **Video thumbnails** | `presentation/widgets/video_thumbnail_image.dart` (`VideoThumbnailImage` — `video_thumbnail` poster frame, bounded LRU cache, loading + film-glyph fallback). Used by `attachment_gallery.dart` + `attachment_picker.dart`; play overlay drawn by the caller on top |
@@ -476,6 +550,12 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Schedule grid / cell / sheets (reusable widgets)** | `lib/features/schedule/presentation/widgets/`: `schedule_grid.dart` (`ScheduleGrid`) · `shift_cell.dart` (`ShiftCell` — assigned-count density tile, no quota) · `employee_row.dart` (`EmployeeRow`) · `shift_details_sheet.dart` (`showShiftDetailsSheet`) · `swap_alert_card.dart` (`SwapAlertCard` + `showSwapQueueSheet`) · `broken_assignment_banner.dart` · `employee_picker_sheet.dart` (`showEmployeePicker`) · `sheet_chrome.dart` (`SheetHandle`). Tested in `test/schedule_grid_test.dart` |
 | **Schedule routes / role entry point**    | `lib/core/routes/route_names.dart` (`adminSchedule`/`managerSchedule`/`mySchedule` + `scheduleForRole`) + `app_router.dart` + `role_scaffold.dart` (calendar icon → Schedule) |
 | **Schedule/swap DI wiring**               | `lib/core/di/injection.dart` (`scheduleCubit`/`shiftSwapCubit`) + `main.dart` providers |
+| **Broadcast schema / serialization**      | `lib/features/communications/domain/entities/broadcast_entity.dart` + `data/models/broadcast_model.dart` (then run codegen) + `lib/core/enums/broadcast_audience.dart` (`BroadcastAudience` — allBranches/branch; `''` branchId sentinel = all-branches) |
+| **Broadcast reads/writes (Firestore)**    | `lib/features/communications/data/datasources/broadcast_remote_datasource.dart` (`broadcasts/{id}`; admin feed `orderBy(createdAt)`, branch feed `where('branchId', whereIn:[branch,''])` client-sorted) |
+| **Broadcast repository contract / impl**  | `lib/features/communications/domain/repositories/broadcast_repository.dart` (+impl) — wired in `core/di/injection.dart` (`broadcastCubit`) |
+| **Send a broadcast (use case)**           | `lib/features/communications/domain/usecases/send_broadcast.dart` (`SendBroadcast`) → `BroadcastCubit.send` |
+| **Broadcast logic / feed + send / state** | `lib/features/communications/presentation/cubit/broadcast_cubit.dart` (`load({branchId})` subscribes the feed; `send(...)` via `SendBroadcast`) + `broadcast_state.dart` |
+| **Broadcast DI wiring / provider**        | `lib/core/di/injection.dart` (`broadcastCubit`) + `main.dart` provider + `AppConstants.broadcastsCollection` + `firestore.rules` (`broadcasts/{id}`) |
 | **Dashboard screens (live stats)**        | `admin_dashboard_screen.dart` (**command center, 2026-06-19** — `DashboardMetricCard` grid + hero + activity feed; see "Admin Home (command center)") · `manager/.../manager_home_screen.dart` (shared `statistics/presentation/widgets/stat_grid.dart` — `StatGrid` + `StatGridSkeleton`, + `HeroStatCard`) · `employee/.../employee_home_screen.dart` (**bespoke, redesign v2** — own `_HeroTodayCard`/`_ProgressRing`/`_RingPainter`/`_StatStrip`/`_HomeTaskCard` with inline actions; task counts from the live `TaskCubit` list, shift from `StatisticsCubit`) |
 | **Push notifications (FCM)**              | `lib/core/services/notification_service.dart` + `core/enums/notification_type.dart`; wired in `main.dart` (background handler, init, token register on auth, foreground snackbar) |
 | **Admin routes**                          | `lib/core/routes/route_names.dart` (`adminBranches`/`adminManagers`/`adminEmployees`/`adminAnalytics`/`adminApprovals`) + `app_router.dart` (under `_isAdminArea`) |
@@ -686,6 +766,13 @@ Patterns below are established across the codebase and **must be reused**.
   team); a swap is read/written by the two involved employees and the branch
   manager/admin, with **create** restricted to the requester in their own branch
   (the status order is validated client-side in `ShiftSwapCubit`).
+  **`broadcasts/{id}` (Communications Center — Phase 1)** is targeted by
+  `branchId` (`''` = all branches): **read** = admin, OR an all-branches
+  broadcast (visible to every signed-in user), OR a branch member whose branch
+  matches; **create** = the sender themself, with an admin allowed any
+  branch/all-branches and an own-branch manager only their own branch (never
+  all-branches); **update/delete** = admin or the owning-branch manager
+  (employees never write broadcasts).
 - Routes are role-guarded in the GoRouter `redirect`: admin areas are
   admin-only, manager areas admit **manager + admin** (the hierarchy), the
   employee home (`/`) is employee-only. Add a new role area as a path prefix

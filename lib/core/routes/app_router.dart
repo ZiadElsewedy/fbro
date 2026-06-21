@@ -12,8 +12,8 @@ import 'package:fbro/features/admin/presentation/pages/admin_shell.dart';
 import 'package:fbro/features/manager/presentation/pages/manager_shell.dart';
 import 'package:fbro/features/employee/presentation/pages/employee_shell.dart';
 import 'package:fbro/features/task/presentation/pages/task_management_screen.dart';
-import 'package:fbro/features/task/presentation/pages/branch_tasks_screen.dart';
 import 'package:fbro/features/task/presentation/pages/my_tasks_screen.dart';
+import 'package:fbro/features/operations/presentation/pages/manager_operations_screen.dart';
 import 'package:fbro/features/schedule/presentation/pages/schedule_management_screen.dart';
 import 'package:fbro/features/schedule/presentation/pages/branch_schedule_screen.dart';
 import 'package:fbro/features/schedule/presentation/pages/my_schedule_screen.dart';
@@ -151,11 +151,14 @@ GoRouter createRouter(AuthCubit authCubit) {
           const TaskManagementScreen(),
         ),
       ),
+      // Manager "Operations" tab → the Branch Operations cockpit for the
+      // manager's own branch (the task→operations redesign; the full per-branch
+      // task list is now reached via the cockpit's "All tasks" → BranchTaskListScreen).
       GoRoute(
         path: RouteNames.managerTasks,
         pageBuilder: (context, state) => _slideTransition(
           state,
-          const BranchTasksScreen(),
+          const ManagerOperationsScreen(),
         ),
       ),
       GoRoute(

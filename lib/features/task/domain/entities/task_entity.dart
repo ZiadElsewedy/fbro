@@ -2,6 +2,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:fbro/core/enums/task_type.dart';
 import 'package:fbro/core/enums/task_status.dart';
 import 'package:fbro/core/enums/task_priority.dart';
+import 'package:fbro/core/enums/schedule_shift.dart';
 import 'package:fbro/features/task/domain/entities/activity_entry.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
 import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
@@ -41,6 +42,11 @@ class TaskEntity with _$TaskEntity {
     String? createdBy,
     /// Optional shift this task belongs to (references `shifts/{shiftId}`).
     String? assignedShiftId,
+    /// The operational shift this task belongs to (Branch Operations) —
+    /// `morning` / `night`, or **null** when the task is not shift-specific
+    /// ("any", applies under every shift filter). Drives the Branch Operations
+    /// shift filter; supersedes the unused legacy [assignedShiftId] string.
+    ScheduleShift? shift,
     DateTime? deadline,
     /// Free-text notes added by the executing employee.
     String? notes,

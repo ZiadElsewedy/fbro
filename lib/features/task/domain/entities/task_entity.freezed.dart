@@ -39,6 +39,12 @@ mixin _$TaskEntity {
 
   /// Optional shift this task belongs to (references `shifts/{shiftId}`).
   String? get assignedShiftId => throw _privateConstructorUsedError;
+
+  /// The operational shift this task belongs to (Branch Operations) —
+  /// `morning` / `night`, or **null** when the task is not shift-specific
+  /// ("any", applies under every shift filter). Drives the Branch Operations
+  /// shift filter; supersedes the unused legacy [assignedShiftId] string.
+  ScheduleShift? get shift => throw _privateConstructorUsedError;
   DateTime? get deadline => throw _privateConstructorUsedError;
 
   /// Free-text notes added by the executing employee.
@@ -99,6 +105,7 @@ abstract class $TaskEntityCopyWith<$Res> {
     List<ChecklistItem> checklist,
     String? createdBy,
     String? assignedShiftId,
+    ScheduleShift? shift,
     DateTime? deadline,
     String? notes,
     String? proofImageUrl,
@@ -144,6 +151,7 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
     Object? checklist = null,
     Object? createdBy = freezed,
     Object? assignedShiftId = freezed,
+    Object? shift = freezed,
     Object? deadline = freezed,
     Object? notes = freezed,
     Object? proofImageUrl = freezed,
@@ -205,6 +213,10 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
                 ? _value.assignedShiftId
                 : assignedShiftId // ignore: cast_nullable_to_non_nullable
                       as String?,
+            shift: freezed == shift
+                ? _value.shift
+                : shift // ignore: cast_nullable_to_non_nullable
+                      as ScheduleShift?,
             deadline: freezed == deadline
                 ? _value.deadline
                 : deadline // ignore: cast_nullable_to_non_nullable
@@ -302,6 +314,7 @@ abstract class _$$TaskEntityImplCopyWith<$Res>
     List<ChecklistItem> checklist,
     String? createdBy,
     String? assignedShiftId,
+    ScheduleShift? shift,
     DateTime? deadline,
     String? notes,
     String? proofImageUrl,
@@ -347,6 +360,7 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
     Object? checklist = null,
     Object? createdBy = freezed,
     Object? assignedShiftId = freezed,
+    Object? shift = freezed,
     Object? deadline = freezed,
     Object? notes = freezed,
     Object? proofImageUrl = freezed,
@@ -408,6 +422,10 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
             ? _value.assignedShiftId
             : assignedShiftId // ignore: cast_nullable_to_non_nullable
                   as String?,
+        shift: freezed == shift
+            ? _value.shift
+            : shift // ignore: cast_nullable_to_non_nullable
+                  as ScheduleShift?,
         deadline: freezed == deadline
             ? _value.deadline
             : deadline // ignore: cast_nullable_to_non_nullable
@@ -484,6 +502,7 @@ class _$TaskEntityImpl extends _TaskEntity {
     final List<ChecklistItem> checklist = const <ChecklistItem>[],
     this.createdBy,
     this.assignedShiftId,
+    this.shift,
     this.deadline,
     this.notes,
     this.proofImageUrl,
@@ -556,6 +575,13 @@ class _$TaskEntityImpl extends _TaskEntity {
   /// Optional shift this task belongs to (references `shifts/{shiftId}`).
   @override
   final String? assignedShiftId;
+
+  /// The operational shift this task belongs to (Branch Operations) —
+  /// `morning` / `night`, or **null** when the task is not shift-specific
+  /// ("any", applies under every shift filter). Drives the Branch Operations
+  /// shift filter; supersedes the unused legacy [assignedShiftId] string.
+  @override
+  final ScheduleShift? shift;
   @override
   final DateTime? deadline;
 
@@ -615,7 +641,7 @@ class _$TaskEntityImpl extends _TaskEntity {
 
   @override
   String toString() {
-    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, createdBy: $createdBy, assignedShiftId: $assignedShiftId, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, createdBy: $createdBy, assignedShiftId: $assignedShiftId, shift: $shift, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -645,6 +671,7 @@ class _$TaskEntityImpl extends _TaskEntity {
                 other.createdBy == createdBy) &&
             (identical(other.assignedShiftId, assignedShiftId) ||
                 other.assignedShiftId == assignedShiftId) &&
+            (identical(other.shift, shift) || other.shift == shift) &&
             (identical(other.deadline, deadline) ||
                 other.deadline == deadline) &&
             (identical(other.notes, notes) || other.notes == notes) &&
@@ -690,6 +717,7 @@ class _$TaskEntityImpl extends _TaskEntity {
     const DeepCollectionEquality().hash(_checklist),
     createdBy,
     assignedShiftId,
+    shift,
     deadline,
     notes,
     proofImageUrl,
@@ -728,6 +756,7 @@ abstract class _TaskEntity extends TaskEntity {
     final List<ChecklistItem> checklist,
     final String? createdBy,
     final String? assignedShiftId,
+    final ScheduleShift? shift,
     final DateTime? deadline,
     final String? notes,
     final String? proofImageUrl,
@@ -778,6 +807,13 @@ abstract class _TaskEntity extends TaskEntity {
   /// Optional shift this task belongs to (references `shifts/{shiftId}`).
   @override
   String? get assignedShiftId;
+
+  /// The operational shift this task belongs to (Branch Operations) —
+  /// `morning` / `night`, or **null** when the task is not shift-specific
+  /// ("any", applies under every shift filter). Drives the Branch Operations
+  /// shift filter; supersedes the unused legacy [assignedShiftId] string.
+  @override
+  ScheduleShift? get shift;
   @override
   DateTime? get deadline;
 

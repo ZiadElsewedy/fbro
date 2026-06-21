@@ -11,8 +11,55 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-21 (Submission loading UX + status animations, refined)
+**Last updated:** 2026-06-21 (Communications Center — Phase 1: Broadcast vertical slice)
 **Version:** 1.0.0+1 · **Branch:** `feature/tasks-improvements` (DROP — monochrome enterprise UX)
+
+> **Communications Center · Phase 1 (2026-06-21):** First slice of the
+> Communications Center — a **one-way broadcast** foundation. **Backend +
+> cubit only**, no UI/routes yet (a later phase). New `communications` feature
+> (full vertical slice): **`BroadcastEntity`** (id · title · message · sender
+> id/name/role · `BroadcastAudience` · branchId · createdAt) + **`BroadcastModel`**
+> (Firestore (de)serialization; all-branches stored with the **`''` branchId
+> sentinel**), **`BroadcastRepository(+Impl)`** + **`BroadcastRemoteDataSource`**
+> over the new **`broadcasts/{id}`** collection, the **`SendBroadcast`** use case,
+> and a **hybrid `BroadcastCubit`** (mirrors `TaskCubit`: `SendBroadcast` for the
+> write, repository directly for the realtime feed stream — `load({branchId})`
+> subscribes, `send(...)` posts). New `BroadcastAudience` enum (allBranches /
+> branch). Reads are **index-free + rules-safe**: admin feed
+> `orderBy('createdAt')`, branch feed `where('branchId', whereIn:[branch,''])`
+> (their branch + all-branches in one query, client-sorted newest-first). New
+> `broadcasts/{id}` Firestore rules (admin all · own-branch manager sends their
+> branch · branch members + everyone read all-branches · employees read-only).
+> Wired in DI + `main.dart`. `flutter analyze` clean (0 issues); **80 tests pass**
+> (+6 in `broadcast_model_test.dart`). **Next (later phases):** the Communications
+> Center UI (compose + feed screens, role entry point/route) and optional
+> notification fan-out on send. ⚠️ Deploy `firestore.rules` for the `broadcasts`
+> collection before use.
+
+> **Branch Operations redesign — cockpit shipped (2026-06-21, steps 1–3):** The
+> task-centric → **operations-centric** rework. The standalone task list is
+> replaced by a **Branch Operations cockpit**: Admin dashboard (branch overview) →
+> **Branch Operations** → Employee details → Task details; tasks now live *inside*
+> operations (no dedicated Task Management destination). Strictly monochrome,
+> reusing the existing component library. **① Schema (`tasks.shift`)** — optional
+> shift tag (`ScheduleShift?`; **null = "any"**) on `TaskEntity`/`TaskModel` via the
+> null-preserving `ScheduleShift.fromStringOrNull`; back-compat; supersedes the dead
+> `assignedShiftId`. **② Domain** — pure `computeBranchWorkload` (`ShiftFilter` ·
+> `EmployeeWorkload` · `BranchSummary` → `BranchWorkload`) joins the branch task
+> stream × `getUsersByBranch` × today's `weekly_schedule` and sorts employees
+> **overload-first**. **③ `BranchOperationsCubit`** (read/derive; repo-direct;
+> `setFilter` re-derives without I/O) wired in `injection.dart`/`main.dart`; **writes
+> still flow through `TaskCubit`** (same branch stream → live). **④ Screens** —
+> `BranchOperationsScreen` (summary header · shift toggle · `WorkloadCard` list ·
+> New-Task FAB · "All tasks"), `ManagerOperationsScreen` (manager's own branch, now
+> the `/manager/tasks` page), `EmployeeDetailScreen` (tasks by status →
+> `TaskDetailsScreen`), and the extracted public `BranchTaskListScreen`. **Retired:**
+> `BranchTasksScreen` + `ManagerTasksView` deleted; the admin branch-overview drill
+> now opens the cockpit. Freezed re-run. **74 tests pass** (+15: workload,
+> task-shift, workload-card widget); the operations/task/core scope analyzes clean.
+> *(Note: a separate, in-progress `communications`/broadcast feature is concurrently
+> in the tree and currently breaks the whole-project `flutter analyze` — unrelated to
+> this work.)*
 
 > **Submission loading UX + status animations (2026-06-21, refined):** Two
 > task-detail improvements. **① Video submit "freeze" fixed.** Root cause: the
@@ -326,6 +373,7 @@
 | Admin module (Phase 5, +Phase 9 UX) | ✅ Complete | Branch / manager / employee management + **admin-only** pending-user approval + branch assignment. `AdminUsersCubit`, `UserAdminRepository` over `users/{uid}`. **Phase 9:** Admin Home restructured to **4 KPIs** + module nav; new **Analytics** page (`/admin/analytics`); avatar-led user cards; search + active/inactive/branch filters |
 | Dashboards / Statistics (Phase 6, +Phase 7) | ✅ Complete | `statistics` feature (`StatisticsCubit`) drives **live** admin / manager / employee dashboards. **Phase 7:** shift/coverage figures read the weekly schedule. **Phase 9:** the full metric wall moved to the Analytics page; the Admin Home shows only 4 headline KPIs |
 | Notifications (Phase 6, +Phase 7) | 🟡 Foundation | FCM client foundation: permission + device-token persistence + foreground snackbars. `NotificationType` extended with Phase 7 swap/schedule events. **Sending** the events needs a server trigger (out of scope) |
+| Communications Center (Phase 1) | 🟡 Backend foundation | `communications` feature — **Broadcast** vertical slice: `BroadcastEntity`/`Model`/`Repository(+Impl)`/`RemoteDataSource` + `SendBroadcast` use case + hybrid `BroadcastCubit` (use case for the write, repo stream for the feed); `BroadcastAudience` enum (allBranches/branch). `broadcasts/{id}` collection + rules (admin all · own-branch manager sends their branch · everyone reads all-branches · employees read-only); admin feed `orderBy(createdAt)`, branch feed `whereIn:[branch,'']` (index-free). **No UI/routes yet** — compose + feed screens are a later phase |
 | Profile          | ✅ Complete    | View/edit (Full Name · Bio · avatar+cover). **Username removed (2026-06-18)** from editing/validation — no operational value (legacy social field); dormant model field + `CheckUsername` use case remain as harmless legacy |
 | Settings         | ✅ Complete    | Settings page + change password + delete account              |
 | Role shells      | ✅ Live        | All three role dashboards show live operational stats (Phase 6); Admin shell hosts the full admin module (Phase 5) |
@@ -450,9 +498,23 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
   infos); 7 unit tests pass; `build_runner` consistent (0 stale outputs).
 - **Operations Workflow Upgrade (2026-06-18, branch `redesign`)** — enterprise task system on top of the existing architecture (no logic/routing/data/rules regressions). New entities: `RecurrenceConfig` (freezed, `nextOccurrence()`) and `ActivityEntry` (freezed). New enum `RecurrenceFrequency` (none/daily/weekly/monthly). `TaskModel` updated: `recurrence` and `activityLog` serialised to/from Firestore. `TaskCubit` extended: `createTask` seeds first `ActivityEntry`; `startTask`/`submitForReview`/`approveTask`/`rejectTask` each append an entry; `approveTask` calls `_spawnNextRecurrence` when `frequency != none`. New full-screen `TaskDetailsScreen` (all roles: status pills, assignees, checklist, notes/proof, activity timeline, role-appropriate actions). `MyTasksScreen` rebuilt (tabbed Active/Done, 5 sections, animated entrance, minimal cards → Details). `ManagerTasksView` taps open `TaskDetailsScreen` with slide transition. `_RecurrencePicker` chip row in task form (new tasks only). `flutter analyze` clean (0 errors, 0 warnings; 2 pre-existing infos in auth/profile cubits untouched).
 - **Inline checklist editor + form simplification (2026-06-18, branch `redesign`)** — `_InlineChecklistEditor` + `_ChecklistItemRow` added to `task_action_sheets.dart`. Create Task form: "Add step" button builds a live list of steps with required/optional toggle (star) and × remove. Edit Task: seeds from existing `checklist`, preserves `completed`/`completedAt` on merge. Template prefill: checklist pre-populated and editable (was read-only `_ChecklistPreview` before, now removed). "Type: daily/special" dropdown removed from form (replaced by auto-inference from recurrence). `flutter analyze` clean.
-- **Action needed:** deploy `firestore.rules` / `storage.rules` and
-  enable Firebase Storage; bootstrap the first admin (set
-  `role/approvalStatus/isActive` in the console) before production.
+- **Communications Center — Phase 1 (2026-06-21, branch `feature/tasks-improvements`)**
+  — first slice of the Communications Center: a one-way **broadcast** foundation
+  (backend + cubit only, no UI/routes yet). New `communications` feature (full
+  vertical slice): `BroadcastEntity`/`BroadcastModel`/`BroadcastRepository(+Impl)`/
+  `BroadcastRemoteDataSource`, `SendBroadcast` use case, hybrid `BroadcastCubit`
+  (use case for the write, `BroadcastRepository` stream for the realtime feed),
+  and the `BroadcastAudience` enum (allBranches/branch). New `broadcasts/{id}`
+  collection (`AppConstants.broadcastsCollection`) + Firestore rules; all-branches
+  stored with the `''` branchId sentinel so a branch member's
+  `where('branchId', whereIn:[branch,''])` feed is one index-free, rules-safe
+  query. Wired in `injection.dart` (`broadcastCubit`) + `main.dart` provider.
+  `flutter analyze` clean (0 issues); **80 tests pass** (+6 in
+  `broadcast_model_test.dart`). No regressions to existing features (additive
+  slice only). **Next phase:** the Communications Center UI + role entry point.
+- **Action needed:** deploy `firestore.rules` / `storage.rules` (now incl. the
+  **`broadcasts/{id}`** rules) and enable Firebase Storage; bootstrap the first
+  admin (set `role/approvalStatus/isActive` in the console) before production.
 
 ---
 
@@ -467,8 +529,8 @@ Legend: ✅ done · 🟡 partial · ⛔ not started
 | adminShifts         | `/admin/shifts`              | `ShiftManagementScreen` | **admin**     |
 | managerShifts       | `/manager/shifts`            | `BranchShiftScreen`     | **manager** (+admin) |
 | myShift             | `/my-shift`                  | `MyShiftScreen`         | any approved auth (self) |
-| adminTasks          | `/admin/tasks`               | `TaskManagementScreen`  | **admin**     |
-| managerTasks        | `/manager/tasks`             | `BranchTasksScreen`     | **manager** (+admin) |
+| adminTasks          | `/admin/tasks`               | `TaskManagementScreen` (branch overview → drills into `BranchOperationsScreen`) | **admin**     |
+| managerTasks        | `/manager/tasks`             | `ManagerOperationsScreen` → `BranchOperationsScreen` (own branch) | **manager** (+admin) |
 | myTasks             | `/my-tasks`                  | `MyTasksScreen`         | any approved auth (self) |
 | _(removed Phase 10)_ | ~~`/admin\|manager/shifts`, `/my-shift`~~ | — | Phase 2 shift screens deleted (dead code) |
 | adminSchedule       | `/admin/schedule`            | `ScheduleManagementScreen` | **admin**  |
@@ -544,9 +606,14 @@ landing is **Login** (the social Welcome page was removed).
   `ShiftSwapCubit`). **`task_templates/{id}` (Stabilization)**: read = any
   admin/manager; create = admin (global/any) or own-branch manager;
   update/delete = admin or the owning-branch manager (employees don't read
-  templates). Reusable `isAdmin()` / `isManager()` / `canReachBranch()`
-  helpers remain for future collections. ⚠️ Still need to be **deployed**
-  (`firebase deploy --only firestore:rules,storage`).
+  templates). **`broadcasts/{id}` (Communications Center — Phase 1)**: read =
+  admin, OR any all-branches broadcast (`branchId == ''`, visible to every
+  signed-in user), OR a branch member whose branch matches; create = the sender
+  themself (admin any branch/all-branches; own-branch manager their branch only,
+  never all-branches); update/delete = admin or the owning-branch manager
+  (employees never write broadcasts). Reusable `isAdmin()` / `isManager()` /
+  `canReachBranch()` helpers remain for future collections. ⚠️ Still need to be
+  **deployed** (`firebase deploy --only firestore:rules,storage`).
 
 ### Firestore schema — `users/{uid}`
 
@@ -615,7 +682,8 @@ Phase 10 (dead code, never consumed). The **weekly schedule**
 | `recurrence`         | map?       | **Workflow Upgrade** — `{frequency, interval, weekday, hour, minute}`. `frequency` = `none`/`daily`/`weekly`/`monthly`. When a task is approved and `frequency != none`, `TaskCubit._spawnNextRecurrence` auto-creates the next instance (checklist reset, deadline advanced) |
 | `activityLog`        | array<map> | **Workflow Upgrade** — embedded array of `{status, actorId, actorName, at, note}`. Every status transition appends an entry. Shown newest-first on the Task Details screen |
 | `createdBy`          | string?    | uid of the manager/admin who created it               |
-| `assignedShiftId`    | string?    | optional link to `shifts/{shiftId}`                   |
+| `assignedShiftId`    | string?    | optional link to `shifts/{shiftId}` (legacy, unused)  |
+| `shift`              | string?    | **Branch Operations (2026-06-21)** — operational shift tag `morning` / `night`, or **null = "any"** (not shift-specific). Drives the Branch Operations shift filter; supersedes the unused legacy `assignedShiftId`. Missing/unknown → null (`ScheduleShift.fromStringOrNull`) |
 | `deadline`           | Timestamp? | due date/time                                         |
 | `notes`              | string?    | employee's free-text notes                            |
 | `proofImageUrl`      | string?    | proof image download URL (uploaded on completion)     |
@@ -692,6 +760,28 @@ week's Sunday), so a week is addressed directly without a query.
 > **removes the requester and adds the target** on that schedule slot. Any party
 > may reject. Status order is validated client-side (`ShiftSwapCubit`); WHO may
 > write is enforced by `firestore.rules` (`shift_swaps/{id}`).
+
+### Firestore schema — `broadcasts/{broadcastId}` (Communications Center — Phase 1)
+
+| Field        | Type       | Notes                                                          |
+| ------------ | ---------- | ------------------------------------------------------------- |
+| `id`         | string     | mirrors the doc id (set on create)                            |
+| `title`      | string     | broadcast headline                                            |
+| `message`    | string     | broadcast body                                                |
+| `senderId`   | string     | uid of the sender (must equal `request.auth.uid` on create)   |
+| `senderName` | string     | denormalized sender name for display                          |
+| `senderRole` | string     | `admin` / `manager` / `employee` (sender's role at send time) |
+| `audience`   | string     | `allBranches` / `branch` (the addressing intent)              |
+| `branchId`   | string     | target branch id; **`''` (empty) = all branches** (the queryable sentinel) |
+| `createdAt`  | Timestamp  | server timestamp (set by the datasource)                      |
+
+> A one-way announcement. Targeting is by `branchId`: a branch id scopes it to
+> that branch (its manager + employees + any admin); the empty string `''` means
+> **all branches** (admin-only to send; readable by every signed-in user). The
+> admin feed reads `orderBy('createdAt', descending)`; a branch member reads
+> `where('branchId', whereIn: [selfBranch, ''])` (their branch + all-branches in
+> one index-free, rules-safe query, sorted newest-first client-side). WHO may
+> send/edit is enforced by `firestore.rules` (`broadcasts/{id}`).
 
 ### Storage schema
 

@@ -12,6 +12,117 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-06-21 — Communications Center · Phase 1: Broadcast vertical slice)
+
+First slice of the **Communications Center** — a one-way **broadcast**
+foundation. **Backend + cubit only** (no UI / routes yet — the compose + feed
+screens are a later phase), built as a full Clean-Architecture vertical slice
+reusing the established patterns. `flutter analyze` clean (0 issues); **80 tests
+pass** (+6 new).
+
+- **`BroadcastEntity`** (freezed, `communications/domain/entities`) — `id ·
+  title · message · senderId · senderName · senderRole (UserRole) · audience
+  (BroadcastAudience) · branchId · createdAt`, with an `isBranchScoped` getter.
+- **`BroadcastAudience` enum** (`core/enums/broadcast_audience.dart`) —
+  `allBranches` / `branch`, with `value` / `label` / `fromString` (unknown →
+  `allBranches`, the widest, safest default).
+- **`BroadcastModel`** (`communications/data/models`) — Firestore
+  (de)serialization (`fromMap`/`fromEntity`/`toMap`/`toEntity`/`copyWithId`). An
+  all-branches broadcast is stored with an **empty `branchId` sentinel** (never
+  null) so a branch member's `whereIn: [myBranch, '']` query stays provably safe
+  under the read rule; `createdAt` is a server timestamp. Round-trip + sentinel +
+  back-compat covered by `test/broadcast_model_test.dart` (6 cases).
+- **`BroadcastRepository` (+Impl)** + **`BroadcastRemoteDataSource` (+Impl)** over
+  the new **`broadcasts/{broadcastId}`** collection
+  (`AppConstants.broadcastsCollection`). Datasource throws `ServerException`; repo
+  → `ServerFailure`; maps `BroadcastModel → BroadcastEntity`. Reads are
+  **index-free**: the admin feed is `orderBy('createdAt', descending: true)`; a
+  branch member's feed is `where('branchId', whereIn: [selfBranch, ''])` (their
+  branch + all-branches in one query), sorted newest-first client-side (a
+  just-sent doc with a pending server timestamp pinned on top).
+- **`SendBroadcast` use case** (`communications/domain/usecases`) — wraps
+  `BroadcastRepository.sendBroadcast`, the canonical one-action-per-write pattern.
+- **`BroadcastCubit` (+ `BroadcastState`)** — a **hybrid** cubit (mirrors
+  `TaskCubit`): the `SendBroadcast` use case for the write, the repository
+  directly for the realtime feed stream. `load({branchId})` subscribes (admin:
+  all · branch member: their branch + all-branches), `send(...)` validates +
+  posts (the new broadcast surfaces via the same stream — no refetch). Keeps the
+  last good feed visible on a transient error; cancels its subscription in
+  `close()`. Provided app-wide in `main.dart`; composed in `injection.dart`
+  (`broadcastCubit`).
+- **Firestore rules** — new `broadcasts/{id}` block: **read** = admin, OR any
+  all-branches broadcast (`branchId == ''`, visible to every signed-in user), OR
+  a branch member whose branch matches; **create** = the sender themself (admin
+  any branch/all-branches; own-branch manager their branch only, never
+  all-branches); **update/delete** = admin or the owning-branch manager
+  (employees never write broadcasts). ⚠️ Deploy `firestore.rules`.
+- **Next phase:** the Communications Center UI (compose + feed screens + role
+  entry point/route) and optional notification fan-out on send.
+
+### Added / Changed (2026-06-21 — Branch Operations cockpit · steps 2–3: cubit + screens)
+
+Built the cockpit on the step-1 schema + domain. The task-centric task list is
+replaced by an **operations-centric** surface (Admin dashboard → Branch
+Operations → Employee details → Task details). Strictly monochrome, reusing the
+existing component library. **74 tests pass** (+3 widget); operations/task/core
+scope `flutter analyze` clean.
+
+- **`BranchOperationsCubit` + `BranchOperationsState`** (`operations/presentation/
+  cubit/`) — read/derive only: subscribes `TaskRepository.watchTasksByBranch`,
+  one-shot `GetUsersByBranch` + `ScheduleRepository.getSchedule`, and emits
+  `computeBranchWorkload(...)`. `setFilter` re-derives from the cached snapshot
+  (no refetch). Repo-direct (reuses the auth `GetUsersByBranch` use case like
+  `ScheduleCubit`); wired in `injection.dart` + `main.dart`. **Writes stay in
+  `TaskCubit`** — both watch the same branch stream, so a create/assign/review
+  propagates to the cockpit live.
+- **`BranchOperationsScreen`** (the cockpit) — summary header (Active · Overdue ·
+  Pending review · Staff active), an instant `[All][Morning][Night]` shift toggle,
+  overload-first `WorkloadCard` list, a New-Task FAB (`startNewTaskFlow`, branch
+  fixed), and an "All tasks" action. `WorkloadCard` extracted as a reusable widget
+  (avatar · role · shift badge · 4-up metric strip · current-task preview · error
+  border when `needsAttention`), widget-tested in `test/workload_card_test.dart`.
+- **`ManagerOperationsScreen`** — thin wrapper resolving the manager's own branch;
+  it is now the `/manager/tasks` page (the Operations tab).
+- **`EmployeeDetailScreen`** — the task-centric drill: one employee's tasks grouped
+  by status (Rework · In progress · Pending · Submitted · Completed), each a
+  `ManagerTaskCard` opening the existing `TaskDetailsScreen`.
+- **`BranchTaskListScreen`** (public) — extracted from the admin overview's private
+  drill; the full per-branch task list (incl. **unassigned** tasks), reached via the
+  cockpit "All tasks".
+- **Routing / retirement** — `app_router` repoints `/manager/tasks` to
+  `ManagerOperationsScreen`; the admin branch-overview drill (`_openBranch`) now
+  opens `BranchOperationsScreen`. The former `BranchTasksScreen` and
+  `ManagerTasksView` (flat manager task list) are **deleted** — superseded by the
+  cockpit + `BranchTaskListScreen`.
+
+### Added (2026-06-21 — Branch Operations redesign · step 1: shift tag + workload aggregation)
+
+First slice of the task-centric → **operations-centric** redesign (the Branch
+Operations cockpit: Admin dashboard → Branch Operations → Employee details → Task
+details; tasks live *inside* operations, no standalone Task Management screen).
+**Domain + schema only** — no cubit / screen / route yet (steps 2–3). `flutter
+analyze` clean (0 issues); **71 tests pass** (+12 new).
+
+- **`tasks.shift`** — new optional operational shift tag on `TaskEntity`
+  (nullable `ScheduleShift`; **null = "any"**, not shift-specific), serialized in
+  `TaskModel` (`'shift'` ↔ new `ScheduleShift.fromStringOrNull`, which **preserves
+  absence** instead of the lossy `fromString` morning-default). Back-compat:
+  missing / unknown → null. Supersedes the unused legacy `assignedShiftId`.
+  Freezed re-run. Tested in `test/task_model_shift_test.dart`.
+- **New `operations` feature (domain)** — pure aggregation behind the future
+  cockpit: `ShiftFilter` (all / morning / night, with `matchesTask` /
+  `matchesEmployee`), `EmployeeWorkload` (per-card view model: active / overdue /
+  submitted / completedToday + current task + today's shift), `BranchSummary` (the
+  four header numbers), and `computeBranchWorkload(...)` → `BranchWorkload`, which
+  joins the branch task stream × `getUsersByBranch` × today's `weekly_schedule`
+  under a shift lens and sorts employees **overload-first**. Deterministic
+  (`day` / `now` injectable), mirroring `computeEmployeeMetrics`. Tested in
+  `test/branch_workload_test.dart` (12 cases: bucketing, shift scoping, sort
+  order, current-task selection, completed-today, no-schedule fallback).
+- **Next:** `BranchOperationsCubit` + state (step 2), then the cockpit screen +
+  routes `/admin/branch/:branchId` & employee drill-down, and retiring the
+  standalone task screens as destinations (step 3).
+
 ### Fixed + Added (2026-06-21 — submission loading UX + premium status animations)
 
 `flutter analyze` clean (0 issues); 59 tests pass.

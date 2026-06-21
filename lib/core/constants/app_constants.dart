@@ -8,4 +8,5 @@ class AppConstants {
   static const String branchesCollection = 'branches';
   static const String weeklySchedulesCollection = 'weekly_schedules';
   static const String shiftSwapsCollection = 'shift_swaps';
+  static const String broadcastsCollection = 'broadcasts';
 }

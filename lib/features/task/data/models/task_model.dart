@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fbro/core/extensions/firestore_extensions.dart';
 import 'package:fbro/core/enums/attachment_type.dart';
 import 'package:fbro/core/enums/recurrence_frequency.dart';
+import 'package:fbro/core/enums/schedule_shift.dart';
 import 'package:fbro/core/enums/task_type.dart';
 import 'package:fbro/core/enums/task_status.dart';
 import 'package:fbro/core/enums/task_priority.dart';
@@ -31,6 +32,7 @@ class TaskModel {
   final List<ChecklistItem> checklist;
   final String? createdBy;
   final String? assignedShiftId;
+  final ScheduleShift? shift;
   final DateTime? deadline;
   final String? notes;
   final String? proofImageUrl;
@@ -58,6 +60,7 @@ class TaskModel {
     this.checklist = const [],
     this.createdBy,
     this.assignedShiftId,
+    this.shift,
     this.deadline,
     this.notes,
     this.proofImageUrl,
@@ -86,6 +89,7 @@ class TaskModel {
         checklist: _checklistFromList(map['checklist']),
         createdBy: map['createdBy'] as String?,
         assignedShiftId: map['assignedShiftId'] as String?,
+        shift: ScheduleShift.fromStringOrNull(map['shift'] as String?),
         deadline: map.date('deadline'),
         notes: map['notes'] as String?,
         proofImageUrl: map['proofImageUrl'] as String?,
@@ -114,6 +118,7 @@ class TaskModel {
         checklist: e.checklist,
         createdBy: e.createdBy,
         assignedShiftId: e.assignedShiftId,
+        shift: e.shift,
         deadline: e.deadline,
         notes: e.notes,
         proofImageUrl: e.proofImageUrl,
@@ -147,6 +152,7 @@ class TaskModel {
         'checklist': _checklistToList(checklist),
         'createdBy': createdBy,
         'assignedShiftId': assignedShiftId,
+        'shift': shift?.value,
         'deadline': deadline == null ? null : Timestamp.fromDate(deadline!),
         'notes': notes,
         'proofImageUrl': proofImageUrl,
@@ -174,6 +180,7 @@ class TaskModel {
         checklist: checklist,
         createdBy: createdBy,
         assignedShiftId: assignedShiftId,
+        shift: shift,
         deadline: deadline,
         notes: notes,
         proofImageUrl: proofImageUrl,
@@ -202,6 +209,7 @@ class TaskModel {
         checklist: checklist,
         createdBy: createdBy,
         assignedShiftId: assignedShiftId,
+        shift: shift,
         deadline: deadline,
         notes: notes,
         proofImageUrl: proofImageUrl,

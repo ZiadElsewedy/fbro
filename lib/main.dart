@@ -66,6 +66,8 @@ class App extends StatelessWidget {
         BlocProvider.value(value: AppDependencies.statisticsCubit),
         BlocProvider.value(value: AppDependencies.scheduleCubit),
         BlocProvider.value(value: AppDependencies.shiftSwapCubit),
+        BlocProvider.value(value: AppDependencies.branchOperationsCubit),
+        BlocProvider.value(value: AppDependencies.broadcastCubit),
       ],
       // Register / clear the FCM token as the auth session changes.
       child: BlocListener<AuthCubit, AuthState>(
