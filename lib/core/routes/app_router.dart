@@ -31,6 +31,7 @@ import 'package:fbro/features/communications/presentation/pages/communications_s
 import 'package:fbro/features/communications/presentation/pages/compose_broadcast_screen.dart';
 import 'package:fbro/features/communications/presentation/pages/broadcast_detail_screen.dart';
 import 'package:fbro/features/communications/presentation/pages/broadcast_templates_screen.dart';
+import 'package:fbro/features/communications/presentation/pages/broadcast_schedules_screen.dart';
 import 'package:fbro/features/notifications/presentation/pages/notifications_screen.dart';
 import 'route_names.dart';
 
@@ -265,6 +266,13 @@ GoRouter createRouter(AuthCubit authCubit) {
         pageBuilder: (context, state) => _slideTransition(
           state,
           BroadcastTemplatesScreen(pickMode: state.extra == 'pick'),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.communicationsSchedules,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const BroadcastSchedulesScreen(),
         ),
       ),
       GoRoute(

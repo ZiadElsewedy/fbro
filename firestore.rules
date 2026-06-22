@@ -281,6 +281,26 @@ service cloud.firestore {
         || (isManager() && resource.data.get('branchId', '') == selfBranch());
     }
 
+    // ── Broadcast schedules (Communications Center — Phase 2 Commit 4) ──
+    // Scheduled / recurring broadcasts. The `runBroadcastSchedules` Cloud
+    // Function fires + advances them via the Admin SDK (bypasses these rules);
+    // clients only manage their own.
+    //   read   — admin, OR the creator (`senderId`).
+    //   create — the creator themself; a manager only for their own branch.
+    //   update/delete — admin, OR the creator (pause/resume/edit/cancel).
+    match /broadcastSchedules/{scheduleId} {
+      allow read: if isAdmin()
+        || resource.data.get('senderId', '') == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.get('senderId', '') == request.auth.uid
+        && (isAdmin()
+            || (isManager()
+                && (request.resource.data.get('branchId', '') == selfBranch()
+                    || request.resource.data.get('branchId', '') == '')));
+      allow update, delete: if isAdmin()
+        || resource.data.get('senderId', '') == request.auth.uid;
+    }
+
     // ── Notifications (Notification System Phase 1) ────────────────
     // One in-app notification doc per recipient (`notifications/{id}`). Task
     // events are written by the client (`NotifyTaskEvent`); broadcast

@@ -68,6 +68,10 @@ import 'package:fbro/features/communications/data/datasources/broadcast_template
 import 'package:fbro/features/communications/data/repositories/broadcast_template_repository_impl.dart';
 import 'package:fbro/features/communications/domain/repositories/broadcast_template_repository.dart';
 import 'package:fbro/features/communications/presentation/cubit/broadcast_template_cubit.dart';
+import 'package:fbro/features/communications/data/datasources/broadcast_schedule_remote_datasource.dart';
+import 'package:fbro/features/communications/data/repositories/broadcast_schedule_repository_impl.dart';
+import 'package:fbro/features/communications/domain/repositories/broadcast_schedule_repository.dart';
+import 'package:fbro/features/communications/presentation/cubit/broadcast_schedule_cubit.dart';
 import 'package:fbro/features/notifications/data/datasources/notification_remote_datasource.dart';
 import 'package:fbro/features/notifications/data/repositories/notification_repository_impl.dart';
 import 'package:fbro/features/notifications/domain/repositories/notification_repository.dart';
@@ -101,6 +105,9 @@ class AppDependencies {
 
   // ─── Broadcast templates (Phase 2 Commit 2) ─────────────────
   static late final BroadcastTemplateCubit broadcastTemplateCubit;
+
+  // ─── Broadcast schedules (Phase 2 Commit 4) ─────────────────
+  static late final BroadcastScheduleCubit broadcastScheduleCubit;
 
   // ─── Notifications (Notification System Phase 1) ────────────
   static late final NotificationCubit notificationCubit;
@@ -238,6 +245,14 @@ class AppDependencies {
     );
     broadcastTemplateCubit =
         BroadcastTemplateCubit(broadcastTemplateRepository);
+
+    // ─── Broadcast schedules (Phase 2 Commit 4) ───────────────
+    final BroadcastScheduleRepository broadcastScheduleRepository =
+        BroadcastScheduleRepositoryImpl(
+      BroadcastScheduleRemoteDataSourceImpl(FirebaseFirestore.instance),
+    );
+    broadcastScheduleCubit =
+        BroadcastScheduleCubit(broadcastScheduleRepository);
 
     // ─── Notifications (Notification System Phase 1) ──────────
     notificationCubit = NotificationCubit(

@@ -28,6 +28,7 @@
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 
@@ -39,6 +40,8 @@ const messaging = admin.messaging();
 const USERS = "users";
 const BROADCASTS = "broadcasts";
 const NOTIFICATIONS = "notifications";
+const BROADCAST_SCHEDULES = "broadcastSchedules";
+const BROADCAST_OPENS = "broadcastOpens";
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -495,3 +498,149 @@ exports.onNotificationCreated = onDocumentCreated(
     });
   },
 );
+
+// ── Recurrence math (mirrors lib/.../recurrence_rule.dart) ──
+function addDays(date, days) {
+  const d = new Date(date.getTime());
+  d.setDate(d.getDate() + days);
+  return d;
+}
+function addMonths(date, months) {
+  const d = new Date(date.getTime());
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, lastDay));
+  return d;
+}
+
+// The next run strictly after `from` (a JS Date) for a schedule doc, or null
+// when the series has completed (one-time, or past endDate).
+function computeScheduleNextRun(s, from) {
+  const type = s.recurrenceType || "oneTime";
+  if (type === "oneTime") return null;
+  let next;
+  if (type === "daily") next = addDays(from, 1);
+  else if (type === "weekly") next = addDays(from, 7);
+  else if (type === "monthly") next = addMonths(from, 1);
+  else if (type === "custom") next = addDays(from, Math.max(1, Number(s.interval) || 1));
+  else return null;
+  const endDate = s.endDate && s.endDate.toDate ? s.endDate.toDate() : null;
+  if (endDate && next > endDate) return null;
+  return admin.firestore.Timestamp.fromDate(next);
+}
+
+/**
+ * The scheduled-broadcast poller (Phase 2 Commit 4) — the chosen scheduler
+ * architecture (a single onSchedule function, not per-schedule Cloud Scheduler
+ * jobs): scales to any number of schedules with one cron job. Every 5 minutes it
+ * fires every due, enabled schedule through the shared `dispatchBroadcast`
+ * engine, then advances `nextRunAt` from the recurrence rule (or disables a
+ * completed one-time / past-endDate schedule). Up to ~5-min firing granularity.
+ *
+ * Query is `nextRunAt <= now` only (a single-field inequality — automatic index);
+ * the `enabled` flag is filtered in JS to avoid a composite index.
+ */
+exports.runBroadcastSchedules = onSchedule("every 5 minutes", async () => {
+  const now = admin.firestore.Timestamp.now();
+  const snap = await db
+    .collection(BROADCAST_SCHEDULES)
+    .where("nextRunAt", "<=", now)
+    .get();
+
+  let fired = 0;
+  for (const doc of snap.docs) {
+    const s = doc.data() || {};
+    if (s.enabled === false) continue; // paused
+
+    // The sender's current branch (for a manager's custom-recipient filter).
+    let senderBranch = "";
+    try {
+      const u = await db.collection(USERS).doc(String(s.senderId || "")).get();
+      senderBranch = u.exists ? u.data().branchId || "" : "";
+    } catch (_) {
+      // best-effort
+    }
+
+    try {
+      await dispatchBroadcast({
+        senderId: s.senderId,
+        senderRole: s.senderRole,
+        senderBranch,
+        senderName: s.senderName,
+        title: s.title,
+        body: s.message,
+        category: s.category,
+        priority: s.priority,
+        channel: s.channel,
+        audience: s.audience,
+        branchId: s.branchId || "",
+        targetUserId: "",
+        targetUserIds: Array.isArray(s.targetUserIds) ? s.targetUserIds : [],
+        roleFilter: s.roleFilter || "",
+      });
+      fired += 1;
+    } catch (err) {
+      logger.warn("schedule dispatch failed", { id: doc.id, error: String(err) });
+    }
+
+    const nextRunAt = computeScheduleNextRun(s, now.toDate());
+    await doc.ref
+      .update({
+        lastRunAt: now,
+        runCount: (Number(s.runCount) || 0) + 1,
+        nextRunAt: nextRunAt, // null disables a completed schedule
+        enabled: nextRunAt !== null,
+      })
+      .catch((err) =>
+        logger.warn("schedule advance failed", { id: doc.id, error: String(err) }),
+      );
+  }
+
+  logger.info("broadcast schedules run", { due: snap.size, fired });
+});
+
+/**
+ * Daily housekeeping (retention / cleanup, Phase 2): hard-deletes long-dead docs
+ * so the collections stay lean — soft-deleted broadcasts > 90 days, read +
+ * archived notifications > 60 days, and broadcast-open guards > 90 days.
+ */
+exports.broadcastHousekeeping = onSchedule("every 24 hours", async () => {
+  const now = Date.now();
+  const cutoff = (days) =>
+    admin.firestore.Timestamp.fromMillis(now - days * 24 * 60 * 60 * 1000);
+
+  const deleteQuery = async (query, label) => {
+    let removed = 0;
+    // Page in chunks to respect the 500-write batch limit.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const snap = await query.limit(BATCH_LIMIT).get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      removed += snap.size;
+      if (snap.size < BATCH_LIMIT) break;
+    }
+    if (removed > 0) logger.info(`housekeeping removed ${removed} ${label}`);
+  };
+
+  try {
+    await deleteQuery(
+      db.collection(BROADCASTS).where("deletedAt", "<=", cutoff(90)),
+      "old soft-deleted broadcasts",
+    );
+    await deleteQuery(
+      db.collection(NOTIFICATIONS).where("archivedAt", "<=", cutoff(60)),
+      "old archived notifications",
+    );
+    await deleteQuery(
+      db.collection(BROADCAST_OPENS).where("at", "<=", cutoff(90)),
+      "old broadcast-open guards",
+    );
+  } catch (err) {
+    logger.warn("housekeeping failed", { error: String(err) });
+  }
+});

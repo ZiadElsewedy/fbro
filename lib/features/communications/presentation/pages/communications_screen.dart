@@ -64,10 +64,10 @@ class _CommunicationsScreenState extends State<CommunicationsScreen> {
       case BroadcastCardAction.open:
         _openDetail(b);
       case BroadcastCardAction.duplicate:
-        context.push(RouteNames.communicationsCompose, extra: b);
       case BroadcastCardAction.scheduleAgain:
-        // Wired in the Scheduler phase (Commit 4).
-        break;
+        // Both open the composer prefilled; Schedule Again then uses the
+        // composer's "Schedule" action to set a cadence.
+        context.push(RouteNames.communicationsCompose, extra: b);
       case BroadcastCardAction.repeatNow:
         final user = context.currentUser;
         if (user == null) return;
@@ -114,6 +114,12 @@ class _CommunicationsScreenState extends State<CommunicationsScreen> {
         titleSpacing: AppSpacing.pagePadding,
         title: Text('Communications Center', style: AppTypography.h3),
         actions: [
+          IconButton(
+            tooltip: 'Scheduled',
+            onPressed: () => context.push(RouteNames.communicationsSchedules),
+            icon: const Icon(Icons.schedule_rounded,
+                color: AppColors.textSecondary),
+          ),
           IconButton(
             tooltip: 'Templates',
             onPressed: () => context.push(RouteNames.communicationsTemplates),

@@ -11,8 +11,25 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-22 (Communications Center — Phase 2 · Commit 3)
+**Last updated:** 2026-06-22 (Communications Center — Phase 2 · Commit 4)
 **Version:** 1.0.0+1 · **Branch:** `feature/notification` (DROP — monochrome enterprise UX)
+
+> **Communications Center · Phase 2 — Commit 4 (2026-06-22):** The **scheduler** —
+> recurring / one-time broadcasts. Architecture = a **single `onSchedule` poller**
+> (`runBroadcastSchedules`, every 5 min: `nextRunAt <= now`, JS-filter enabled,
+> fire via `dispatchBroadcast`, advance `nextRunAt`/disable) — scales to unlimited
+> schedules with one cron, no composite index. New **`broadcastSchedules`** slice:
+> `BroadcastScheduleEntity` (**plain immutable** value object — 20 fields, no
+> freezed to avoid generated-file drift), `BroadcastScheduleModel` (with
+> `targetUserIds`), repo/datasource, freezed **`BroadcastScheduleState`** +
+> repo-direct **`BroadcastScheduleCubit`** (create/pause/resume/cancel). Pure
+> **`RecurrenceRule`** + `BroadcastRecurrence` enum. UI: `broadcast_schedules_screen`
+> (`/communications/schedules`: next-run · recurrence · run-count · pause/resume ·
+> cancel) + a composer **Schedule** sheet (first-send date/time · cadence · custom
+> interval · end date) + **Schedule Again** from history. New
+> **`broadcastHousekeeping`** (daily retention cleanup). ⚠️ Deploy
+> `firestore:rules,functions` (Blaze + Cloud Scheduler). **Pending:** reminders ·
+> analytics dashboard.
 
 > **Communications Center · Phase 2 — Commit 3 (2026-06-22):** Advanced recipient
 > targeting. New **`BroadcastAudience.custom`** (multi-recipient; `__custom__`

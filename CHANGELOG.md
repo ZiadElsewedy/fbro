@@ -12,6 +12,44 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-06-22 — Communications Center · Phase 2 Commit 4: scheduled + recurring broadcasts)
+
+Fourth commit of the **Premium Upgrade** — the **scheduler**. Architecture: a
+**single scheduled-Function poller** (one `onSchedule` cron, not per-schedule
+Cloud Scheduler jobs) — scales to unlimited schedules cheaply, ~5-min firing
+granularity. `node --check functions/index.js` valid.
+
+- **`broadcastSchedules` slice** — `BroadcastScheduleEntity` (a **plain immutable
+  value object**, not freezed: 20 fields incl. recurrence — a deliberate choice to
+  avoid generated-file drift in a toolchain that can't run build_runner here) +
+  `BroadcastScheduleModel` (carries `targetUserIds` for custom schedules),
+  `BroadcastScheduleRepository(+Impl)`/`RemoteDataSource(+Impl)` over the new
+  **`broadcastSchedules/{id}`** collection, and the repo-direct
+  **`BroadcastScheduleCubit`** (load · create · pause/resume (`setEnabled`) ·
+  cancel · edit). State is freezed (`BroadcastScheduleState`).
+- **Recurrence engine** — `BroadcastRecurrence` enum (oneTime/daily/weekly/
+  monthly/custom) + pure
+  [`recurrence_rule.dart`](lib/features/communications/domain/recurrence_rule.dart)
+  (`nextRun` with month-end clamping + endDate cap; `isActive`).
+- **Cloud Functions** — `runBroadcastSchedules` (`onSchedule('every 5 minutes')`):
+  queries `nextRunAt <= now` (single-field inequality — no composite index),
+  filters `enabled` in JS, fires each due schedule through the shared
+  `dispatchBroadcast`, then advances `nextRunAt`/`runCount`/`lastRunAt` (or
+  disables a completed one). `broadcastHousekeeping` (`every 24 hours`): retention
+  cleanup of old soft-deleted broadcasts (>90d), archived notifications (>60d),
+  and broadcast-open guards (>90d). `firestore.rules` `broadcastSchedules` block
+  (admin any · creator own; the function advances via Admin SDK).
+- **UI** — `broadcast_schedules_screen.dart` (next run · recurrence · run-count ·
+  **pause/resume** switch · **cancel**), reached from the Communications app-bar
+  clock. The composer gains a **Schedule** action → a sheet (first-send date/time ·
+  repeat cadence · custom interval · optional end date) that creates a schedule
+  instead of sending. **Schedule Again** in the history opens the composer
+  prefilled.
+- **Tests** — `recurrence_rule_test.dart` (one-time/daily/weekly/monthly/custom +
+  month clamp + endDate stop + isActive), `broadcast_schedule_model_test.dart`
+  (round-trip + defaults + custom targetUserIds). ⚠️ Deploy `firestore:rules` +
+  `functions` (Blaze; the scheduled functions need Cloud Scheduler enabled).
+
 ### Added (2026-06-22 — Communications Center · Phase 2 Commit 3: advanced recipient targeting)
 
 Third commit of the **Premium Upgrade** — multi-recipient + role-filtered

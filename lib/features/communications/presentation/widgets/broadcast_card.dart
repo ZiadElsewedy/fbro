@@ -160,8 +160,7 @@ class BroadcastCard extends StatelessWidget {
               'Repeat now'),
           _item(BroadcastCardAction.duplicate, Icons.copy_rounded, 'Duplicate'),
           _item(BroadcastCardAction.scheduleAgain, Icons.schedule_rounded,
-              'Schedule again',
-              enabled: false),
+              'Schedule again'),
           if (archived)
             _item(BroadcastCardAction.unarchive, Icons.unarchive_rounded,
                 'Unarchive')
