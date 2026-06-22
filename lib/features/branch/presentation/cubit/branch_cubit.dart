@@ -21,10 +21,12 @@ class BranchCubit extends Cubit<BranchState> {
         orElse: () => false,
       );
 
-  Future<void> load() async {
+  /// Loads the branch list. Reads are served from the repository's in-memory
+  /// cache when fresh; [force] (pull-to-refresh) bypasses it for a live re-read.
+  Future<void> load({bool force = false}) async {
     emit(const BranchState.loading());
     try {
-      emit(BranchState.loaded(await _repository.getBranches()));
+      emit(BranchState.loaded(await _repository.getBranches(forceRefresh: force)));
     } on Failure catch (e) {
       emit(BranchState.error(e.message));
     } catch (_) {

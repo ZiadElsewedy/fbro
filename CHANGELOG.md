@@ -12,6 +12,68 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added / Changed (2026-06-22 — Cache optimization: in-memory cache layer + idempotent loads)
+
+A **zero-dependency** read-reduction pass (Phase 0 audit → Phase 1 design →
+Phase 2 implementation). No new packages; **Isar/Hive deliberately deferred**
+until metrics justify a persistent cache. The goal: stop re-reading the same
+read-mostly Firestore data on every navigation. ⚠️ Could **not** run
+`flutter analyze` / `flutter test` in the dev environment — its Flutter
+(3.38.5 / Dart 3.10.4) predates the project's `sdk: ^3.12.1`, so dependencies
+don't resolve. **Verify locally** (`flutter analyze`, `flutter test`).
+
+- **New `core/cache/` layer** (3 reusable primitives, no deps):
+  [`CachePolicy`](lib/core/cache/cache_policy.dart) (volatility presets —
+  `stable` 30 min, `volatile` 60 s), [`CacheEntry`](lib/core/cache/cache_entry.dart)
+  (value + `storedAt` + `isStale`), and
+  [`CacheManager`](lib/core/cache/cache_manager.dart) — a keyed in-memory store
+  with cache-aside `readOrLoad`, `write`/`read`, `invalidatePrefix`, and `clear`
+  (5 used methods — no speculative API). Canonical keys live in `CacheKeys`.
+- **One shared `CacheManager`, injected (not a global locator)** — created once
+  in [`injection.dart`](lib/core/di/injection.dart) and passed into the four
+  repositories that own read-mostly data; **cleared on sign-out** (the existing
+  `AuthCubit` listener in [`main.dart`](lib/main.dart)).
+- **Repository caching + write-through invalidation** (cache lives at the data
+  boundary; domain contracts unchanged except an optional
+  `getBranches(forceRefresh:)`):
+  - **Branches** ([`BranchRepositoryImpl`](lib/features/branch/data/repositories/branch_repository_impl.dart))
+    — `getBranches` cached (`stable`); every branch write invalidates `branches:*`.
+    Was re-read by ~5 cubits per session → now **1 read/session**.
+  - **Branch members** ([`AuthRepositoryImpl`](lib/features/auth/data/repositories/auth_repository_impl.dart))
+    — `getUsersByBranch` cached per branch (`volatile` 60 s — short so a
+    *cross-device* membership change doesn't leave another user's assignee picker
+    stale; same-device writes invalidate immediately via
+    [`UserAdminRepositoryImpl`](lib/features/admin/data/repositories/user_admin_repository_impl.dart)
+    dropping `members:*`). `getUser` left **uncached** on purpose (it backs the
+    pending-approval manual-refresh button).
+  - **Profile** ([`ProfileRepositoryImpl`](lib/features/profile/data/repositories/profile_repository_impl.dart))
+    — `getProfile` cached (`stable`), refreshed write-through on `updateProfile`.
+    Was a fresh `users/{uid}` read **every Profile-tab visit** → now 1/session.
+- **Idempotent `load()` + TTL** (mirrors the existing `NotificationCubit` guard)
+  so re-entering a screen no longer re-fetches:
+  [`StatisticsCubit`](lib/features/statistics/presentation/cubit/statistics_cubit.dart)
+  (60 s TTL per scope — stops re-aggregating `users`+`tasks`+`branches`+`schedules`
+  on every Home visit), [`TaskCubit`](lib/features/task/presentation/cubit/task_cubit.dart)
+  (no re-subscribe / no branch-name re-read when already streaming the same user),
+  [`ProfileCubit`](lib/features/profile/presentation/cubit/profile_cubit.dart),
+  [`ScheduleCubit`](lib/features/schedule/presentation/cubit/schedule_cubit.dart)
+  (60 s, keyed by branch+week), and [`BranchCubit`](lib/features/branch/presentation/cubit/branch_cubit.dart).
+  Each gained an optional `force` (pull-to-refresh bypasses the guard).
+- **Navigation** — kept the **push** model (the bottom nav lives only on the home
+  shells; tab destinations are pushed detail screens whose back affordance depends
+  on the push stack, so `go` would strand the user). Added a **same-route guard**
+  in [`RoleScaffold`](lib/core/widgets/role_scaffold.dart) (no stacked duplicates).
+  The redundant-read symptom is resolved by the cache + idempotent loads, not by a
+  nav-mechanism change. (A `StatefulShellRoute` keep-alive refactor is recorded as
+  a possible follow-up if rebuild churn shows up in profiling.)
+- **Measurable metrics** — new device-free tests:
+  [`cache_manager_test.dart`](test/cache/cache_manager_test.dart) (TTL /
+  invalidation / hit-rate) and
+  [`branch_repository_cache_test.dart`](test/cache/branch_repository_cache_test.dart)
+  (counting fake datasource proves **5 reads → 1** Firestore call, write
+  invalidation, force bypass — datasource-invocation count is the read metric).
+  See CURRENT_STATE.md for the before/after read table.
+
 ### Fixed (2026-06-21 — Communications Center: "UNAUTHENTICATED" on Send)
 
 Sending a broadcast failed with a raw **UNAUTHENTICATED** snackbar — because the

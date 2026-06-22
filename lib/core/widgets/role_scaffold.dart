@@ -50,16 +50,19 @@ class RoleScaffold extends StatelessWidget {
   void _onNavTap(BuildContext context, int index) {
     final role = context.currentRole;
     if (role == null) return;
-    switch (index) {
-      case 0:
-        break; // Already on the role home.
-      case 1:
-        context.push(RouteNames.tasksForRole(role));
-      case 2:
-        context.push(RouteNames.scheduleForRole(role));
-      case 3:
-        context.push(RouteNames.profile);
+    final target = switch (index) {
+      1 => RouteNames.tasksForRole(role),
+      2 => RouteNames.scheduleForRole(role),
+      3 => RouteNames.profile,
+      _ => null, // index 0 = already on the role home.
+    };
+    // Guard against re-pushing the route we're already on (no stacked
+    // duplicates). The destinations are pushed detail screens with their own
+    // back affordance, so push (not go) keeps back-navigation correct.
+    if (target == null || target == GoRouterState.of(context).matchedLocation) {
+      return;
     }
+    context.push(target);
   }
 
   @override

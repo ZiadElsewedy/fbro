@@ -1,3 +1,5 @@
+import 'package:fbro/core/cache/cache_manager.dart';
+import 'package:fbro/core/cache/cache_policy.dart';
 import 'package:fbro/core/errors/exceptions.dart';
 import 'package:fbro/core/errors/failures.dart';
 import 'package:fbro/features/auth/data/datasources/auth_remote_datasource.dart';
@@ -9,8 +11,9 @@ import 'package:fbro/features/auth/domain/repositories/auth_repository.dart';
 class AuthRepositoryImpl implements AuthRepository {
   final AuthRemoteDataSource _remote;
   final UserRemoteDataSource _userRemote;
+  final CacheManager _cache;
 
-  AuthRepositoryImpl(this._remote, this._userRemote);
+  AuthRepositoryImpl(this._remote, this._userRemote, this._cache);
 
   @override
   Stream<UserEntity?> get authStateChanges =>
@@ -103,8 +106,20 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<List<UserEntity>> getUsersByBranch(String branchId) async {
     try {
-      final models = await _userRemote.getUsersByBranch(branchId);
-      return models.map((m) => m.toEntity()).toList();
+      // Branch members are read by ~5 cubits (task directory, schedule, branch
+      // ops, broadcast pickers) and re-read on every visit. Cache per branch,
+      // but only `volatile` (60s): same-device writes invalidate `members:`
+      // immediately (UserAdminRepositoryImpl); the short TTL bounds how long a
+      // cross-device membership change (admin moves an employee) can leave
+      // another user's assignee picker stale.
+      return await _cache.readOrLoad<List<UserEntity>>(
+        CacheKeys.branchMembers(branchId),
+        CachePolicy.volatile,
+        () async {
+          final models = await _userRemote.getUsersByBranch(branchId);
+          return models.map((m) => m.toEntity()).toList();
+        },
+      );
     } on AuthException catch (e) {
       throw AuthFailure(e.message);
     }

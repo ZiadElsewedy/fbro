@@ -20,6 +20,13 @@ class ScheduleCubit extends Cubit<ScheduleState> {
   String _branchId = '';
   DateTime _weekStart = ScheduleWeek.currentWeekStart();
 
+  /// Freshness guard so re-entering the Schedule tab doesn't re-read the roster
+  /// doc each time; a different (branch, week) always loads, and `refresh()`
+  /// forces. Branch members are additionally cached at the repository layer.
+  static const Duration _ttl = Duration(seconds: 60);
+  String? _loadedKey;
+  DateTime? _loadedAt;
+
   ScheduleCubit(this._repository, this._getUsersByBranch)
       : super(const ScheduleState.initial());
 
@@ -34,11 +41,29 @@ class ScheduleCubit extends Cubit<ScheduleState> {
 
   /// Loads the schedule + branch members for ([branchId], [weekStart]). Pass an
   /// empty [branchId] (admin, no branch picked yet) to render the empty view.
-  Future<void> load({required String branchId, DateTime? weekStart}) async {
+  Future<void> load({
+    required String branchId,
+    DateTime? weekStart,
+    bool force = false,
+  }) async {
     _branchId = branchId;
     _weekStart = ScheduleWeek.startOf(weekStart ?? _weekStart);
+
+    final key = '$_branchId|${_weekStart.toIso8601String()}';
+    final isLoaded =
+        state.maybeWhen(loaded: (_, _, _, _, _) => true, orElse: () => false);
+    if (!force &&
+        isLoaded &&
+        _loadedKey == key &&
+        _loadedAt != null &&
+        DateTime.now().difference(_loadedAt!) < _ttl) {
+      return;
+    }
+
     emit(const ScheduleState.loading());
     await _emitLoaded();
+    _loadedKey = key;
+    _loadedAt = DateTime.now();
   }
 
   Future<void> previousWeek() =>
@@ -50,7 +75,8 @@ class ScheduleCubit extends Cubit<ScheduleState> {
   Future<void> selectBranch(String branchId) =>
       load(branchId: branchId, weekStart: _weekStart);
 
-  Future<void> refresh() => load(branchId: _branchId, weekStart: _weekStart);
+  Future<void> refresh() =>
+      load(branchId: _branchId, weekStart: _weekStart, force: true);
 
   /// Creates an empty schedule for the current (branch, week).
   Future<void> createSchedule({String? createdBy}) {

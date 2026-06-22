@@ -99,6 +99,7 @@ lib/
 ├── main.dart                 # Bootstraps Firebase, DI, router, MaterialApp.router
 ├── firebase_options.dart     # FlutterFire generated config
 ├── core/
+│   ├── cache/                # in-memory cache layer — cache_policy (stable/volatile TTLs) · cache_entry · cache_manager (readOrLoad/read/write/invalidatePrefix/clear) + CacheKeys. One shared CacheManager, DI-injected into the read-mostly repos
 │   ├── constants/            # app_constants.dart (appName, collection names)
 │   ├── di/                   # injection.dart — AppDependencies service locator
 │   ├── enums/                # user_role · approval_status · task_* · recurrence_frequency · notification_type · schedule_day · schedule_shift · swap_status · broadcast_audience · broadcast_category
@@ -684,6 +685,35 @@ Patterns below are established across the codebase and **must be reused**.
   `*Failure` (`AuthException` → `AuthFailure`).
 - Convert `Model → Entity` (`model.toEntity()`) before returning; the rest of
   the app sees entities only.
+
+### Caching conventions (`core/cache/`)
+- **Cache at the repository impl** (a data-layer concern), never in cubits/UI.
+  Read-mostly **reference** data only — branches (`BranchRepositoryImpl`), branch
+  members (`AuthRepositoryImpl.getUsersByBranch`), profile
+  (`ProfileRepositoryImpl.getProfile`). **Live Firestore streams** (tasks,
+  notifications) and `getUser` (pending-approval refresh) are **never** cached.
+- Use the one shared `CacheManager` (injected from `injection.dart`); keys come
+  from `CacheKeys`. Read via `readOrLoad(key, policy, loader)` or
+  `read`/`write`. Policy by volatility: `CachePolicy.stable` (30 min) for
+  owner-edited reference data (branch list/metadata, profile);
+  `CachePolicy.volatile` (60 s) for data another device can change
+  (branch membership) or snapshot aggregations.
+- **Two-layer invalidation:** passive TTL **and** active write-through — every
+  write invalidates its key(s) (`invalidate`/`invalidatePrefix`), incl.
+  **cross-feature** (an admin user write in `UserAdminRepositoryImpl` drops
+  `members:*`). Sign-out calls `cacheManager.clear()` (in `main.dart`).
+- Expose an optional `forceRefresh`/`force` on the read path for pull-to-refresh
+  (bypasses the cached value, re-warms it).
+- The read reduction is proven by the call-counting tests under `test/cache/`
+  (a fake datasource asserts N reads → 1 invocation); no runtime instrumentation
+  ships in `CacheManager`.
+
+### Cubit `load()` conventions (idempotent + TTL)
+- A screen's `load()` must be **idempotent**: re-entering a screen (its
+  `initState` re-fires) must not re-fetch. Guard with a scope key + a TTL stamp
+  (mirrors `NotificationCubit`); return early when the same scope was loaded
+  within the TTL. For stream cubits (`TaskCubit`), no-op when already subscribed
+  to the same user. Provide an optional `force` so pull-to-refresh can bypass.
 
 ### Datasource conventions
 - Abstract + `Impl`; the `Impl` receives the Firebase SDK instance via

@@ -102,6 +102,9 @@ class App extends StatelessWidget {
             unauthenticated: () {
               AppDependencies.notificationService.forgetUser();
               AppDependencies.notificationCubit.clear();
+              // Drop all cached reference data so the next session never sees
+              // the previous user's branches / members / profile.
+              AppDependencies.cacheManager.clear();
             },
             orElse: () {},
           );

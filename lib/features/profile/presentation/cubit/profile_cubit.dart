@@ -32,12 +32,21 @@ class ProfileCubit extends Cubit<ProfileState> {
         saved: (s) => s.profile,
       );
 
+  String? _loadedUid;
+
+  /// Loads the profile for [uid]. Idempotent: re-entering the Profile tab when
+  /// the same user's profile is already loaded is a no-op (the repo also caches
+  /// the read).
   Future<void> loadProfile(String uid) async {
+    final isLoaded = state.maybeMap(loaded: (_) => true, orElse: () => false);
+    if (isLoaded && _loadedUid == uid) return;
+
     emit(const ProfileState.loading());
     try {
       final profile = await _getProfile(uid);
       if (profile != null) {
         emit(ProfileState.loaded(profile));
+        _loadedUid = uid;
       } else {
         emit(const ProfileState.error('Profile not found.'));
       }

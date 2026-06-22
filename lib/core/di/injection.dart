@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:fbro/core/cache/cache_manager.dart';
 import 'package:fbro/core/services/notification_service.dart';
 import 'package:fbro/features/auth/data/datasources/auth_remote_datasource.dart';
 import 'package:fbro/features/auth/data/datasources/user_remote_datasource.dart';
@@ -101,10 +102,19 @@ class AppDependencies {
   /// FCM foundation (Phase 6) — token registration + foreground handling.
   static late final NotificationService notificationService;
 
+  /// Shared in-memory cache for read-mostly reference data (branches, branch
+  /// members, profile). One instance, injected into the repositories that own
+  /// that data; cleared on sign-out. See `core/cache/`.
+  static late final CacheManager cacheManager;
+
   /// Phase 3 task foundation, activated by the Phase 4 [taskCubit] + use cases.
   static late final TaskRepository taskRepository;
 
   static void init() {
+    // Shared cache, created once and injected into the repositories that own
+    // read-mostly reference data.
+    cacheManager = CacheManager();
+
     final authRemoteDataSource = AuthRemoteDataSourceImpl(FirebaseAuth.instance);
     final userRemoteDataSource = UserRemoteDataSourceImpl(FirebaseFirestore.instance);
     final profileRemoteDataSource = ProfileRemoteDataSourceImpl(
@@ -117,10 +127,10 @@ class AppDependencies {
     );
 
     final AuthRepository authRepository =
-        AuthRepositoryImpl(authRemoteDataSource, userRemoteDataSource);
+        AuthRepositoryImpl(authRemoteDataSource, userRemoteDataSource, cacheManager);
 
     final ProfileRepository profileRepository =
-        ProfileRepositoryImpl(profileRemoteDataSource, authRemoteDataSource);
+        ProfileRepositoryImpl(profileRemoteDataSource, authRemoteDataSource, cacheManager);
 
     taskRepository = TaskRepositoryImpl(taskRemoteDataSource);
 
@@ -129,7 +139,7 @@ class AppDependencies {
     final branchRemoteDataSource =
         BranchRemoteDataSourceImpl(FirebaseFirestore.instance);
     final BranchRepository branchRepository =
-        BranchRepositoryImpl(branchRemoteDataSource);
+        BranchRepositoryImpl(branchRemoteDataSource, cacheManager);
 
     // Notification repository is built early — the TaskCubit needs the
     // NotifyTaskEvent use case for its automatic task-event notifications.
@@ -179,7 +189,7 @@ class AppDependencies {
     final userAdminRemoteDataSource =
         UserAdminRemoteDataSourceImpl(FirebaseFirestore.instance);
     final UserAdminRepository userAdminRepository =
-        UserAdminRepositoryImpl(userAdminRemoteDataSource);
+        UserAdminRepositoryImpl(userAdminRemoteDataSource, cacheManager);
 
     branchCubit = BranchCubit(branchRepository);
     adminUsersCubit = AdminUsersCubit(userAdminRepository, branchRepository);

@@ -28,9 +28,9 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  void _load() {
+  void _load({bool force = false}) {
     final user = context.currentUser;
-    if (user != null) context.read<StatisticsCubit>().load(user);
+    if (user != null) context.read<StatisticsCubit>().load(user, force: force);
   }
 
   @override
@@ -46,12 +46,12 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
             icon: const Icon(Icons.refresh_rounded,
                 color: AppColors.textSecondary),
             tooltip: 'Refresh',
-            onPressed: _load,
+            onPressed: () => _load(force: true),
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async => _load(),
+        onRefresh: () async => _load(force: true),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding,
               AppSpacing.lg, AppSpacing.pagePadding, AppSpacing.xxxl),

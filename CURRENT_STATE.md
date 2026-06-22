@@ -11,8 +11,46 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-22 (Notification System — Phase 1)
-**Version:** 1.0.0+1 · **Branch:** `feature/notification` (DROP — monochrome enterprise UX)
+**Last updated:** 2026-06-22 (Cache optimization — in-memory layer + idempotent loads)
+**Version:** 1.0.0+1 · **Branch:** `improvement/cache-optimization` (DROP — monochrome enterprise UX)
+
+> **Cache optimization · zero-dependency (2026-06-22):** A read-reduction pass —
+> **no new packages** (Isar/Hive deferred until metrics justify a persistent
+> cache). **① New `core/cache/` layer:** `CachePolicy` (stable 30 min / volatile
+> 60 s) · `CacheEntry` · `CacheManager` (cache-aside `readOrLoad`, `read`/`write`,
+> `invalidatePrefix`, `clear` — 5 used methods only) + `CacheKeys`.
+> **② One shared `CacheManager`** injected via `injection.dart` into
+> the 4 repos that own read-mostly data, **cleared on sign-out**. **③ Repository
+> caching + write-through invalidation:** branches (`BranchRepositoryImpl`,
+> `getBranches` + `forceRefresh`), branch members (`AuthRepositoryImpl.getUsersByBranch`;
+> invalidated by admin user writes in `UserAdminRepositoryImpl`), profile
+> (`ProfileRepositoryImpl.getProfile`, refreshed on update). `getUser` left
+> uncached (backs the pending-approval refresh button). **④ Idempotent `load()`
+> + TTL:** `StatisticsCubit` (60 s/scope — no more full-collection re-aggregation
+> per Home visit), `TaskCubit` (no re-subscribe/branch-name re-read for the same
+> user), `ProfileCubit`, `ScheduleCubit` (60 s by branch+week), `BranchCubit`;
+> each gained an optional `force` for pull-to-refresh. **⑤ Navigation:** kept the
+> **push** model (the bottom nav lives only on the home shells; tab destinations
+> are pushed detail screens), added a same-route guard in `RoleScaffold` (no
+> stacked duplicates). **⑥ Metrics:** device-free tests `cache_manager_test.dart`
+> + `branch_repository_cache_test.dart` (prove **5 reads → 1** + invalidation +
+> force bypass — datasource-invocation count is the read metric). ⚠️ **Could not
+> run `flutter analyze` / `flutter test`** here — the dev box's Flutter 3.38.5 /
+> Dart 3.10.4 predates the project's `sdk: ^3.12.1`. **Verify locally.**
+>
+> **Read reduction (fixed journey: cold start → Home→Tasks→Schedule→Profile→Home ×3):**
+>
+> | Read | Before | After |
+> | --- | --- | --- |
+> | `branches` (full list) | once per Home + per Tasks visit (~7×) | **1 / session** |
+> | `users/{uid}` profile | once per Profile visit (3×) | **1 / session** |
+> | branch members (`getUsersByBranch`) | per Task/Schedule/ops visit, per cubit | **≤1 / branch / 60 s** |
+> | statistics aggregation (`users`+`tasks`+`branches`+`schedules`) | per Home visit (4×) | **≤1 / 60 s** |
+> | employee task list | streamed live **and** re-`.get()` by `employeeStats` | stream only (stats deduped via TTL) |
+>
+> Read reduction is proven deterministically by the call-counting tests
+> (datasource invocations); confirm billed-read deltas in the Firebase console
+> usage tab over the fixed journey if a live figure is needed.
 
 > **Notification System · Phase 1 (2026-06-22):** Task notifications + a rework
 > distinction + broadcast persistence, on a real **in-app notification slice**.

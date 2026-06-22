@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:fbro/core/cache/cache_manager.dart';
+import 'package:fbro/core/cache/cache_policy.dart';
 import 'package:fbro/core/errors/exceptions.dart';
 import 'package:fbro/core/errors/failures.dart';
 import 'package:fbro/features/auth/data/datasources/auth_remote_datasource.dart';
@@ -10,14 +12,24 @@ import 'package:fbro/features/profile/domain/repositories/profile_repository.dar
 class ProfileRepositoryImpl implements ProfileRepository {
   final ProfileRemoteDataSource _profileRemote;
   final AuthRemoteDataSource _authRemote;
+  final CacheManager _cache;
 
-  ProfileRepositoryImpl(this._profileRemote, this._authRemote);
+  ProfileRepositoryImpl(this._profileRemote, this._authRemote, this._cache);
 
   @override
   Future<ProfileEntity?> getProfile(String uid) async {
     try {
+      // The profile (`users/{uid}`) was re-read on every Profile-tab visit even
+      // though it changes rarely. Cache it (stable); `updateProfile` refreshes
+      // the entry, and sign-out clears the whole cache.
+      final cached = _cache.read<ProfileEntity>(CacheKeys.profile(uid));
+      if (cached != null) return cached;
       final model = await _profileRemote.getProfile(uid);
-      return model?.toEntity();
+      final entity = model?.toEntity();
+      if (entity != null) {
+        _cache.write(CacheKeys.profile(uid), entity, CachePolicy.stable);
+      }
+      return entity;
     } on AuthException catch (e) {
       throw AuthFailure(e.message);
     }
@@ -72,7 +84,11 @@ class ProfileRepositoryImpl implements ProfileRepository {
       if (updated == null) {
         throw const AuthFailure('Profile not found after update.');
       }
-      return updated.toEntity();
+      // Write-through: refresh the cached profile with the just-saved truth so
+      // the next read serves the update, not a stale copy.
+      final entity = updated.toEntity();
+      _cache.write(CacheKeys.profile(uid), entity, CachePolicy.stable);
+      return entity;
     } on AuthException catch (e) {
       throw AuthFailure(e.message);
     }

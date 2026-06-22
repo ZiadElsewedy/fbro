@@ -1,3 +1,4 @@
+import 'package:fbro/core/cache/cache_manager.dart';
 import 'package:fbro/core/enums/approval_status.dart';
 import 'package:fbro/core/enums/user_role.dart';
 import 'package:fbro/core/errors/exceptions.dart';
@@ -8,8 +9,9 @@ import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 
 class UserAdminRepositoryImpl implements UserAdminRepository {
   final UserAdminRemoteDataSource _remote;
+  final CacheManager _cache;
 
-  UserAdminRepositoryImpl(this._remote);
+  UserAdminRepositoryImpl(this._remote, this._cache);
 
   @override
   Future<List<UserEntity>> getAllUsers() async {
@@ -75,6 +77,10 @@ class UserAdminRepositoryImpl implements UserAdminRepository {
   Future<void> _run(Future<void> Function() action) async {
     try {
       await action();
+      // Any user write (approve / role / branch / active) can change a branch's
+      // member list, so drop the cached `members:*` so the shared
+      // AuthRepository cache (assignee pickers, schedule, directory) re-reads.
+      _cache.invalidatePrefix(CacheKeys.branchMembersPrefix);
     } on ServerException catch (e) {
       throw ServerFailure(e.message);
     }

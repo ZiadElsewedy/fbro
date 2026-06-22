@@ -99,14 +99,23 @@ class TaskCubit extends Cubit<TaskState> {
     return null;
   }
 
-  Future<void> load(UserEntity user) async {
-    if (_user?.uid != user.uid) {
+  Future<void> load(UserEntity user, {bool force = false}) async {
+    final sameUser = _user?.uid == user.uid;
+    // Idempotent: the task list is a live Firestore stream, so re-entering a
+    // task screen (its `initState` re-fires) must not re-subscribe or re-emit
+    // loading — that re-read all branches and flashed a spinner over live data.
+    // `refresh()` (pull-to-refresh) passes `force: true`.
+    if (!force && sameUser && _sub != null) return;
+
+    if (!sameUser) {
       _directory.clear();
       _fetchedBranches.clear();
       _branchNames.clear();
     }
     _user = user;
-    _loadBranchNames();
+    // Branch names are loaded once per session (repo-cached too); skip the
+    // redundant fetch on a forced refresh when we already have them.
+    if (_branchNames.isEmpty) _loadBranchNames();
     emit(const TaskState.loading());
     await _sub?.cancel();
     _sub = _streamFor(user).listen(
@@ -133,7 +142,7 @@ class TaskCubit extends Cubit<TaskState> {
 
   Future<void> refresh() async {
     final user = _user;
-    if (user != null) await load(user);
+    if (user != null) await load(user, force: true);
   }
 
   Stream<List<TaskEntity>> _streamFor(UserEntity user) {

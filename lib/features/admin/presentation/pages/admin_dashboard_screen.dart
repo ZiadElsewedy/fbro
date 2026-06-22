@@ -50,15 +50,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool force = false}) async {
     final user = context.currentUser;
     if (user == null) return;
-    context.read<StatisticsCubit>().load(user);
+    context.read<StatisticsCubit>().load(user, force: force);
     // The all-branches task stream powers the Pending Actions + overdue counts.
+    // TaskCubit.load is idempotent (no-ops if already streaming this user);
+    // refresh() forces a re-subscribe on pull-to-refresh.
     final taskCubit = context.read<TaskCubit>();
-    final taskLoaded =
-        taskCubit.state.maybeWhen(loaded: (_, _, _, _, _) => true, orElse: () => false);
-    if (!taskLoaded) taskCubit.load(user);
+    if (force) {
+      taskCubit.refresh();
+    } else {
+      taskCubit.load(user);
+    }
     // Capture cubits before awaiting so we don't touch context across the gap.
     final usersCubit = context.read<AdminUsersCubit>();
     final swapCubit = context.read<ShiftSwapCubit>();
@@ -91,7 +95,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         EntranceFade(delay: staggerDelay(i++), child: child);
 
     return RefreshIndicator(
-      onRefresh: () => _load(),
+      onRefresh: () => _load(force: true),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, AppSpacing.sm,
             AppSpacing.pagePadding, AppSpacing.xxxl),
