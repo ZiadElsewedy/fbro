@@ -727,7 +727,11 @@ landing is **Login** (the social Welcome page was removed).
   (`firebase deploy --only firestore:rules,storage,functions`).
 
 - **Cloud Functions (Phase 2)** — ✅ **In the repo:** [`functions/`](functions/)
-  (Node.js 20, `firebase-admin` + `firebase-functions` v2), registered in
+  (Node.js 22, `firebase-admin` + `firebase-functions` v6; the callable is
+  **2nd-gen** `onCall` — the v6 default, which deploys cleanly; the Firebase CLI
+  grants the public invoker for callable functions on deploy. A "Send →
+  UNAUTHENTICATED" error means the function isn't deployed yet — run
+  `firebase deploy --only functions`), registered in
   [`firebase.json`](firebase.json) (`functions.source = functions`). One callable:
   **`sendBroadcast`** — the Communications Center send engine (validate sender
   permissions → resolve recipients → write `broadcasts/{id}` → gather recipient

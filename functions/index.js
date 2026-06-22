@@ -1,5 +1,5 @@
 /**
- * DROP — Communications Center send engine (Phase 2).
+ * DROP — Communications Center send engine.
  *
  * Callable `sendBroadcast`: the authoritative broadcast write + push pipeline.
  * Responsibilities:
@@ -11,6 +11,13 @@
  *   5. send the push via the Firebase Admin SDK,
  *   6. prune dead tokens, and
  *   7. return a delivery summary `{ success, recipientCount, ... }`.
+ *
+ * Implemented as a **2nd-gen** callable (`firebase-functions/v2`, the
+ * `firebase-functions` v6 default). `firebase deploy --only functions` deploys it
+ * and the Firebase CLI grants the public invoker for callable functions
+ * automatically. (1st-gen would hit a "Cannot set CPU on GCF gen 1" deploy error
+ * with firebase-functions v6.) The signed-in caller's auth arrives in
+ * `request.auth`.
  *
  * Recipient-resolution / permission matrix (mirrors `BroadcastPermissions` on
  * the client and the `broadcasts` Firestore rules):
@@ -45,13 +52,13 @@ exports.sendBroadcast = onCall(async (request) => {
     throw new HttpsError("unauthenticated", "Please sign in to send a broadcast.");
   }
 
-  const data = request.data || {};
-  const title = String(data.title || "").trim();
-  const body = String(data.body || data.message || "").trim();
-  const category = String(data.category || "general").trim() || "general";
-  const audience = String(data.audience || "").trim();
-  let branchId = String(data.branchId || "").trim();
-  const targetUserId = String(data.targetUserId || "").trim();
+  const payload = request.data || {};
+  const title = String(payload.title || "").trim();
+  const body = String(payload.body || payload.message || "").trim();
+  const category = String(payload.category || "general").trim() || "general";
+  const audience = String(payload.audience || "").trim();
+  let branchId = String(payload.branchId || "").trim();
+  const targetUserId = String(payload.targetUserId || "").trim();
 
   if (!title || !body) {
     throw new HttpsError("invalid-argument", "A broadcast needs a title and a message.");
@@ -152,7 +159,7 @@ exports.sendBroadcast = onCall(async (request) => {
 
   // ── Push the notification (chunked; prune dead tokens) ──
   let deliveredCount = 0;
-  const payload = {
+  const message = {
     notification: { title, body },
     // Data values must be strings — they ride along to the tap handler.
     data: {
@@ -167,7 +174,7 @@ exports.sendBroadcast = onCall(async (request) => {
 
   for (let i = 0; i < tokens.length; i += MULTICAST_CHUNK) {
     const batch = tokens.slice(i, i + MULTICAST_CHUNK);
-    const response = await messaging.sendEachForMulticast({ ...payload, tokens: batch });
+    const response = await messaging.sendEachForMulticast({ ...message, tokens: batch });
     deliveredCount += response.successCount;
 
     // Remove tokens FCM reports as permanently invalid, per owner.

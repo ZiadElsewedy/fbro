@@ -2,7 +2,7 @@
   "name": "drop-functions",
   "description": "DROP — Cloud Functions (Communications Center send engine)",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "scripts": {

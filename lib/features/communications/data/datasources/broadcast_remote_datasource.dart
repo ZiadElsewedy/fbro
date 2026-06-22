@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:fbro/core/constants/app_constants.dart';
@@ -37,13 +39,43 @@ class BroadcastRemoteDataSourceImpl implements BroadcastRemoteDataSource {
       return broadcast.copyWith(
         id: data['broadcastId'] as String? ?? '',
         recipientCount: (data['recipientCount'] as num?)?.toInt(),
+        deliveredCount: (data['deliveredCount'] as num?)?.toInt(),
       );
-    } on FirebaseFunctionsException catch (e) {
-      // The function throws HttpsError('permission-denied' | 'invalid-argument'
-      // | …) with a user-facing message; surface it verbatim.
-      throw ServerException(e.message ?? 'Failed to send broadcast.');
+    } on FirebaseFunctionsException catch (e, st) {
+      developer.log(
+        'sendBroadcast callable failed: code=${e.code} message=${e.message}',
+        name: 'communications',
+        error: e,
+        stackTrace: st,
+      );
+      throw ServerException(_friendlyFunctionsError(e));
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to send broadcast.');
+    }
+  }
+
+  /// Maps a callable failure to a user-facing message. The function raises
+  /// full-sentence `HttpsError` messages for permission/validation problems
+  /// (surfaced verbatim); the transport/gateway layer raises single upper-case
+  /// codes ("UNAUTHENTICATED", "INTERNAL", …) which are replaced with guidance.
+  String _friendlyFunctionsError(FirebaseFunctionsException e) {
+    final msg = (e.message ?? '').trim();
+    final looksHuman = msg.contains(' '); // a real sentence vs. a raw code token
+    if (looksHuman) return msg;
+    switch (e.code) {
+      case 'unauthenticated':
+      case 'permission-denied':
+        // Almost always the send engine being unreachable (the `sendBroadcast`
+        // Cloud Function not deployed / not invokable yet), not a real auth loss.
+        return 'Couldn’t reach the broadcast service. Please try again in a '
+            'moment.';
+      case 'unavailable':
+        return 'Network problem — check your connection and try again.';
+      case 'not-found':
+        return 'The broadcast service isn’t available yet. Please try again '
+            'later.';
+      default:
+        return 'Couldn’t send the broadcast right now. Please try again.';
     }
   }
 

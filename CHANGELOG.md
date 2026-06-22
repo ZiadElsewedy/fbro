@@ -12,6 +12,27 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed (2026-06-21 — Communications Center: "UNAUTHENTICATED" on Send)
+
+Sending a broadcast failed with a raw **UNAUTHENTICATED** snackbar — because the
+`sendBroadcast` callable wasn't deployed yet, so the gateway rejected the call
+before the function code ran (hence the raw gateway code, not the function's own
+"please sign in" message). The function stays **2nd-gen** (`firebase-functions/v2`,
+the v6 default): it deploys cleanly and the Firebase CLI grants the public invoker
+for callable functions automatically. (A brief detour to 1st-gen was reverted — it
+hit a "Cannot set CPU on GCF gen 1" deploy error with firebase-functions v6.)
+
+- **Friendlier client error** — `BroadcastRemoteDataSource` now maps a
+  `FirebaseFunctionsException` to a user-facing message (full-sentence
+  `HttpsError` messages from the function are surfaced verbatim; raw transport
+  codes like `UNAUTHENTICATED`/`INTERNAL` become "Couldn’t reach the broadcast
+  service. Please try again in a moment.") and logs the real `code`/`message` via
+  `dart:developer`. Also threads the returned `deliveredCount` back to the model.
+- ⚠️ The function **must be deployed** for Send to work (rules deny client writes
+  by design): `firebase deploy --only functions` — requires the **Blaze** plan.
+  If a deployed call still returns UNAUTHENTICATED, grant the invoker:
+  `gcloud functions add-invoker-policy-binding sendBroadcast --region=us-central1 --member=allUsers`.
+
 ### Added (2026-06-21 — Communications Center · Phase 3: Center UI)
 
 The role-gated UI on the Phase 1 + 2 backend (no backend-architecture change
