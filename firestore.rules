@@ -318,6 +318,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── Communications analytics (Phase 2 Commit 6) ──
+    // Precomputed monthly rollups maintained ONLY by Cloud Functions (Admin SDK,
+    // bypasses rules). Admin + manager read for the dashboard; clients never write.
+    match /analytics/{period} {
+      allow read: if isAdmin() || isManager();
+      allow write: if false;
+    }
+
     // ── Notifications (Notification System Phase 1) ────────────────
     // One in-app notification doc per recipient (`notifications/{id}`). Task
     // events are written by the client (`NotifyTaskEvent`); broadcast

@@ -51,6 +51,7 @@ class RouteNames {
   static const String communicationsCompose = '/communications/compose';
   static const String communicationsTemplates = '/communications/templates';
   static const String communicationsSchedules = '/communications/schedules';
+  static const String communicationsAnalytics = '/communications/analytics';
 
   /// The broadcast-detail route pattern (`/communications/:broadcastId`).
   static const String communicationsDetailPattern =

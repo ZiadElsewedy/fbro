@@ -11,8 +11,25 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-22 (Communications Center — Phase 2 · Commit 5)
+**Last updated:** 2026-06-22 (Communications Center — Phase 2 · Commit 6 — **Premium Upgrade complete**)
 **Version:** 1.0.0+1 · **Branch:** `feature/notification` (DROP — monochrome enterprise UX)
+
+> **Communications Center · Phase 2 — Commit 6 (2026-06-22) — FINAL:** Communications
+> **analytics** via **precomputed aggregates**. A monthly rollup
+> **`analytics/{YYYY-MM}`** (`totals.{metric}` + `days.{DD}.{metric}`) maintained
+> by Cloud Functions (`bumpAnalytics` in `dispatchBroadcast`/`onNotificationCreated`
+> + new `onNotificationRead` + `onBroadcastOpened` triggers). Open-tracking via an
+> idempotent `broadcastOpens/{bId_uid}` guard (`BroadcastCubit.trackOpen` from the
+> detail screen). Read slice: pure `CommsAnalyticsEntity` (+ derived rates) +
+> `CommsAnalyticsRepository(+Impl)`/datasource (one-doc read), on
+> `AppDependencies.commsAnalyticsRepository`. Dashboard
+> `communications_analytics_screen` (`/communications/analytics`): broadcast +
+> notification metrics · daily-volume bar chart · engagement bars (read-once
+> FutureBuilder). Rules: `analytics` (admin/manager read · function-only write).
+> **Deferred:** response-latency charts (not modelled). ⚠️ Deploy
+> `firestore:rules,functions`. **🎉 The 6-commit Communications Center Premium
+> Upgrade (history → templates → audiences → scheduler → reminders → analytics) is
+> complete.**
 
 > **Communications Center · Phase 2 — Commit 5 (2026-06-22):** Automated **task
 > reminders**. `NotificationType` + `taskReminder`/`taskOverdue`. Pure

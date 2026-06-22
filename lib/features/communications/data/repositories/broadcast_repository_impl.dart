@@ -51,4 +51,8 @@ class BroadcastRepositoryImpl implements BroadcastRepository {
       throw ServerFailure(e.message);
     }
   }
+
+  @override
+  Future<void> trackOpen(String broadcastId, String uid) =>
+      _remote.trackOpen(broadcastId, uid);
 }

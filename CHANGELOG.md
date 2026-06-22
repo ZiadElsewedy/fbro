@@ -12,6 +12,38 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-06-22 — Communications Center · Phase 2 Commit 6: analytics aggregation + dashboard)
+
+Final commit of the **Premium Upgrade** — communications **analytics** via
+**precomputed aggregates** (no live scans). `node --check functions/index.js`
+valid. **The 6-commit Communications Center Premium Upgrade is complete.**
+
+- **Aggregation (Cloud Functions)** — a monthly rollup doc **`analytics/{YYYY-MM}`**
+  with `totals.{metric}` + `days.{DD}.{metric}` counters, maintained incrementally
+  by a shared `bumpAnalytics` helper: `dispatchBroadcast` bumps
+  `broadcastsSent`/`recipients`/`delivered`; `onNotificationCreated` bumps
+  `notifSent`; a new **`onNotificationRead`** (`onDocumentUpdated`) bumps
+  `notifRead` on the first read; a new **`onBroadcastOpened`**
+  (`onDocumentCreated` on `broadcastOpens`) bumps `opened` + the broadcast's
+  `openedCount`.
+- **Open tracking** — the broadcast detail screen records a view once via an
+  idempotent `broadcastOpens/{broadcastId}_{uid}` guard doc
+  (`BroadcastCubit.trackOpen` → repo/datasource, create-once, best-effort).
+- **Analytics slice (read)** — pure `CommsAnalyticsEntity` (`fromMap` + derived
+  `failed`/`deliveryRate`/`openRate`/`unread`/`readRate`) +
+  `CommsAnalyticsRepository(+Impl)`/`RemoteDataSource` reading the **one** monthly
+  doc. Exposed on `AppDependencies.commsAnalyticsRepository`.
+- **Dashboard** — `communications_analytics_screen.dart` (`/communications/analytics`,
+  reached from the Communications app-bar): broadcast metrics (sent · delivered ·
+  failed · open rate), notification metrics (sent · read · unread · read rate), a
+  monochrome **daily-volume bar chart**, and **engagement** bars (delivery / open
+  / read rate). Read-once (`FutureBuilder`, no cubit). `firestore.rules`
+  `analytics` block (admin/manager read · function-only write).
+- **Tests** — `comms_analytics_test.dart` (rollup parse · day sort · derived
+  rates · divide-by-zero safety). **Deferred:** response-latency charts (not
+  modelled — no per-event response timestamps). ⚠️ Deploy `firestore:rules` +
+  `functions`.
+
 ### Added (2026-06-22 — Communications Center · Phase 2 Commit 5: task reminder engine)
 
 Fifth commit of the **Premium Upgrade** — automated **task reminders** (server-

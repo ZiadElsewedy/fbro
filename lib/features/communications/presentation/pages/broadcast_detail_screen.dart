@@ -21,7 +21,7 @@ import 'package:fbro/features/communications/presentation/widgets/broadcast_card
 /// the full message, sender, category, audience, priority, channel, time, and
 /// the **delivery analytics** (recipients · delivered · failed · open rate),
 /// plus a per-item actions menu (repeat · duplicate · archive · delete).
-class BroadcastDetailScreen extends StatelessWidget {
+class BroadcastDetailScreen extends StatefulWidget {
   const BroadcastDetailScreen({
     super.key,
     required this.broadcastId,
@@ -32,16 +32,33 @@ class BroadcastDetailScreen extends StatelessWidget {
   final BroadcastEntity? broadcast;
 
   @override
+  State<BroadcastDetailScreen> createState() => _BroadcastDetailScreenState();
+}
+
+class _BroadcastDetailScreenState extends State<BroadcastDetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Record the open once (drives the open-rate analytics; idempotent).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final uid = context.currentUser?.uid;
+      if (uid != null) {
+        context.read<BroadcastCubit>().trackOpen(widget.broadcastId, uid);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return BlocBuilder<BroadcastCubit, BroadcastState>(
       builder: (context, state) {
         // Prefer the live feed copy (freshest delivery counts); fall back to
         // the entity passed in via `extra`.
         final fromFeed = state.maybeWhen(
-          loaded: (list, _) => _byId(list, broadcastId),
+          loaded: (list, _) => _byId(list, widget.broadcastId),
           orElse: () => null,
         );
-        final b = fromFeed ?? broadcast;
+        final b = fromFeed ?? widget.broadcast;
         return Scaffold(
           backgroundColor: AppColors.darkBg,
           appBar: AppBar(
