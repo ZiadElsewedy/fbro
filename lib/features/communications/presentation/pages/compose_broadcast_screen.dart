@@ -6,6 +6,7 @@ import 'package:fbro/core/enums/broadcast_category.dart';
 import 'package:fbro/core/enums/broadcast_channel.dart';
 import 'package:fbro/core/enums/broadcast_priority.dart';
 import 'package:fbro/core/extensions/context_extensions.dart';
+import 'package:fbro/core/routes/route_names.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
@@ -18,10 +19,13 @@ import 'package:fbro/features/auth/presentation/widgets/app_dropdown_field.dart'
 import 'package:fbro/features/auth/presentation/widgets/app_text_field.dart';
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
 import 'package:fbro/features/communications/domain/entities/broadcast_entity.dart';
+import 'package:fbro/features/communications/domain/entities/broadcast_template_entity.dart';
 import 'package:fbro/features/communications/domain/broadcast_permissions.dart';
+import 'package:fbro/features/communications/domain/template_renderer.dart';
 import 'package:fbro/features/communications/presentation/communications_format.dart';
 import 'package:fbro/features/communications/presentation/cubit/broadcast_cubit.dart';
 import 'package:fbro/features/communications/presentation/cubit/broadcast_state.dart';
+import 'package:fbro/features/communications/presentation/pages/broadcast_templates_screen.dart';
 
 /// Compose Broadcast (Phase 3). Role-gated form: audience (admin: everyone /
 /// branch / individual · manager: own branch / individual-in-branch), an
@@ -197,6 +201,15 @@ class _ComposeBroadcastScreenState extends State<ComposeBroadcastScreen> {
         backgroundColor: AppColors.darkBg,
         elevation: 0,
         title: Text('New Broadcast', style: AppTypography.h3),
+        actions: [
+          TextButton.icon(
+            onPressed: _useTemplate,
+            icon: const Icon(Icons.dashboard_customize_outlined,
+                size: 18, color: AppColors.primary),
+            label: Text('Templates',
+                style: AppTypography.label.copyWith(color: AppColors.primary)),
+          ),
+        ],
       ),
       bottomNavigationBar: _SendBar(
         enabled: _canSend && !_submitting,
@@ -217,6 +230,16 @@ class _ComposeBroadcastScreenState extends State<ComposeBroadcastScreen> {
             const _Label('Category'),
             _categorySelector(),
             const SizedBox(height: AppSpacing.xl),
+            const _Label('Priority'),
+            _prioritySelector(),
+            if (_priority.isEmergency) ...[
+              const SizedBox(height: AppSpacing.sm),
+              const _EmergencyNotice(),
+            ],
+            const SizedBox(height: AppSpacing.xl),
+            const _Label('Delivery channel'),
+            _channelSelector(),
+            const SizedBox(height: AppSpacing.xl),
             const _Label('Title'),
             AppTextField(
               controller: _titleCtrl,
@@ -224,6 +247,7 @@ class _ComposeBroadcastScreenState extends State<ComposeBroadcastScreen> {
               hint: 'e.g. Stock count tonight',
               textInputAction: TextInputAction.next,
             ),
+            _Counter(length: _titleCtrl.text.length, max: 80),
             const SizedBox(height: AppSpacing.lg),
             const _Label('Message'),
             AppTextField(
@@ -234,10 +258,76 @@ class _ComposeBroadcastScreenState extends State<ComposeBroadcastScreen> {
               keyboardType: TextInputType.multiline,
               textInputAction: TextInputAction.newline,
             ),
+            _Counter(length: _bodyCtrl.text.length, max: 500),
+            const SizedBox(height: AppSpacing.xl),
+            Row(
+              children: [
+                const _Label('Preview'),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _canSend ? _saveAsTemplate : null,
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 16),
+                  label: const Text('Save as template'),
+                ),
+              ],
+            ),
+            _PreviewCard(
+              title: _titleCtrl.text,
+              message: _bodyCtrl.text,
+              category: _category,
+              priority: _priority,
+              channel: _channel,
+            ),
           ],
         ),
       ),
     );
+  }
+
+  // ─── Template integration ──────────────────────────────────────
+  /// Opens the template library as a picker; applies the chosen template
+  /// (rendering `{{placeholders}}` with the current context).
+  Future<void> _useTemplate() async {
+    final picked = await context.push<BroadcastTemplateEntity?>(
+        RouteNames.communicationsTemplates, extra: 'pick');
+    if (picked == null || !mounted) return;
+    final ctx = _placeholderContext();
+    setState(() {
+      _titleCtrl.text = TemplateRenderer.render(picked.title, ctx);
+      _bodyCtrl.text = TemplateRenderer.render(picked.message, ctx);
+      _category = picked.category;
+      _priority = picked.priority;
+      _channel = picked.channel;
+    });
+  }
+
+  /// Opens the template editor seeded from the current draft.
+  void _saveAsTemplate() {
+    showTemplateEditor(
+      context,
+      prefill: BroadcastTemplateEntity(
+        id: '',
+        title: _titleCtrl.text.trim(),
+        message: _bodyCtrl.text.trim(),
+        category: _category,
+        priority: _priority,
+        channel: _channel,
+      ),
+    );
+  }
+
+  /// The placeholder values available in the composer (recipient/branch/date).
+  Map<String, String> _placeholderContext() {
+    final now = DateTime.now();
+    final date = '${now.day}/${now.month}/${now.year}';
+    final branchName = _selectedBranch?.name ?? _ownBranchName ?? '';
+    final employeeName = _selectedUser?.displayName ?? '';
+    return {
+      'sender_name': _sender.displayName ?? _sender.email,
+      'date': date,
+      if (branchName.isNotEmpty) 'branch_name': branchName,
+      if (employeeName.isNotEmpty) 'employee_name': employeeName,
+    };
   }
 
   Widget _audienceSelector() {
@@ -368,6 +458,178 @@ class _ComposeBroadcastScreenState extends State<ComposeBroadcastScreen> {
             onTap: () => setState(() => _category = c),
           ),
       ],
+    );
+  }
+
+  Widget _prioritySelector() {
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [
+        for (final p in BroadcastPriority.values)
+          _Choice(
+            icon: priorityIcon(p),
+            label: p.label,
+            selected: _priority == p,
+            accent: p.isHighDelivery ? priorityColor(p) : null,
+            onTap: () => setState(() => _priority = p),
+          ),
+      ],
+    );
+  }
+
+  Widget _channelSelector() {
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [
+        for (final c in BroadcastChannel.values)
+          _Choice(
+            icon: switch (c) {
+              BroadcastChannel.push => Icons.notifications_active_outlined,
+              BroadcastChannel.inbox => Icons.inbox_outlined,
+              BroadcastChannel.both => Icons.all_inclusive_rounded,
+            },
+            label: c.label,
+            selected: _channel == c,
+            onTap: () => setState(() => _channel = c),
+          ),
+      ],
+    );
+  }
+}
+
+/// A live character counter shown under a field.
+class _Counter extends StatelessWidget {
+  const _Counter({required this.length, required this.max});
+  final int length;
+  final int max;
+  @override
+  Widget build(BuildContext context) {
+    final over = length > max;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, right: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text('$length/$max',
+            style: AppTypography.caption.copyWith(
+                color: over ? AppColors.error : AppColors.textTertiary)),
+      ),
+    );
+  }
+}
+
+/// Stronger UI treatment for an emergency broadcast (per the spec).
+class _EmergencyNotice extends StatelessWidget {
+  const _EmergencyNotice();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.error.withAlpha(20),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.error.withAlpha(70)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.crisis_alert_rounded,
+              size: 18, color: AppColors.error),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Emergency priority sends a high-priority push to every recipient '
+              'immediately, bypassing quiet hours.',
+              style: AppTypography.caption.copyWith(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A live preview of how the broadcast will read.
+class _PreviewCard extends StatelessWidget {
+  const _PreviewCard({
+    required this.title,
+    required this.message,
+    required this.category,
+    required this.priority,
+    required this.channel,
+  });
+
+  final String title;
+  final String message;
+  final BroadcastCategory category;
+  final BroadcastPriority priority;
+  final BroadcastChannel channel;
+
+  @override
+  Widget build(BuildContext context) {
+    final catColor = categoryColor(category);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: catColor.withAlpha(category.isUrgent ? 30 : 20),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: catColor.withAlpha(60)),
+                ),
+                child: Icon(categoryIcon(category), size: 18, color: catColor),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Text(
+                  title.trim().isEmpty ? 'Broadcast title' : title,
+                  style: AppTypography.label.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: title.trim().isEmpty
+                        ? AppColors.textTertiary
+                        : AppColors.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (priority.isHighDelivery)
+                Icon(priorityIcon(priority),
+                    size: 16, color: priorityColor(priority)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            message.trim().isEmpty ? 'Your message preview…' : message,
+            style: AppTypography.bodySmall.copyWith(
+                color: message.trim().isEmpty
+                    ? AppColors.textTertiary
+                    : AppColors.textSecondary),
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Text(category.label,
+                  style: AppTypography.caption.copyWith(color: catColor)),
+              const SizedBox(width: 8),
+              Text('· ${channel.label}', style: AppTypography.caption),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

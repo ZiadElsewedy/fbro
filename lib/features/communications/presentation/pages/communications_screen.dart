@@ -113,6 +113,14 @@ class _CommunicationsScreenState extends State<CommunicationsScreen> {
         elevation: 0,
         titleSpacing: AppSpacing.pagePadding,
         title: Text('Communications Center', style: AppTypography.h3),
+        actions: [
+          IconButton(
+            tooltip: 'Templates',
+            onPressed: () => context.push(RouteNames.communicationsTemplates),
+            icon: const Icon(Icons.dashboard_customize_outlined,
+                color: AppColors.textSecondary),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push(RouteNames.communicationsCompose),

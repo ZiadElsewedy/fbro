@@ -12,6 +12,46 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-06-22 — Communications Center · Phase 2 Commit 2: broadcast templates + placeholder engine + premium composer)
+
+Second commit of the **Communications Center Premium Upgrade**. Adds a reusable
+**template** system with a `{{placeholder}}` rendering engine, a premium
+**template library**, and a redesigned **composer**. New vertical slice
+(`broadcastTemplates`), repo-direct cubit (mirrors `BranchCubit`), all additive.
+⚠️ Freezed files hand-edited (SDK too old here) — run `dart run build_runner build
+--delete-conflicting-outputs` + `flutter analyze` + `flutter test`.
+
+- **Templates slice** — `BroadcastTemplateEntity` (freezed: title · message ·
+  category · priority · channel · ownerId · branchId(''=global) · isFavorite ·
+  usageCount + `isGlobal`/`placeholders` getters) + `BroadcastTemplateModel` over
+  the new **`broadcastTemplates/{id}`** collection, `BroadcastTemplateRepository
+  (+Impl)`/`RemoteDataSource(+Impl)` (CRUD + favorite + usage increment), and the
+  repo-direct **`BroadcastTemplateCubit`** (load/save/update/toggleFavorite/
+  delete/markUsed). Wired in `injection.dart` + `main.dart`. Rules mirror
+  `task_templates` (admin any/global · own-branch manager · employees none).
+- **Placeholder engine** — pure
+  [`template_renderer.dart`](lib/features/communications/domain/template_renderer.dart)
+  (`TemplateRenderer.extract` / `render` / `hasUnresolved`): `{{employee_name}}`,
+  `{{task_name}}`, `{{branch_name}}`, `{{date}}`, `{{sender_name}}` (generic over
+  any key). Rendered **client-side before** send so the function gets final text.
+- **Template library** — `broadcast_templates_screen.dart`: grid/list toggle,
+  search, category filter, **Favorites** + **Recent** sections, a create/edit
+  editor sheet (title · category · priority · channel · message with
+  quick-insert placeholder chips), favorite/delete with confirmation. New
+  `template_card.dart`. Reached from the Communications Center app-bar, and in
+  **pick mode** from the composer (selecting pops the template back). Route
+  `/communications/templates` (declared before the `:broadcastId` detail route).
+- **Premium composer** — `compose_broadcast_screen.dart` gains a **priority**
+  selector (low/normal/high/emergency, emergency = a stronger accent notice +
+  high-priority push), a **delivery channel** selector (push/inbox/both), live
+  **character counters** (title 80 / body 500), a **rich live preview** card, and
+  **Use template** (renders placeholders with the current recipient/branch/date
+  context) + **Save as template** actions.
+- **Tests** — `template_renderer_test.dart` (extract/render/unresolved) and
+  `broadcast_template_model_test.dart` (round-trip, global-branch convention,
+  defaults, placeholders getter). ⚠️ Deploy `firestore:rules` for the new
+  `broadcastTemplates` collection.
+
 ### Added (2026-06-22 — Communications Center · Phase 2 Commit 1: schema foundation + Broadcast History + Notification Center management)
 
 First commit of the **Communications Center Premium Upgrade** (Phase 2). Adds the

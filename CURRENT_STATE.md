@@ -11,8 +11,23 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-22 (Communications Center — Phase 2 · Commit 1)
+**Last updated:** 2026-06-22 (Communications Center — Phase 2 · Commit 2)
 **Version:** 1.0.0+1 · **Branch:** `feature/notification` (DROP — monochrome enterprise UX)
+
+> **Communications Center · Phase 2 — Commit 2 (2026-06-22):** Broadcast
+> **templates** + a `{{placeholder}}` engine + a premium **composer**. New
+> `broadcastTemplates` slice: `BroadcastTemplateEntity`/`Model`/`Repository(+Impl)`/
+> `RemoteDataSource` + repo-direct **`BroadcastTemplateCubit`** over a new
+> `broadcastTemplates/{id}` collection (rules mirror `task_templates`); pure
+> **`TemplateRenderer`** (`extract`/`render`/`hasUnresolved`). **Template library**
+> (`broadcast_templates_screen` + `template_card`): grid/list toggle · search ·
+> category filter · favorites · recents · create/edit editor with placeholder
+> quick-insert; reached from the Communications app-bar and in **pick mode** from
+> the composer. **Composer** now has priority + channel selectors, character
+> counters, a rich live preview, and Use-template / Save-as-template. Route
+> `/communications/templates`. ⚠️ Freezed hand-edited (run build_runner) + deploy
+> `firestore:rules`. **Pending (next commits):** advanced audiences · scheduler ·
+> reminders · analytics dashboard.
 
 > **Communications Center · Phase 2 — Commit 1 (2026-06-22):** First of a 6-commit
 > **Premium Upgrade** (history → templates → audiences → scheduler → reminders →
@@ -499,7 +514,7 @@
 | Admin module (Phase 5, +Phase 9 UX) | ✅ Complete | Branch / manager / employee management + **admin-only** pending-user approval + branch assignment. `AdminUsersCubit`, `UserAdminRepository` over `users/{uid}`. **Phase 9:** Admin Home restructured to **4 KPIs** + module nav; new **Analytics** page (`/admin/analytics`); avatar-led user cards; search + active/inactive/branch filters |
 | Dashboards / Statistics (Phase 6, +Phase 7) | ✅ Complete | `statistics` feature (`StatisticsCubit`) drives **live** admin / manager / employee dashboards. **Phase 7:** shift/coverage figures read the weekly schedule. **Phase 9:** the full metric wall moved to the Analytics page; the Admin Home shows only 4 headline KPIs |
 | Notifications (Phase 6 + Notification System Phase 1, +Comms Phase 2 Commit 1) | ✅ In-app inbox + management + task push | FCM client (permission + `fcmTokens` array + fg/bg/tap). Real **in-app inbox** — `notifications` slice + `notifications/{id}` + `/notifications` screen (bell + unread dot). **Automatic task triggers** (assign/rework/submit/approve/reject). **Push:** broadcasts via `sendBroadcast`; task events via `onNotificationCreated`. **Comms Phase 2 Commit 1 — Notification Center management:** `archivedAt`/`pinnedAt` fields; **delete · archive · pin**, **search**, **type filters** (All/Unread/Tasks/Broadcasts/System), **archived view**, **date grouping** (Pinned · Today · Yesterday · This week · Earlier), **swipe** actions, and **infinite pagination** (ordered growing-window stream via the new `recipientUid+createdAt` index); pure helpers in `notification_format.dart`. Schedule/swap/admin `NotificationType` events still have no trigger (later phases) |
-| Communications Center (Phase 1 + 2 engine + 3 UI, +**Premium Upgrade Phase 2 Commit 1**) | ✅ End-to-end + history lifecycle | `communications` slice + callable `sendBroadcast` (now via reusable `dispatchBroadcast()`). Recipient-resolution matrix (`BroadcastPermissions`); audiences allBranches/branch/**user (DM)**; `broadcasts/{id}` content writes function-owned. UI: `/communications` (admin + manager, employees blocked). **Premium Upgrade Commit 1:** broadcast schema gains `priority`/`channel`/`openedCount`/`archivedAt`/`deletedAt`; the feed is **history** with Active/Archived/Deleted + per-item actions (open · repeat · duplicate · archive · delete/restore, confirmations); detail shows **delivery analytics** (recipients · delivered · failed · open rate); archive/soft-delete are **field-restricted client writes** (rule freezes all but lifecycle fields). **Pending (later commits):** templates · advanced audiences · scheduler (recurring) · analytics dashboard. Push/Function need deploy (Blaze) + iOS APNs |
+| Communications Center (Phase 1 + 2 engine + 3 UI, +**Premium Upgrade Phase 2 Commits 1–2**) | ✅ End-to-end + history + templates | `communications` slice + callable `sendBroadcast` (now via reusable `dispatchBroadcast()`). Recipient-resolution matrix (`BroadcastPermissions`); audiences allBranches/branch/**user (DM)**; `broadcasts/{id}` content writes function-owned. UI: `/communications` (admin + manager, employees blocked). **Commit 1:** broadcast `priority`/`channel`/`openedCount`/`archivedAt`/`deletedAt`; **history** feed (Active/Archived/Deleted + actions: open · repeat · duplicate · archive · delete/restore); detail **delivery analytics** (recipients · delivered · failed · open rate); archive/soft-delete = field-restricted client writes. **Commit 2:** **templates** — `broadcastTemplates` slice + `BroadcastTemplateCubit`, pure `TemplateRenderer` (`{{placeholders}}`), library (`/communications/templates`: grid/list · search · category filter · favorites · recents · editor), premium **composer** (priority/channel selectors · char counters · live preview · use/save template). **Pending (later commits):** advanced audiences · scheduler (recurring) · reminders · analytics dashboard. Push/Function need deploy (Blaze) + iOS APNs |
 | Profile          | ✅ Complete    | View/edit (Full Name · Bio · avatar+cover). **Username removed (2026-06-18)** from editing/validation — no operational value (legacy social field); dormant model field + `CheckUsername` use case remain as harmless legacy |
 | Settings         | ✅ Complete    | Settings page + change password + delete account              |
 | Role shells      | ✅ Live        | All three role dashboards show live operational stats (Phase 6); Admin shell hosts the full admin module (Phase 5) |

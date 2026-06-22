@@ -30,6 +30,7 @@ import 'package:fbro/features/communications/domain/entities/broadcast_entity.da
 import 'package:fbro/features/communications/presentation/pages/communications_screen.dart';
 import 'package:fbro/features/communications/presentation/pages/compose_broadcast_screen.dart';
 import 'package:fbro/features/communications/presentation/pages/broadcast_detail_screen.dart';
+import 'package:fbro/features/communications/presentation/pages/broadcast_templates_screen.dart';
 import 'package:fbro/features/notifications/presentation/pages/notifications_screen.dart';
 import 'route_names.dart';
 
@@ -257,6 +258,13 @@ GoRouter createRouter(AuthCubit authCubit) {
             prefill:
                 state.extra is BroadcastEntity ? state.extra as BroadcastEntity : null,
           ),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.communicationsTemplates,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          BroadcastTemplatesScreen(pickMode: state.extra == 'pick'),
         ),
       ),
       GoRoute(
