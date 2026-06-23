@@ -8,9 +8,9 @@ import 'package:fbro/features/communications/data/models/broadcast_model.dart';
 import 'package:fbro/features/communications/domain/entities/broadcast_entity.dart';
 
 /// Phase 2 — broadcast lifecycle + delivery fields (priority, channel,
-/// archivedAt, deletedAt) round-trip cleanly and the derived getters
-/// (isActive/isArchived/isDeleted/failedCount) behave, with safe back-compat
-/// defaults for legacy docs.
+/// archivedAt) round-trip cleanly and the derived getters
+/// (isActive/isArchived/failedCount) behave, with safe back-compat defaults for
+/// legacy docs.
 void main() {
   group('BroadcastPriority / BroadcastChannel enums', () {
     test('priority parse + high-delivery flag', () {
@@ -64,7 +64,7 @@ void main() {
       expect(back.channel, BroadcastChannel.both);
     });
 
-    test('archivedAt / deletedAt parse from a doc', () {
+    test('archivedAt parse from a doc', () {
       final entity = BroadcastModel.fromMap({
         'title': 't',
         'message': 'm',
@@ -77,13 +77,11 @@ void main() {
         'recipientCount': 30,
         'deliveredCount': 27,
         'archivedAt': Timestamp.fromDate(DateTime(2026, 6, 22, 9)),
-        'deletedAt': null,
       }).toEntity();
 
       expect(entity.priority, BroadcastPriority.high);
       expect(entity.channel, BroadcastChannel.inbox);
       expect(entity.isArchived, isTrue);
-      expect(entity.isDeleted, isFalse);
       expect(entity.isActive, isFalse); // archived ⇒ not active
     });
 
@@ -99,7 +97,6 @@ void main() {
       expect(entity.channel, BroadcastChannel.both);
       expect(entity.isActive, isTrue);
       expect(entity.isArchived, isFalse);
-      expect(entity.isDeleted, isFalse);
     });
   });
 
@@ -163,7 +160,7 @@ void main() {
       expect(back.branchId, isNull);
     });
 
-    test('isActive only when neither archived nor deleted', () {
+    test('isActive only when not archived', () {
       final base = DateTime(2026, 6, 22);
       const active = BroadcastEntity(
           id: 'b', title: 't', message: 'm', senderId: 'u', senderName: 'n');
@@ -172,10 +169,6 @@ void main() {
       final archived = active.copyWith(archivedAt: base);
       expect(archived.isActive, isFalse);
       expect(archived.isArchived, isTrue);
-
-      final deleted = active.copyWith(deletedAt: base);
-      expect(deleted.isActive, isFalse);
-      expect(deleted.isDeleted, isTrue);
     });
   });
 }

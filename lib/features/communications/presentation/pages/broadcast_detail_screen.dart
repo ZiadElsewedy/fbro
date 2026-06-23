@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 import 'package:fbro/core/enums/broadcast_category.dart';
 import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/core/routes/route_names.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
@@ -250,10 +248,6 @@ class _ActionsMenu extends StatelessWidget {
     switch (action) {
       case BroadcastCardAction.open:
         break;
-      case BroadcastCardAction.duplicate:
-        context.push(RouteNames.communicationsCompose, extra: broadcast);
-      case BroadcastCardAction.scheduleAgain:
-        break;
       case BroadcastCardAction.repeatNow:
         final user = context.currentUser;
         if (user == null) return;
@@ -273,26 +267,12 @@ class _ActionsMenu extends StatelessWidget {
         await cubit.setArchived(broadcast.id, true);
       case BroadcastCardAction.unarchive:
         await cubit.setArchived(broadcast.id, false);
-      case BroadcastCardAction.delete:
-        final ok = await showConfirmDialog(
-          context,
-          title: 'Delete broadcast?',
-          message:
-              'It will be hidden from the feed but kept in history. You can '
-              'restore it later.',
-          confirmLabel: 'Delete',
-          destructive: true,
-        );
-        if (ok && context.mounted) await cubit.setDeleted(broadcast.id, true);
-      case BroadcastCardAction.restore:
-        await cubit.setDeleted(broadcast.id, false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final archived = broadcast.isArchived;
-    final deleted = broadcast.isDeleted;
     return PopupMenuButton<BroadcastCardAction>(
       tooltip: 'Actions',
       icon: const Icon(Icons.more_vert_rounded, color: AppColors.textSecondary),
@@ -300,21 +280,12 @@ class _ActionsMenu extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       onSelected: (a) => _onAction(context, a),
       itemBuilder: (context) => [
-        if (!deleted) ...[
-          _item(BroadcastCardAction.repeatNow, Icons.replay_rounded,
-              'Repeat now'),
-          _item(BroadcastCardAction.duplicate, Icons.copy_rounded, 'Duplicate'),
-          if (archived)
-            _item(BroadcastCardAction.unarchive, Icons.unarchive_rounded,
-                'Unarchive')
-          else
-            _item(BroadcastCardAction.archive, Icons.archive_outlined,
-                'Archive'),
-          _item(BroadcastCardAction.delete, Icons.delete_outline_rounded,
-              'Delete',
-              destructive: true),
-        ] else
-          _item(BroadcastCardAction.restore, Icons.restore_rounded, 'Restore'),
+        _item(BroadcastCardAction.repeatNow, Icons.replay_rounded, 'Repeat now'),
+        if (archived)
+          _item(BroadcastCardAction.unarchive, Icons.unarchive_rounded,
+              'Unarchive')
+        else
+          _item(BroadcastCardAction.archive, Icons.archive_outlined, 'Archive'),
       ],
     );
   }
@@ -322,10 +293,9 @@ class _ActionsMenu extends StatelessWidget {
   PopupMenuItem<BroadcastCardAction> _item(
     BroadcastCardAction value,
     IconData icon,
-    String label, {
-    bool destructive = false,
-  }) {
-    final color = destructive ? AppColors.error : AppColors.textPrimary;
+    String label,
+  ) {
+    const color = AppColors.textPrimary;
     return PopupMenuItem<BroadcastCardAction>(
       value: value,
       height: 44,

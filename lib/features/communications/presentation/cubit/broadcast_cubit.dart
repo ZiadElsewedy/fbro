@@ -211,17 +211,6 @@ class BroadcastCubit extends Cubit<BroadcastState> {
     }
   }
 
-  /// Soft-deletes ([deleted] true) / restores a broadcast (analytics preserved).
-  Future<void> setDeleted(String id, bool deleted) async {
-    try {
-      await _repository.setDeleted(id, deleted);
-    } on Failure catch (e) {
-      _emitError(e.message);
-    } catch (_) {
-      _emitError('Could not update the broadcast. Please try again.');
-    }
-  }
-
   /// Surface an error without losing the current feed (when one is loaded).
   void _emitError(String message) {
     final prev = _broadcasts;

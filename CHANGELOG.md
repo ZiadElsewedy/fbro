@@ -12,6 +12,27 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Removed (2026-06-24 — Simplification pass · slice 3b: drop soft-delete + collapse Comms nav)
+
+Removed the broadcast **soft-delete / Deleted view** and collapsed the
+Communications Center navigation to one primary surface. `flutter analyze` clean
+(0 issues); **160 tests pass**; `node --check functions/index.js` valid.
+
+- **Soft-delete gone** — dropped `deletedAt` + `isDeleted` from `BroadcastEntity`/
+  `BroadcastModel` (freezed regenerated); `isActive` is now simply "not archived".
+  Removed `setDeleted` from the cubit / repository / datasource, the Deleted view,
+  the **Delete / Restore / Duplicate / Schedule-again** card + detail actions, and
+  the function housekeeping for soft-deleted broadcasts. The `broadcasts` update
+  rule now freezes every field but `archivedAt`. A broadcast is **active or
+  archived** — no recycle bin.
+- **Nav collapsed** — the Communications home is now just the **feed + New
+  Broadcast FAB**; **Scheduled / Templates / Archived** moved into a single "···"
+  overflow (the Active/Archived/Deleted segmented bar and the separate app-bar
+  icons are gone). Archived is a back-navigable view, not a primary tab.
+- **`BroadcastCardAction`** trimmed to `open · repeatNow · archive · unarchive`
+  (both the feed card and the detail menu).
+- **Tests** — `broadcast_lifecycle_test` updated to an archived-only lifecycle.
+
 ### Removed (2026-06-23 — Simplification pass · slice 3: kill the analytics pipeline)
 
 Decision A — analytics were vanity (open rate / read rate / monthly rollups /

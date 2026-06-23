@@ -52,9 +52,6 @@ class BroadcastEntity with _$BroadcastEntity {
     /// When this broadcast was archived (hidden from the default feed but kept
     /// for history). Null = active.
     DateTime? archivedAt,
-    /// When this broadcast was soft-deleted (hidden from the default feed,
-    /// analytics preserved, restorable). Null = not deleted.
-    DateTime? deletedAt,
     DateTime? createdAt,
   }) = _BroadcastEntity;
 
@@ -67,11 +64,8 @@ class BroadcastEntity with _$BroadcastEntity {
   /// Whether this broadcast is archived (kept for history, off the default feed).
   bool get isArchived => archivedAt != null;
 
-  /// Whether this broadcast is soft-deleted (restorable, analytics preserved).
-  bool get isDeleted => deletedAt != null;
-
-  /// Whether this is live in the default feed (neither archived nor deleted).
-  bool get isActive => archivedAt == null && deletedAt == null;
+  /// Whether this is live in the default feed (not archived).
+  bool get isActive => archivedAt == null;
 
   /// Recipients the push could not be delivered to (recipients − delivered);
   /// null until both counts are known.

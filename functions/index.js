@@ -603,9 +603,8 @@ exports.runBroadcastSchedules = onSchedule("every 5 minutes", async () => {
 });
 
 /**
- * Daily housekeeping (retention / cleanup, Phase 2): hard-deletes long-dead docs
- * so the collections stay lean — soft-deleted broadcasts > 90 days, read +
- * archived notifications > 60 days, and broadcast-open guards > 90 days.
+ * Daily housekeeping (retention / cleanup): hard-deletes long-dead docs so the
+ * collections stay lean — archived notifications older than 60 days.
  */
 exports.broadcastHousekeeping = onSchedule("every 24 hours", async () => {
   const now = Date.now();
@@ -629,10 +628,6 @@ exports.broadcastHousekeeping = onSchedule("every 24 hours", async () => {
   };
 
   try {
-    await deleteQuery(
-      db.collection(BROADCASTS).where("deletedAt", "<=", cutoff(90)),
-      "old soft-deleted broadcasts",
-    );
     await deleteQuery(
       db.collection(NOTIFICATIONS).where("archivedAt", "<=", cutoff(60)),
       "old archived notifications",

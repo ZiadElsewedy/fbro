@@ -76,7 +76,6 @@ Color priorityColor(BroadcastPriority p) => switch (p) {
 
 /// Status label for a broadcast in the history feed.
 String broadcastStatusLabel(BroadcastEntity b) {
-  if (b.isDeleted) return 'Deleted';
   if (b.isArchived) return 'Archived';
   return 'Sent';
 }

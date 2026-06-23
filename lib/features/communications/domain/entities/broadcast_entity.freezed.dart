@@ -55,10 +55,6 @@ mixin _$BroadcastEntity {
   /// When this broadcast was archived (hidden from the default feed but kept
   /// for history). Null = active.
   DateTime? get archivedAt => throw _privateConstructorUsedError;
-
-  /// When this broadcast was soft-deleted (hidden from the default feed,
-  /// analytics preserved, restorable). Null = not deleted.
-  DateTime? get deletedAt => throw _privateConstructorUsedError;
   DateTime? get createdAt => throw _privateConstructorUsedError;
 
   /// Create a copy of BroadcastEntity
@@ -91,7 +87,6 @@ abstract class $BroadcastEntityCopyWith<$Res> {
     int? recipientCount,
     int? deliveredCount,
     DateTime? archivedAt,
-    DateTime? deletedAt,
     DateTime? createdAt,
   });
 }
@@ -126,7 +121,6 @@ class _$BroadcastEntityCopyWithImpl<$Res, $Val extends BroadcastEntity>
     Object? recipientCount = freezed,
     Object? deliveredCount = freezed,
     Object? archivedAt = freezed,
-    Object? deletedAt = freezed,
     Object? createdAt = freezed,
   }) {
     return _then(
@@ -191,10 +185,6 @@ class _$BroadcastEntityCopyWithImpl<$Res, $Val extends BroadcastEntity>
                 ? _value.archivedAt
                 : archivedAt // ignore: cast_nullable_to_non_nullable
                       as DateTime?,
-            deletedAt: freezed == deletedAt
-                ? _value.deletedAt
-                : deletedAt // ignore: cast_nullable_to_non_nullable
-                      as DateTime?,
             createdAt: freezed == createdAt
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
@@ -230,7 +220,6 @@ abstract class _$$BroadcastEntityImplCopyWith<$Res>
     int? recipientCount,
     int? deliveredCount,
     DateTime? archivedAt,
-    DateTime? deletedAt,
     DateTime? createdAt,
   });
 }
@@ -264,7 +253,6 @@ class __$$BroadcastEntityImplCopyWithImpl<$Res>
     Object? recipientCount = freezed,
     Object? deliveredCount = freezed,
     Object? archivedAt = freezed,
-    Object? deletedAt = freezed,
     Object? createdAt = freezed,
   }) {
     return _then(
@@ -329,10 +317,6 @@ class __$$BroadcastEntityImplCopyWithImpl<$Res>
             ? _value.archivedAt
             : archivedAt // ignore: cast_nullable_to_non_nullable
                   as DateTime?,
-        deletedAt: freezed == deletedAt
-            ? _value.deletedAt
-            : deletedAt // ignore: cast_nullable_to_non_nullable
-                  as DateTime?,
         createdAt: freezed == createdAt
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
@@ -361,7 +345,6 @@ class _$BroadcastEntityImpl extends _BroadcastEntity {
     this.recipientCount,
     this.deliveredCount,
     this.archivedAt,
-    this.deletedAt,
     this.createdAt,
   }) : super._();
 
@@ -423,17 +406,12 @@ class _$BroadcastEntityImpl extends _BroadcastEntity {
   /// for history). Null = active.
   @override
   final DateTime? archivedAt;
-
-  /// When this broadcast was soft-deleted (hidden from the default feed,
-  /// analytics preserved, restorable). Null = not deleted.
-  @override
-  final DateTime? deletedAt;
   @override
   final DateTime? createdAt;
 
   @override
   String toString() {
-    return 'BroadcastEntity(id: $id, title: $title, message: $message, senderId: $senderId, senderName: $senderName, senderRole: $senderRole, audience: $audience, branchId: $branchId, targetUserId: $targetUserId, category: $category, priority: $priority, channel: $channel, recipientCount: $recipientCount, deliveredCount: $deliveredCount, archivedAt: $archivedAt, deletedAt: $deletedAt, createdAt: $createdAt)';
+    return 'BroadcastEntity(id: $id, title: $title, message: $message, senderId: $senderId, senderName: $senderName, senderRole: $senderRole, audience: $audience, branchId: $branchId, targetUserId: $targetUserId, category: $category, priority: $priority, channel: $channel, recipientCount: $recipientCount, deliveredCount: $deliveredCount, archivedAt: $archivedAt, createdAt: $createdAt)';
   }
 
   @override
@@ -467,8 +445,6 @@ class _$BroadcastEntityImpl extends _BroadcastEntity {
                 other.deliveredCount == deliveredCount) &&
             (identical(other.archivedAt, archivedAt) ||
                 other.archivedAt == archivedAt) &&
-            (identical(other.deletedAt, deletedAt) ||
-                other.deletedAt == deletedAt) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt));
   }
@@ -491,7 +467,6 @@ class _$BroadcastEntityImpl extends _BroadcastEntity {
     recipientCount,
     deliveredCount,
     archivedAt,
-    deletedAt,
     createdAt,
   );
 
@@ -524,7 +499,6 @@ abstract class _BroadcastEntity extends BroadcastEntity {
     final int? recipientCount,
     final int? deliveredCount,
     final DateTime? archivedAt,
-    final DateTime? deletedAt,
     final DateTime? createdAt,
   }) = _$BroadcastEntityImpl;
   const _BroadcastEntity._() : super._();
@@ -582,11 +556,6 @@ abstract class _BroadcastEntity extends BroadcastEntity {
   /// for history). Null = active.
   @override
   DateTime? get archivedAt;
-
-  /// When this broadcast was soft-deleted (hidden from the default feed,
-  /// analytics preserved, restorable). Null = not deleted.
-  @override
-  DateTime? get deletedAt;
   @override
   DateTime? get createdAt;
 

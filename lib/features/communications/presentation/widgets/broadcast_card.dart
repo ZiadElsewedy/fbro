@@ -7,17 +7,8 @@ import 'package:fbro/core/widgets/glass_container.dart';
 import 'package:fbro/features/communications/domain/entities/broadcast_entity.dart';
 import 'package:fbro/features/communications/presentation/communications_format.dart';
 
-/// The per-item action menu on a broadcast history card (Phase 2).
-enum BroadcastCardAction {
-  open,
-  repeatNow,
-  duplicate,
-  scheduleAgain,
-  archive,
-  unarchive,
-  delete,
-  restore,
-}
+/// The per-item action menu on a broadcast feed card.
+enum BroadcastCardAction { open, repeatNow, archive, unarchive }
 
 /// A single broadcast in the Communications Center history feed (Phase 2) —
 /// title, category, message preview, sender, time, delivery summary
@@ -145,7 +136,6 @@ class BroadcastCard extends StatelessWidget {
 
   Widget _menu(BuildContext context) {
     final archived = broadcast.isArchived;
-    final deleted = broadcast.isDeleted;
     return PopupMenuButton<BroadcastCardAction>(
       tooltip: 'Actions',
       icon: const Icon(Icons.more_vert_rounded,
@@ -155,25 +145,12 @@ class BroadcastCard extends StatelessWidget {
       onSelected: onAction,
       itemBuilder: (context) => [
         _item(BroadcastCardAction.open, Icons.open_in_full_rounded, 'Open'),
-        if (!deleted) ...[
-          _item(BroadcastCardAction.repeatNow, Icons.replay_rounded,
-              'Repeat now'),
-          _item(BroadcastCardAction.duplicate, Icons.copy_rounded, 'Duplicate'),
-          _item(BroadcastCardAction.scheduleAgain, Icons.schedule_rounded,
-              'Schedule again'),
-          if (archived)
-            _item(BroadcastCardAction.unarchive, Icons.unarchive_rounded,
-                'Unarchive')
-          else
-            _item(BroadcastCardAction.archive, Icons.archive_outlined,
-                'Archive'),
-        ],
-        if (deleted)
-          _item(BroadcastCardAction.restore, Icons.restore_rounded, 'Restore')
+        _item(BroadcastCardAction.repeatNow, Icons.replay_rounded, 'Repeat now'),
+        if (archived)
+          _item(BroadcastCardAction.unarchive, Icons.unarchive_rounded,
+              'Unarchive')
         else
-          _item(BroadcastCardAction.delete, Icons.delete_outline_rounded,
-              'Delete',
-              destructive: true),
+          _item(BroadcastCardAction.archive, Icons.archive_outlined, 'Archive'),
       ],
     );
   }
@@ -281,8 +258,7 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final deleted = broadcast.isDeleted;
-    final color = deleted ? AppColors.error : AppColors.textTertiary;
+    const color = AppColors.textTertiary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -293,8 +269,7 @@ class _StatusChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(deleted ? Icons.delete_outline_rounded : Icons.archive_outlined,
-              size: 12, color: color),
+          const Icon(Icons.archive_outlined, size: 12, color: color),
           const SizedBox(width: 4),
           Text(broadcastStatusLabel(broadcast),
               style: AppTypography.caption.copyWith(color: color)),

@@ -239,13 +239,13 @@ service cloud.firestore {
                 || resource.data.get('branchId', '') == selfBranch()));
 
       // Content + delivery stats are owned by the `sendBroadcast` Cloud Function
-      // (Admin SDK, bypasses rules). Clients may flip ONLY the lifecycle metadata
-      // (Phase 2 archive / soft-delete) — and only an admin, the owning-branch
-      // manager, or the original sender. The field-diff freezes every other
-      // field, so delivery stats / recipients can never be forged client-side.
+      // (Admin SDK, bypasses rules). Clients may flip ONLY `archivedAt` (archive
+      // / unarchive) — and only an admin, the owning-branch manager, or the
+      // original sender. The field-diff freezes every other field, so delivery
+      // stats / recipients can never be forged client-side.
       allow update: if request.resource.data
               .diff(resource.data).affectedKeys()
-              .hasOnly(['archivedAt', 'deletedAt'])
+              .hasOnly(['archivedAt'])
         && (isAdmin()
             || resource.data.get('senderId', '') == request.auth.uid
             || canReachBranch(resource.data.get('branchId', '')));

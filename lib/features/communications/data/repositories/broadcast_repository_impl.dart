@@ -43,12 +43,4 @@ class BroadcastRepositoryImpl implements BroadcastRepository {
     }
   }
 
-  @override
-  Future<void> setDeleted(String id, bool deleted) async {
-    try {
-      await _remote.setDeleted(id, deleted);
-    } on ServerException catch (e) {
-      throw ServerFailure(e.message);
-    }
-  }
 }

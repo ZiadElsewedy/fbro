@@ -50,7 +50,6 @@ class BroadcastModel {
   final int? recipientCount;
   final int? deliveredCount;
   final DateTime? archivedAt;
-  final DateTime? deletedAt;
   final DateTime? createdAt;
 
   const BroadcastModel({
@@ -69,7 +68,6 @@ class BroadcastModel {
     this.recipientCount,
     this.deliveredCount,
     this.archivedAt,
-    this.deletedAt,
     this.createdAt,
   });
 
@@ -90,7 +88,6 @@ class BroadcastModel {
         recipientCount: (map['recipientCount'] as num?)?.toInt(),
         deliveredCount: (map['deliveredCount'] as num?)?.toInt(),
         archivedAt: map.date('archivedAt'),
-        deletedAt: map.date('deletedAt'),
         createdAt: map.date('createdAt'),
       );
 
@@ -110,7 +107,6 @@ class BroadcastModel {
         recipientCount: e.recipientCount,
         deliveredCount: e.deliveredCount,
         archivedAt: e.archivedAt,
-        deletedAt: e.deletedAt,
         createdAt: e.createdAt,
       );
 
@@ -181,7 +177,6 @@ class BroadcastModel {
         recipientCount: recipientCount ?? this.recipientCount,
         deliveredCount: deliveredCount ?? this.deliveredCount,
         archivedAt: archivedAt,
-        deletedAt: deletedAt,
         createdAt: createdAt,
       );
 
@@ -208,7 +203,6 @@ class BroadcastModel {
         recipientCount: recipientCount,
         deliveredCount: deliveredCount,
         archivedAt: archivedAt,
-        deletedAt: deletedAt,
         createdAt: createdAt,
       );
 }
