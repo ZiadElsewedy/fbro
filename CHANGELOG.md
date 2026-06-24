@@ -12,6 +12,39 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed (2026-06-24 — Perf audit regression fixes: offline admin stats + task stream scope)
+
+Two highest-priority regressions from the Phase A–D validation audit. `flutter
+analyze` clean (0 issues); **157 tests pass**. No schema / rules / route / DI /
+freezed change.
+
+- **L1 — Offline-safe admin statistics
+  (`statistics_remote_datasource.dart`).** Phase A moved `adminStats` to
+  server-side `count()` aggregation, but aggregation queries are **server-only**
+  (no offline cache support), so `count().get()` throws `unavailable` when
+  offline → the whole `adminStats` failed → admin dashboard showed a hard error
+  instead of cached numbers (regressing the offline-first goal; manager/employee
+  stats were unaffected since they use cache-backed `.get()`). Fix: `_aggCount`
+  now catches the offline `unavailable` error and falls back to counting the
+  **same query's** documents from the local cache
+  (`query.get(Source.cache).docs.length`) — last-known values, no network, no
+  hard failure. The **online path is unchanged** (still pure aggregation, zero
+  doc downloads); the cached fallback only runs offline and reads only the
+  already-filtered query. Non-offline errors (e.g. `permission-denied`) are
+  rethrown so genuine failures still surface.
+
+- **L3 — Task stream scope guard (`task_cubit.dart`).** Phase A's idempotency
+  guard keyed only on `uid`, but `_streamFor` selects a **different** stream per
+  role/branch (admin → `watchAllTasks`, manager → `watchTasksByBranch`, employee
+  → `watchEmployeeTasks`). A same-uid role or branch change while the app was
+  active (e.g. an employee promoted to manager, or moved branches, via
+  `watchCurrentUser`'s re-emit) would hit the no-op guard and **keep streaming
+  the wrong scope**. Fix: a new `_scopeKey(u) = uid:role:branchId` is now the
+  subscription identity — the no-op guard returns early only when the full scope
+  matches, and a scope change resubscribes and clears the scope-bound directory /
+  branch caches. The revisit no-op optimization is preserved for an identical
+  scope; pull-to-refresh (`forceRefresh`) and error-recovery paths are unchanged.
+
 ### Changed (2026-06-24 — Performance · Phase D: admin-dashboard + broadcast-feed rebuild scoping)
 
 Two targeted UI-rebuild fixes from the rebuild/render audit (which found the app

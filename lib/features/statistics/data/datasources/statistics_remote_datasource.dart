@@ -38,10 +38,25 @@ class StatisticsRemoteDataSourceImpl implements StatisticsRemoteDataSource {
   static int _count(List<_Doc> docs, bool Function(Map<String, dynamic>) test) =>
       docs.where((d) => test(d.data())).length;
 
-  /// Server-side count aggregation — returns a count without downloading any
-  /// documents (one read unit per ~1000 index entries instead of N doc reads).
-  static Future<int> _aggCount(Query<Map<String, dynamic>> query) async =>
-      (await query.count().get()).count ?? 0;
+  /// Count for [query]. Online it uses server-side **aggregation** — no document
+  /// downloads (one read unit per ~1000 index entries instead of N doc reads).
+  ///
+  /// Aggregation queries are **server-only** (no offline cache support), so when
+  /// the client is offline `count().get()` throws `unavailable`. In that case we
+  /// fall back to counting the **same query's** documents from the local cache
+  /// (`Source.cache`) — last-known values, no network, no hard failure. The
+  /// fallback only ever reads the already-filtered query's cached docs (offline
+  /// only); the online path never downloads documents. Non-offline errors
+  /// (e.g. `permission-denied`) are rethrown so genuine failures still surface.
+  static Future<int> _aggCount(Query<Map<String, dynamic>> query) async {
+    try {
+      return (await query.count().get()).count ?? 0;
+    } on FirebaseException catch (e) {
+      if (e.code != 'unavailable') rethrow;
+      final cached = await query.get(const GetOptions(source: Source.cache));
+      return cached.docs.length;
+    }
+  }
 
   static bool _isToday(dynamic ts, DateTime startOfToday) =>
       ts is Timestamp && !ts.toDate().isBefore(startOfToday);

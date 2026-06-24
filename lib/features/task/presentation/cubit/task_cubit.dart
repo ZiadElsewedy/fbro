@@ -99,16 +99,29 @@ class TaskCubit extends Cubit<TaskState> {
     return null;
   }
 
+  /// Identifies which Firestore stream the current subscription is bound to.
+  /// Role and branch select **different** streams ([_streamFor]: admin →
+  /// `watchAllTasks`, manager → `watchTasksByBranch`, employee →
+  /// `watchEmployeeTasks`), so the subscription's identity is the full scope, not
+  /// just the uid — a same-uid role/branch change (e.g. an employee promoted to
+  /// manager, or moved branches, while the app is active) must force a
+  /// resubscribe or we'd keep streaming the wrong scope.
+  static String _scopeKey(UserEntity u) =>
+      '${u.uid}:${u.role.value}:${u.branchId ?? ''}';
+
   Future<void> load(UserEntity user, {bool forceRefresh = false}) async {
-    // Already streaming this user's tasks — the live Firestore snapshot keeps
-    // the list fresh, so a screen revisit must not cancel + re-subscribe (a
-    // fresh server read) or flash a skeleton. Still re-load after an error so a
-    // revisit can recover; pull-to-refresh passes forceRefresh to re-subscribe.
+    // Already streaming this exact scope — the live Firestore snapshot keeps the
+    // list fresh, so a screen revisit must not cancel + re-subscribe (a fresh
+    // server read) or flash a skeleton. Still re-load after an error so a revisit
+    // can recover; pull-to-refresh passes forceRefresh to re-subscribe.
     final inError = state.maybeWhen(error: (_) => true, orElse: () => false);
-    if (!forceRefresh && !inError && _user?.uid == user.uid && _sub != null) {
+    final sameScope = _user != null && _scopeKey(_user!) == _scopeKey(user);
+    if (!forceRefresh && !inError && _sub != null && sameScope) {
       return;
     }
-    if (_user?.uid != user.uid) {
+    // Scope changed (different user, or same user with a new role/branch) — the
+    // resolved directory + branch caches belonged to the old scope, so drop them.
+    if (!sameScope) {
       _directory.clear();
       _fetchedBranches.clear();
       _branchNames.clear();

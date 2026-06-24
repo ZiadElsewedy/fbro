@@ -11,8 +11,25 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-24 (Perf · Phase D — admin-dashboard + broadcast-feed rebuild scoping)
+**Last updated:** 2026-06-24 (Perf audit regression fixes — L1 offline admin stats + L3 task stream scope)
 **Version:** 1.0.0+1 · **Branch:** `feature/cache-layer` (DROP — monochrome enterprise UX)
+
+> **Perf-audit regression fixes (2026-06-24):** A validation/regression audit of
+> the Phase A–D work (analyzer clean, 157 tests pass on the current toolchain —
+> Flutter 3.44.2 / Dart 3.12.2, so the "Dart 3.10.4 can't analyze" notes below
+> are **stale**) found two real regressions, now fixed. **L1 — offline admin
+> stats:** Phase A's `adminStats` `count()` aggregation is **server-only** (no
+> offline cache), so it threw `unavailable` offline and hard-failed the admin
+> dashboard. `_aggCount` now falls back to counting the **same query's** cached
+> docs (`Source.cache`) when offline — online path unchanged (pure aggregation,
+> zero doc downloads); non-offline errors still rethrow. **L3 — task stream
+> scope:** `TaskCubit.load`'s idempotency guard keyed only on `uid`, so a same-uid
+> role/branch change kept streaming the wrong scope (admin/manager/employee use
+> different streams). The guard + cache-clear now key on the full
+> `_scopeKey = uid:role:branchId`; identical-scope revisits still no-op. Remaining
+> audit findings (stats not invalidated on mutation, singleton reset on logout,
+> startup double-fetch, broadcast entrance-anim skip, missing optimization tests)
+> are **deferred** — not addressed here.
 
 > **Performance · Phase D — two targeted UI rebuild fixes (2026-06-24):** A
 > rebuild/render audit found the app **already healthy** (scoped BlocBuilders,
