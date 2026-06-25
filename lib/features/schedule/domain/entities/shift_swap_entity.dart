@@ -5,16 +5,20 @@ import 'package:fbro/core/enums/swap_status.dart';
 
 part 'shift_swap_entity.freezed.dart';
 
-/// A shift-swap request (Phase 7). The [requesterId] employee asks the
-/// [targetId] coworker to take one scheduled slot — a single (week, [day],
-/// [shift]) cell of their branch's [WeeklyScheduleEntity]. The coworker approves
-/// first, then the branch manager; on manager approval the schedule is updated
-/// automatically (requester removed, target added on that slot).
+/// A shift-swap request (Phase 7, exchange model). The [requesterId] employee
+/// asks the [targetId] coworker on the **opposite shift that same day** to
+/// **trade** shifts — the requester holds (week, [day], [shift]); the target
+/// holds the opposite shift (there are only two). The coworker approves first,
+/// then the branch manager; on manager approval the `approveSwap` Cloud Function
+/// **exchanges both slots atomically** (Ziad's Night ⇄ Ahmed's Morning) — the
+/// requester moves to the opposite shift and the target takes the requester's.
+/// No new field is needed: the target's slot is always [shift]`.opposite`.
 ///
 /// Names are denormalized ([requesterName] / [targetName]) so the request can be
 /// displayed without extra user lookups. Access is enforced server-side in
 /// `firestore.rules` (`shift_swaps/{id}`): the two employees and the branch
-/// manager/admin can see and act on it.
+/// manager/admin can see and act on it; the final `managerApproved` transition is
+/// owned by the Cloud Function.
 @freezed
 class ShiftSwapEntity with _$ShiftSwapEntity {
   const factory ShiftSwapEntity({

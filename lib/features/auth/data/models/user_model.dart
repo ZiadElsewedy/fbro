@@ -18,6 +18,7 @@ class UserModel {
   final String? branchId;
   final bool isActive;
   final String? assignedShift;
+  final String? position;
   // ─── Approval (account activation) ──────────────────────────
   final ApprovalStatus approvalStatus;
 
@@ -34,6 +35,7 @@ class UserModel {
     this.branchId,
     this.isActive = true,
     this.assignedShift,
+    this.position,
     this.approvalStatus = ApprovalStatus.approved,
   });
 
@@ -61,6 +63,7 @@ class UserModel {
         branchId: entity.branchId,
         isActive: entity.isActive,
         assignedShift: entity.assignedShift,
+        position: entity.position,
         approvalStatus: entity.approvalStatus,
       );
 
@@ -81,6 +84,7 @@ class UserModel {
         branchId: map['branchId'] as String?,
         isActive: map['isActive'] as bool? ?? true,
         assignedShift: map['assignedShift'] as String?,
+        position: map['position'] as String?,
         approvalStatus: ApprovalStatus.fromString(map['approvalStatus'] as String?),
       );
 
@@ -112,6 +116,7 @@ class UserModel {
         branchId: branchId,
         isActive: isActive,
         assignedShift: assignedShift,
+        position: position,
         approvalStatus: approvalStatus,
       );
 }

@@ -36,6 +36,9 @@ mixin _$BranchEntity {
   /// Soft-delete marker; null while the branch is live.
   DateTime? get deletedAt => throw _privateConstructorUsedError;
 
+  /// Optional branch-level shift-swap rules; null = permissive.
+  SwapPolicy? get swapPolicy => throw _privateConstructorUsedError;
+
   /// Create a copy of BranchEntity
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -60,6 +63,7 @@ abstract class $BranchEntityCopyWith<$Res> {
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? deletedAt,
+    SwapPolicy? swapPolicy,
   });
 }
 
@@ -87,6 +91,7 @@ class _$BranchEntityCopyWithImpl<$Res, $Val extends BranchEntity>
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
     Object? deletedAt = freezed,
+    Object? swapPolicy = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -126,6 +131,10 @@ class _$BranchEntityCopyWithImpl<$Res, $Val extends BranchEntity>
                 ? _value.deletedAt
                 : deletedAt // ignore: cast_nullable_to_non_nullable
                       as DateTime?,
+            swapPolicy: freezed == swapPolicy
+                ? _value.swapPolicy
+                : swapPolicy // ignore: cast_nullable_to_non_nullable
+                      as SwapPolicy?,
           )
           as $Val,
     );
@@ -151,6 +160,7 @@ abstract class _$$BranchEntityImplCopyWith<$Res>
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? deletedAt,
+    SwapPolicy? swapPolicy,
   });
 }
 
@@ -177,6 +187,7 @@ class __$$BranchEntityImplCopyWithImpl<$Res>
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
     Object? deletedAt = freezed,
+    Object? swapPolicy = freezed,
   }) {
     return _then(
       _$BranchEntityImpl(
@@ -216,6 +227,10 @@ class __$$BranchEntityImplCopyWithImpl<$Res>
             ? _value.deletedAt
             : deletedAt // ignore: cast_nullable_to_non_nullable
                   as DateTime?,
+        swapPolicy: freezed == swapPolicy
+            ? _value.swapPolicy
+            : swapPolicy // ignore: cast_nullable_to_non_nullable
+                  as SwapPolicy?,
       ),
     );
   }
@@ -234,6 +249,7 @@ class _$BranchEntityImpl extends _BranchEntity {
     this.createdAt,
     this.updatedAt,
     this.deletedAt,
+    this.swapPolicy,
   }) : super._();
 
   @override
@@ -265,9 +281,13 @@ class _$BranchEntityImpl extends _BranchEntity {
   @override
   final DateTime? deletedAt;
 
+  /// Optional branch-level shift-swap rules; null = permissive.
+  @override
+  final SwapPolicy? swapPolicy;
+
   @override
   String toString() {
-    return 'BranchEntity(id: $id, name: $name, location: $location, isActive: $isActive, logoUrl: $logoUrl, coverUrl: $coverUrl, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
+    return 'BranchEntity(id: $id, name: $name, location: $location, isActive: $isActive, logoUrl: $logoUrl, coverUrl: $coverUrl, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt, swapPolicy: $swapPolicy)';
   }
 
   @override
@@ -289,7 +309,9 @@ class _$BranchEntityImpl extends _BranchEntity {
             (identical(other.updatedAt, updatedAt) ||
                 other.updatedAt == updatedAt) &&
             (identical(other.deletedAt, deletedAt) ||
-                other.deletedAt == deletedAt));
+                other.deletedAt == deletedAt) &&
+            (identical(other.swapPolicy, swapPolicy) ||
+                other.swapPolicy == swapPolicy));
   }
 
   @override
@@ -304,6 +326,7 @@ class _$BranchEntityImpl extends _BranchEntity {
     createdAt,
     updatedAt,
     deletedAt,
+    swapPolicy,
   );
 
   /// Create a copy of BranchEntity
@@ -326,6 +349,7 @@ abstract class _BranchEntity extends BranchEntity {
     final DateTime? createdAt,
     final DateTime? updatedAt,
     final DateTime? deletedAt,
+    final SwapPolicy? swapPolicy,
   }) = _$BranchEntityImpl;
   const _BranchEntity._() : super._();
 
@@ -356,6 +380,10 @@ abstract class _BranchEntity extends BranchEntity {
   /// Soft-delete marker; null while the branch is live.
   @override
   DateTime? get deletedAt;
+
+  /// Optional branch-level shift-swap rules; null = permissive.
+  @override
+  SwapPolicy? get swapPolicy;
 
   /// Create a copy of BranchEntity
   /// with the given fields replaced by the non-null parameter values.

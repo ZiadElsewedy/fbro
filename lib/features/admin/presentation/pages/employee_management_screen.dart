@@ -267,6 +267,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
             showAssignBranchSheet(context: context, cubit: cubit, user: user),
       ),
       AdminActionButton(
+        label: 'Position',
+        icon: Icons.badge_outlined,
+        onPressed: () =>
+            showSetPositionSheet(context: context, cubit: cubit, user: user),
+      ),
+      AdminActionButton(
         label: user.isActive ? 'Deactivate' : 'Activate',
         icon: user.isActive
             ? Icons.block_rounded
@@ -294,6 +300,8 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           children: [
             _detail('Email', user.email),
             _detail('Role', user.role.value),
+            if ((user.position ?? '').trim().isNotEmpty)
+              _detail('Position', user.position!.trim()),
             _detail(
                 'Branch',
                 user.branchId == null || user.branchId!.isEmpty

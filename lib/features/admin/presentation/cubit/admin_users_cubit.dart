@@ -71,6 +71,10 @@ class AdminUsersCubit extends Cubit<AdminUsersState> {
   Future<void> changeBranch(UserEntity user, String? branchId) =>
       _mutate(() => _users.changeUserBranch(user.uid, branchId));
 
+  /// Set the employee's job position (drives shift-swap role compatibility).
+  Future<void> changePosition(UserEntity user, String? position) =>
+      _mutate(() => _users.changeUserPosition(user.uid, position));
+
   Future<void> changeRole(UserEntity user, UserRole role) =>
       _mutate(() => _users.changeUserRole(user.uid, role));
 

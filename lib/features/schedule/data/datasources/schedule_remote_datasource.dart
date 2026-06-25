@@ -1,4 +1,7 @@
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:fbro/core/constants/app_constants.dart';
 import 'package:fbro/core/enums/schedule_day.dart';
 import 'package:fbro/core/enums/schedule_shift.dart';
@@ -40,12 +43,23 @@ abstract class ScheduleRemoteDataSource {
     required String swapId,
     required SwapStatus status,
   });
+
+  /// Finalizes a coworker-approved swap through the **callable `approveSwap`
+  /// Cloud Function** (the authority): it re-validates against the freshest
+  /// schedule and applies the exchange atomically. [scheduleId] is computed
+  /// client-side from the local week start (the function can't reproduce that id
+  /// in UTC) and is re-checked server-side against the swap's branch.
+  Future<void> approveSwap({
+    required String swapId,
+    required String scheduleId,
+  });
 }
 
 class ScheduleRemoteDataSourceImpl implements ScheduleRemoteDataSource {
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
 
-  ScheduleRemoteDataSourceImpl(this._firestore);
+  ScheduleRemoteDataSourceImpl(this._firestore, this._functions);
 
   CollectionReference<Map<String, dynamic>> get _schedules =>
       _firestore.collection(AppConstants.weeklySchedulesCollection);
@@ -212,6 +226,50 @@ class ScheduleRemoteDataSourceImpl implements ScheduleRemoteDataSource {
       }, SetOptions(merge: true));
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to update the swap request.');
+    }
+  }
+
+  @override
+  Future<void> approveSwap({
+    required String swapId,
+    required String scheduleId,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('approveSwap');
+      await callable.call<Map<String, dynamic>>({
+        'swapId': swapId,
+        'scheduleId': scheduleId,
+      });
+    } on FirebaseFunctionsException catch (e, st) {
+      developer.log(
+        'approveSwap callable failed: code=${e.code} message=${e.message}',
+        name: 'schedule',
+        error: e,
+        stackTrace: st,
+      );
+      throw ServerException(_friendlyFunctionsError(e));
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to approve the swap.');
+    }
+  }
+
+  /// Maps a callable failure to a user-facing message. The function raises
+  /// full-sentence `HttpsError` messages for validation problems (surfaced
+  /// verbatim); transport-level failures raise bare upper-case codes, replaced
+  /// with guidance (mirrors `BroadcastRemoteDataSourceImpl`).
+  String _friendlyFunctionsError(FirebaseFunctionsException e) {
+    final msg = (e.message ?? '').trim();
+    if (msg.contains(' ')) return msg; // a real sentence vs. a raw code token
+    switch (e.code) {
+      case 'unauthenticated':
+      case 'permission-denied':
+        return 'Couldn’t reach the swap service. Please try again in a moment.';
+      case 'unavailable':
+        return 'Network problem — check your connection and try again.';
+      case 'not-found':
+        return 'The swap service isn’t available yet. Please try again later.';
+      default:
+        return 'Couldn’t approve the swap right now. Please try again.';
     }
   }
 

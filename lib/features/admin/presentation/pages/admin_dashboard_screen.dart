@@ -9,6 +9,7 @@ import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/action_card.dart';
 import 'package:fbro/core/widgets/admin_section_header.dart';
+import 'package:fbro/core/widgets/animated_count.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/dashboard_metric_card.dart';
 import 'package:fbro/core/widgets/brand_watermark.dart';
@@ -495,7 +496,9 @@ class _Hero extends StatelessWidget {
           // Big metric beside its title + summary — one tight block, no dead space.
           Row(
             children: [
-              Text(value, style: AppTypography.displayMedium),
+              AnimatedCount(
+                  value: int.tryParse(value) ?? 0,
+                  style: AppTypography.displayMedium),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(

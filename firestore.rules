@@ -52,10 +52,11 @@ service cloud.firestore {
         && request.resource.data.get('isActive', false) == false
         && request.resource.data.get('approvalStatus', 'pending') == 'pending';
 
-      // Admin: full control — approve/reject, promote, move branch, (de)activate.
+      // Admin: full control — approve/reject, promote, move branch, (de)activate,
+      //   set job position (drives shift-swap role compatibility).
       // Self: profile-only updates — all privileged fields stay frozen (role,
-      //   isActive, branchId, assignedShift, approvalStatus). Non-privileged
-      //   fields (profile data, fcmToken) are free to change.
+      //   isActive, branchId, assignedShift, approvalStatus, position). Non-
+      //   privileged fields (profile data, fcmToken) are free to change.
       // Managers do NOT write user docs (they manage branch operations only).
       allow update: if isAdmin()
         || (isOwner(uid)
@@ -67,6 +68,8 @@ service cloud.firestore {
                  == resource.data.get('branchId', '')
             && request.resource.data.get('assignedShift', '')
                  == resource.data.get('assignedShift', '')
+            && request.resource.data.get('position', '')
+                 == resource.data.get('position', '')
             && request.resource.data.get('approvalStatus', 'approved')
                  == resource.data.get('approvalStatus', 'approved'));
 
@@ -184,9 +187,12 @@ service cloud.firestore {
     //            an UPCOMING shift (past/in-progress shifts can't be swapped —
     //            spec §2; the precise rule also lives client-side in
     //            SwapEligibility, this is the server backstop).
-    //   update — admin/own-branch manager (approve/reject), OR either involved
-    //            employee (coworker approve / requester cancel / decline). The
-    //            exact status flow is validated client-side (ShiftSwapCubit).
+    //   update — admin/own-branch manager (reject), OR either involved employee
+    //            (coworker approve / requester cancel / decline). The exact status
+    //            flow is validated client-side (ShiftSwapCubit). The FINAL
+    //            approval (status → managerApproved) is **denied to all clients**
+    //            and applied only by the `approveSwap` Cloud Function (Admin SDK),
+    //            which re-validates and rewrites the schedule atomically.
     //   delete — admin/own-branch manager only.
 
     // Day offset within the week (Sunday=0 … Saturday=6), matching ScheduleDay.
@@ -220,9 +226,14 @@ service cloud.firestore {
         && request.resource.data.get('requesterId', '') == request.auth.uid
         && request.resource.data.get('branchId', '') == selfBranch()
         && swapSlotInFuture(request.resource.data);
-      allow update: if canReachBranch(resource.data.get('branchId', ''))
-        || resource.data.get('requesterId', '') == request.auth.uid
-        || resource.data.get('targetId', '') == request.auth.uid;
+      allow update: if (canReachBranch(resource.data.get('branchId', ''))
+          || resource.data.get('requesterId', '') == request.auth.uid
+          || resource.data.get('targetId', '') == request.auth.uid)
+        // Finalizing the swap (→ managerApproved, which rewrites the schedule) is
+        // OWNED BY the approveSwap Cloud Function (Admin SDK, bypasses rules).
+        // Deny any direct client write that sets it, so a swap can never be
+        // applied without the server-side re-validation + atomic exchange.
+        && request.resource.data.get('status', '') != 'managerApproved';
       allow delete: if canReachBranch(resource.data.get('branchId', ''));
     }
 

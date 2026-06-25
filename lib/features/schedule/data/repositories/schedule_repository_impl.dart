@@ -163,40 +163,18 @@ class ScheduleRepositoryImpl implements ScheduleRepository {
   @override
   Future<void> managerApproveSwap(ShiftSwapEntity swap) async {
     try {
-      // 1) Mark approved. 2) EXCHANGE the two slots: on the same day the
-      // requester and target trade shifts (only two shifts exist, so the
-      // target's slot is the OPPOSITE of the requester's). Four targeted
-      // nested-array updates (each race-free via array transforms); the manager
-      // has branch-write access (firestore.rules).
-      await _remote.updateSwapStatus(
-          swapId: swap.id, status: SwapStatus.managerApproved);
-      final scheduleId = ScheduleWeek.docId(swap.branchId, swap.weekStart);
-      final opposite = swap.shift.opposite;
-      // Requester leaves their shift, joins the opposite.
-      await _remote.removeEmployee(
-        scheduleId: scheduleId,
-        day: swap.day,
-        shift: swap.shift,
-        employeeId: swap.requesterId,
-      );
-      await _remote.assignEmployee(
-        scheduleId: scheduleId,
-        day: swap.day,
-        shift: opposite,
-        employeeId: swap.requesterId,
-      );
-      // Target leaves the opposite, joins the requester's old shift.
-      await _remote.removeEmployee(
-        scheduleId: scheduleId,
-        day: swap.day,
-        shift: opposite,
-        employeeId: swap.targetId,
-      );
-      await _remote.assignEmployee(
-        scheduleId: scheduleId,
-        day: swap.day,
-        shift: swap.shift,
-        employeeId: swap.targetId,
+      // The validated, ATOMIC exchange is owned by the `approveSwap` Cloud
+      // Function: it re-checks against the freshest schedule (TOCTOU backstop),
+      // enforces the branch's swap policy (role compatibility / rest hours / no
+      // double-booking), and applies the requester ⇄ target trade in a single
+      // transaction (either both move or nothing changes). The replaced client
+      // path was four sequential, non-atomic writes — a partial failure could
+      // corrupt the roster. The schedule doc id is computed here from the LOCAL
+      // week start (the UTC function can't reproduce it) and re-validated
+      // server-side against the swap's branch.
+      await _remote.approveSwap(
+        swapId: swap.id,
+        scheduleId: ScheduleWeek.docId(swap.branchId, swap.weekStart),
       );
     } on ServerException catch (e) {
       throw ServerFailure(e.message);

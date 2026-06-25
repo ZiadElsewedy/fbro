@@ -37,12 +37,16 @@ void main() {
         'branchId': 'branch-1',
         'isActive': true,
         'approvalStatus': 'approved',
+        'position': 'Cashier',
       });
       expect(model.uid, 'u1');
       expect(model.email, 'a@b.com');
       expect(model.displayName, 'Ada');
       expect(model.role, UserRole.manager);
       expect(model.branchId, 'branch-1');
+      // Job position (drives shift-swap role compatibility) round-trips.
+      expect(model.position, 'Cashier');
+      expect(model.toEntity().position, 'Cashier');
     });
   });
 }

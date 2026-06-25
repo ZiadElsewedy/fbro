@@ -207,7 +207,10 @@ class AppDependencies {
 
     // ─── Weekly schedule + shift swaps (Phase 7) ──────────────
     final ScheduleRepository scheduleRepository = ScheduleRepositoryImpl(
-      ScheduleRemoteDataSourceImpl(FirebaseFirestore.instance),
+      ScheduleRemoteDataSourceImpl(
+        FirebaseFirestore.instance,
+        FirebaseFunctions.instance,
+      ),
     );
     scheduleCubit =
         ScheduleCubit(scheduleRepository, GetUsersByBranch(authRepository));

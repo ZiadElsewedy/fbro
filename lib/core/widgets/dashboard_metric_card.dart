@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/animated_count.dart';
 import 'package:fbro/core/widgets/glass_container.dart';
 
 /// A small premium metric tile — an icon chip, a big value, a label and an
@@ -31,6 +32,13 @@ class DashboardMetricCard extends StatelessWidget {
   /// Tint for the icon chip (defaults to the white accent).
   final Color? accent;
 
+  Widget _value() {
+    final n = int.tryParse(value);
+    return n != null
+        ? AnimatedCount(value: n, style: AppTypography.h1, maxLines: 1)
+        : Text(value, style: AppTypography.h1, maxLines: 1);
+  }
+
   @override
   Widget build(BuildContext context) {
     final tint = accent ?? AppColors.primary;
@@ -57,7 +65,9 @@ class DashboardMetricCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
-          Text(value, style: AppTypography.h1, maxLines: 1),
+          // A purely numeric value counts up smoothly on change; anything else
+          // (e.g. the "—" loading placeholder) renders as plain text.
+          _value(),
           const SizedBox(height: 2),
           Text(label, style: AppTypography.caption),
           if (trend != null) ...[

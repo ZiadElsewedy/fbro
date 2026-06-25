@@ -11,8 +11,49 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-25 (Premium task UX slice — reference images + de-flashed card redesign)
+**Last updated:** 2026-06-26 (Shift Swap hardening — server-authoritative atomic exchange + premium UX)
 **Version:** 1.0.0+1 · **Branch:** `enhancement/ui-refactor` (DROP — monochrome premium UX)
+
+> **Shift Swap hardening (2026-06-26):** The employee-to-employee exchange (built
+> 2026-06-25) is now **server-authoritative + atomic** and has a premium swap UX.
+> Manager approval moved off the 4-op non-atomic client write onto a new callable
+> **`approveSwap`** (functions/index.js) that re-validates against the freshest
+> schedule (TOCTOU) and applies the requester ⇄ target trade in **one Firestore
+> transaction**. New validation: **role compatibility** (new `UserEntity.position`
+> + per-branch **`SwapPolicy`** on `branches/{id}.swapPolicy` = `restrictToSamePosition`
+> + `minRestHours`; null = permissive) and **rest hours**, defined once in pure
+> **`SwapValidation`** (client request-time) and **mirrored in the function**
+> (authority). A weekly shift cap was deliberately omitted (invariant under an
+> exchange). Rules hardened: clients can't set `status==managerApproved` (function
+> only); self-update freezes `position`. UI: `swap_view` rebuilt (⇄ exchange visual,
+> status timeline, `DropEmptyState`, premium request sheet with avatar picker +
+> request-time validation); branch form gains a "Shift-swap rules" section; employee
+> management gains a **Position** action. New tests: `swap_policy_test`,
+> `swap_validation_test` (+`user_model` position). `node --check` valid; changed Dart
+> parse-checked (`dart format`). ⚠️ This session's Flutter is **3.10.4 < `^3.12.1`** —
+> run `build_runner` (two freezed files hand-edited) + `analyze` + `test` on 3.12.2.
+> ⚠️ **Deploy required:** `firebase deploy --only functions,firestore:rules`
+> (`approveSwap` + the swap-status/position rule hardening) — until then
+> manager-approve fails (callable missing); sequence the client cutover with the deploy.
+
+> **Realtime polish (2026-06-25):** Reconciled a "realtime admin home" ask against
+> the code — **realtime streams, newest-first, rebuild-scoping, and pull-to-refresh
+> already exist** (`TaskCubit.watchAllTasks`, scoped `BlocSelector`s); the admin
+> home is a **counters dashboard**, not a live task list. Per the owner's lean
+> scope, added two reusable primitives — **`AnimatedCount`** (single animated
+> counter; replaced the bespoke tween in the review header, reused by dashboard
+> metrics + hero + drill counts) and **`LiveListItem`** (keyed entrance-once +
+> optional new-arrival highlight; preserves scroll, no `AnimatedList`/diff) — then:
+> dashboard **metric grid + hero counters count up** (`DashboardMetricCard` numeric
+> values via `AnimatedCount`, back-compat for "—"); **`pending_review_screen`** rows
+> are keyed `LiveListItem`s so a stream emit never re-animates the list, a
+> genuinely-new submission **slides in + briefly highlights** (`_knownTaskIds`),
+> scroll is held (`PageStorageKey` per level), counts animate. **Deliberately did
+> NOT build** the buffer / "X new tasks arrived" banner / 2–5s batching — the stream
+> is sufficient and review is a separate route (no list-jump-during-review problem).
+> Presentation-only; no schema/logic/stream/dependency change. ⚠️ This session's
+> Flutter is **3.10.4 < `^3.12.1`** — run `flutter analyze`/`flutter test` on a
+> current SDK (parse-checked with `dart format`).
 
 > **Premium task UX slice (2026-06-25):** Acted on the task-management UX audit.
 > **#1 — Admin/Manager reference images:** new `TaskEntity.referenceAttachments`

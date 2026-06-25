@@ -12,6 +12,99 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added + Changed (2026-06-26 — Shift Swap hardening: server-authoritative atomic exchange + premium UX)
+
+Hardened the (already employee-to-employee exchange) shift-swap system and gave it
+a premium swap experience. The core exchange/coworker→manager flow already existed
+(2026-06-25); this pass makes the exchange **atomic + server-validated**, adds
+**role-compatibility + rest-hour** policy, and redesigns the swap UI. ⚠️ **Run on a
+current SDK** (this session's Flutter is 3.10.4 < `^3.12.1`): `dart run build_runner
+build --delete-conflicting-outputs` (the two freezed files were hand-edited),
+`flutter analyze`, `flutter test`. ⚠️ **Deploy required:** `firebase deploy --only
+functions,firestore:rules` — until then manager-approve fails (callable missing).
+`node --check functions/index.js` valid; all changed Dart parse-checked (`dart
+format`).
+
+- **Server-authoritative atomic exchange (`approveSwap` Cloud Function).** Manager
+  approval no longer runs four sequential, non-atomic client writes (a partial
+  failure could corrupt the roster). A new callable
+  [`approveSwap`](functions/index.js) re-validates against the **freshest** schedule
+  (TOCTOU backstop), then applies the requester ⇄ target trade in a **single
+  Firestore transaction** (both move or nothing changes). It enforces: status =
+  `employeeApproved`, slot integrity, future shift, double-booking, role
+  compatibility, and rest hours. `ScheduleRepositoryImpl.managerApproveSwap` now
+  calls it (via `ScheduleRemoteDataSource.approveSwap` → `cloud_functions`, already a
+  dep); the client passes the **locally-computed** `scheduleId` (the UTC function
+  can't reproduce the local-week-start doc id) which the function re-checks against
+  the swap's branch.
+- **Branch swap policy + employee position (validation rules).** New plain value
+  object **`SwapPolicy`** ([swap_policy.dart](lib/features/schedule/domain/swap_policy.dart))
+  on `branches/{id}.swapPolicy` (`restrictToSamePosition` + `minRestHours`; null =
+  permissive) and a new **`UserEntity.position`** (`String?`, e.g. "Cashier"). New
+  pure **`SwapValidation`** ([swap_validation.dart](lib/features/schedule/domain/swap_validation.dart))
+  is the single canonical rule definition (slot integrity · role compatibility ·
+  double-booking · rest hours), used client-side at request time and **mirrored in
+  the Cloud Function**. A per-week shift **cap was intentionally omitted** — an
+  exchange is headcount-neutral per employee, so a weekly cap is invariant under a
+  swap (dead validation). Default eligibility stays "same branch, any role"; role
+  compatibility is opt-in per branch.
+- **Firestore hardening.** `shift_swaps` update now **denies any client write that
+  sets `status == 'managerApproved'`** — the validated exchange is owned solely by
+  the Admin-SDK function. The `users` self-update rule now also **freezes
+  `position`** (admin-only, like role/branch).
+- **Premium swap UI.** `swap_view.dart` rebuilt on `AppGlassCard` with a real **⇄
+  exchange visual** (both parties + their shifts), a compact **status timeline**
+  (Requested → Accepted → Approved; terminal rejected/cancelled), branded
+  `DropEmptyState`, and a redesigned **request sheet** (exchange preview · avatar
+  coworker picker with role-incompatible coworkers shown disabled · full
+  request-time `SwapValidation`). The my-week **Swap** affordance is now a premium
+  pill.
+- **Admin config UI.** Branch form sheet gains a "Shift-swap rules" section
+  (same-role toggle + min-rest stepper, edit-only). Employee management gains a
+  **Position** action (`AdminUsersCubit.changePosition` →
+  `UserAdminRepository.changeUserPosition`) + a position line in details.
+- **DI:** `ScheduleRemoteDataSourceImpl` now takes `FirebaseFunctions.instance`.
+- **Docs fixed:** the stale one-way-handover comments on `ShiftSwapEntity` and
+  `ScheduleRepository.managerApproveSwap` now describe the exchange model.
+- **Tests:** new `swap_policy_test` + `swap_validation_test` (role compat · slot
+  integrity · rest hours); `user_model_test` covers `position` round-trip.
+
+### Added (2026-06-25 — Realtime polish: animated counters + smooth Pending Review list)
+
+Acted on a "realtime admin home" request after reconciling it against the code:
+**realtime streams, newest-first, rebuild-scoping, and pull-to-refresh already
+exist** (`TaskCubit` streams `watchAllTasks` ordered `createdAt desc`; the admin
+dashboard rebuilds only scoped sections via `BlocSelector`). The admin home is a
+**counters dashboard**, not a live task list — so per the owner's clarified, lean
+scope, this adds counter animation + smooths the one real live list
+(`pending_review_screen`), and **deliberately omits** the buffer / "X new tasks"
+banner / 2–5s batching (unnecessary complexity: the stream is sufficient and
+review is a separate route, so there's no list "jumping under" an open review).
+Presentation-only; no schema/logic/stream/dependency change. ⚠️ Run `flutter
+analyze` / `flutter test` on a current SDK (this session is 3.10.4); parse-checked
+with `dart format`.
+
+- **`AnimatedCount`** ([core/widgets/animated_count.dart](lib/core/widgets/animated_count.dart))
+  — the single reusable animated counter (count-up on appear, tween on change).
+  Replaces the bespoke `TweenAnimationBuilder` in the review summary header and is
+  reused by the dashboard metrics, the hero, and the drill counts (one source, no
+  per-surface re-rolls).
+- **`LiveListItem`** ([core/widgets/live_list_item.dart](lib/core/widgets/live_list_item.dart))
+  — a realtime-list item that **enters once** (fade + rise) and never replays on a
+  stream emit (caller supplies a stable `ValueKey`, so Flutter reuses the element
+  and preserves scroll — no `AnimatedList`/diff bookkeeping); `isNew` adds a brief
+  fading accent-border highlight. Intentionally minimal.
+- **Admin counters animate** — `DashboardMetricCard` counts up numeric values via
+  `AnimatedCount` (backward-compatible: the "—" placeholder stays plain text; this
+  also smooths the manager/employee metric grids consistently — one shared widget,
+  no fragmentation), and the admin `_Hero` value animates.
+- **`pending_review_screen` smoothed** — every level's rows are now keyed
+  `LiveListItem`s (`b:`/`e:`/`t:` keys), so a stream emit no longer re-animates the
+  list; a genuinely-new submission (an unseen id after the first load, tracked in
+  `_knownTaskIds`) **slides in with a brief highlight**; scroll position is held
+  (keyed items + `PageStorageKey` per level); counts use `AnimatedCount`. No
+  buffer/banner/batch — the existing live stream drives it directly.
+
 ### Changed (2026-06-25 — De-flash: premium ≠ flashy on task surfaces)
 
 Owner ruling: premium **but not flashy** (Linear / Notion / Stripe), and **do not

@@ -26,6 +26,11 @@ class UserEntity with _$UserEntity {
     @Default(true) bool isActive,
     /// Shift assigned to the user (used from Phase 2 onward); null until then.
     String? assignedShift,
+    /// Job position / role title within the branch (e.g. "Cashier",
+    /// "Supervisor"). Optional — null means unspecified. Drives shift-swap role
+    /// compatibility when a branch enables `SwapPolicy.restrictToSamePosition`
+    /// (an unset position stays compatible with everyone).
+    String? position,
     // ─── Approval (account activation) ──────────────────────────
     /// Where the account sits in the approval lifecycle. New self-registrations
     /// start [ApprovalStatus.pending]; a manager/admin approves them. Defaults to

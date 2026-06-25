@@ -264,14 +264,13 @@ class _MyWeekTabState extends State<_MyWeekTab>
     if (user == null) return;
     // Exchange model: you may only swap with a coworker on the OPPOSITE shift
     // that same day — they hold the slot you want, you hold theirs. This also
-    // enforces "requester ≠ target" and "target slot must exist".
+    // enforces "requester ≠ target" and "target slot must exist". Eligibility is
+    // "same branch, any role" (the picker doesn't filter by app-role); role/
+    // position compatibility is a per-branch policy applied inside the sheet.
     final opposite = shift.opposite;
     final oppositeUids = schedule.employeesFor(day, opposite).toSet();
     final coworkers = members
-        .where((u) =>
-            u.role.isEmployee &&
-            u.uid != user.uid &&
-            oppositeUids.contains(u.uid))
+        .where((u) => u.uid != user.uid && oppositeUids.contains(u.uid))
         .toList();
     if (coworkers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -284,6 +283,7 @@ class _MyWeekTabState extends State<_MyWeekTab>
     showSwapRequestSheet(
       context: context,
       cubit: context.read<ShiftSwapCubit>(),
+      schedule: schedule,
       branchId: schedule.branchId,
       weekStart: schedule.weekStart,
       day: day,
@@ -1022,18 +1022,28 @@ class _WeekDayRow extends StatelessWidget {
           else if (_canSwap(shift))
             GestureDetector(
               onTap: () => onSwap(day, shift),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.swap_horiz_rounded,
-                      size: 15, color: AppColors.textSecondary),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Swap',
-                    style: AppTypography.labelSmall
-                        .copyWith(color: AppColors.textSecondary),
-                  ),
-                ],
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.darkSurfaceElevated,
+                  borderRadius: AppRadius.fullAll,
+                  border: Border.all(color: AppColors.darkBorder),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.swap_horiz_rounded,
+                        size: 15, color: AppColors.textPrimary),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Swap',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             )
           else

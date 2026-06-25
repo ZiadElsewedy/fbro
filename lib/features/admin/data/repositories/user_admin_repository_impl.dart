@@ -72,6 +72,10 @@ class UserAdminRepositoryImpl implements UserAdminRepository {
   Future<void> changeUserBranch(String uid, String? branchId) =>
       _run(() => _remote.updateUser(uid, {'branchId': branchId}));
 
+  @override
+  Future<void> changeUserPosition(String uid, String? position) =>
+      _run(() => _remote.updateUser(uid, {'position': position}));
+
   Future<void> _run(Future<void> Function() action) async {
     try {
       await action();

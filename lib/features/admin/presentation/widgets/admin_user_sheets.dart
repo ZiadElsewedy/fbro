@@ -6,6 +6,7 @@ import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/user_avatar.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
+import 'package:fbro/features/auth/presentation/widgets/app_text_field.dart';
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
 import 'package:fbro/features/admin/presentation/cubit/admin_users_cubit.dart';
 
@@ -28,6 +29,13 @@ Future<void> showPromoteManagerSheet({
   required AdminUsersCubit cubit,
 }) =>
     _sheet(context, _PromoteManagerSheet(cubit: cubit));
+
+Future<void> showSetPositionSheet({
+  required BuildContext context,
+  required AdminUsersCubit cubit,
+  required UserEntity user,
+}) =>
+    _sheet(context, _SetPositionSheet(cubit: cubit, user: user));
 
 Future<void> _sheet(BuildContext context, Widget child) => showModalBottomSheet(
       context: context,
@@ -269,6 +277,86 @@ class _AssignBranchSheetState extends State<_AssignBranchSheet> {
           },
         ),
       ],
+    );
+  }
+}
+
+// ─── Set job position ────────────────────────────────────────────
+class _SetPositionSheet extends StatefulWidget {
+  const _SetPositionSheet({required this.cubit, required this.user});
+  final AdminUsersCubit cubit;
+  final UserEntity user;
+  @override
+  State<_SetPositionSheet> createState() => _SetPositionSheetState();
+}
+
+class _SetPositionSheetState extends State<_SetPositionSheet> {
+  late final _position =
+      TextEditingController(text: widget.user.position ?? '');
+
+  // Common retail positions — quick-fill chips (free text still allowed).
+  static const _suggestions = ['Cashier', 'Supervisor', 'Stockist', 'Greeter'];
+
+  @override
+  void dispose() {
+    _position.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final value = _position.text.trim();
+    widget.cubit.changePosition(widget.user, value.isEmpty ? null : value);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _Title('Job position'),
+          Text(
+              'Drives shift-swap role compatibility when a branch requires '
+              'same-role swaps. Leave empty for none.',
+              style: AppTypography.caption),
+          const SizedBox(height: AppSpacing.lg),
+          AppTextField(
+            controller: _position,
+            label: 'Position',
+            hint: 'e.g. Cashier',
+            prefixIcon: Icons.badge_outlined,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (final s in _suggestions)
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _position.text = s;
+                    _position.selection = TextSelection.collapsed(
+                        offset: _position.text.length);
+                  }),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: AppColors.darkSurfaceElevated,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.darkBorder),
+                    ),
+                    child: Text(s, style: AppTypography.caption),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          AppButton(label: 'Save', onPressed: _save),
+        ],
+      ),
     );
   }
 }

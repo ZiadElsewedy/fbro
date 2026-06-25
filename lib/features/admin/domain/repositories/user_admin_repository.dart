@@ -21,4 +21,8 @@ abstract class UserAdminRepository {
   Future<void> setUserActive(String uid, bool isActive);
   Future<void> changeUserRole(String uid, UserRole role);
   Future<void> changeUserBranch(String uid, String? branchId);
+
+  /// Set the user's job position (drives shift-swap role compatibility). Pass
+  /// null/empty to clear it.
+  Future<void> changeUserPosition(String uid, String? position);
 }

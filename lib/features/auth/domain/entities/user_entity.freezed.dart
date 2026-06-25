@@ -43,6 +43,9 @@ mixin _$UserEntity {
   /// [ApprovalStatus.approved] so legacy documents are never locked out.
   ApprovalStatus get approvalStatus => throw _privateConstructorUsedError;
 
+  /// Job position / role title within the branch; null when unspecified.
+  String? get position => throw _privateConstructorUsedError;
+
   /// Create a copy of UserEntity
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -70,6 +73,7 @@ abstract class $UserEntityCopyWith<$Res> {
     String? branchId,
     bool isActive,
     String? assignedShift,
+    String? position,
     ApprovalStatus approvalStatus,
   });
 }
@@ -101,6 +105,7 @@ class _$UserEntityCopyWithImpl<$Res, $Val extends UserEntity>
     Object? branchId = freezed,
     Object? isActive = null,
     Object? assignedShift = freezed,
+    Object? position = freezed,
     Object? approvalStatus = null,
   }) {
     return _then(
@@ -153,6 +158,10 @@ class _$UserEntityCopyWithImpl<$Res, $Val extends UserEntity>
                 ? _value.assignedShift
                 : assignedShift // ignore: cast_nullable_to_non_nullable
                       as String?,
+            position: freezed == position
+                ? _value.position
+                : position // ignore: cast_nullable_to_non_nullable
+                      as String?,
             approvalStatus: null == approvalStatus
                 ? _value.approvalStatus
                 : approvalStatus // ignore: cast_nullable_to_non_nullable
@@ -185,6 +194,7 @@ abstract class _$$UserEntityImplCopyWith<$Res>
     String? branchId,
     bool isActive,
     String? assignedShift,
+    String? position,
     ApprovalStatus approvalStatus,
   });
 }
@@ -215,6 +225,7 @@ class __$$UserEntityImplCopyWithImpl<$Res>
     Object? branchId = freezed,
     Object? isActive = null,
     Object? assignedShift = freezed,
+    Object? position = freezed,
     Object? approvalStatus = null,
   }) {
     return _then(
@@ -267,6 +278,10 @@ class __$$UserEntityImplCopyWithImpl<$Res>
             ? _value.assignedShift
             : assignedShift // ignore: cast_nullable_to_non_nullable
                   as String?,
+        position: freezed == position
+            ? _value.position
+            : position // ignore: cast_nullable_to_non_nullable
+                  as String?,
         approvalStatus: null == approvalStatus
             ? _value.approvalStatus
             : approvalStatus // ignore: cast_nullable_to_non_nullable
@@ -292,6 +307,7 @@ class _$UserEntityImpl extends _UserEntity {
     this.branchId,
     this.isActive = true,
     this.assignedShift,
+    this.position,
     this.approvalStatus = ApprovalStatus.approved,
   }) : super._();
 
@@ -338,9 +354,13 @@ class _$UserEntityImpl extends _UserEntity {
   @JsonKey()
   final ApprovalStatus approvalStatus;
 
+  /// Job position / role title within the branch; null when unspecified.
+  @override
+  final String? position;
+
   @override
   String toString() {
-    return 'UserEntity(uid: $uid, email: $email, authProvider: $authProvider, displayName: $displayName, photoUrl: $photoUrl, phoneNumber: $phoneNumber, isEmailVerified: $isEmailVerified, createdAt: $createdAt, role: $role, branchId: $branchId, isActive: $isActive, assignedShift: $assignedShift, approvalStatus: $approvalStatus)';
+    return 'UserEntity(uid: $uid, email: $email, authProvider: $authProvider, displayName: $displayName, photoUrl: $photoUrl, phoneNumber: $phoneNumber, isEmailVerified: $isEmailVerified, createdAt: $createdAt, role: $role, branchId: $branchId, isActive: $isActive, assignedShift: $assignedShift, approvalStatus: $approvalStatus, position: $position)';
   }
 
   @override
@@ -370,7 +390,9 @@ class _$UserEntityImpl extends _UserEntity {
             (identical(other.assignedShift, assignedShift) ||
                 other.assignedShift == assignedShift) &&
             (identical(other.approvalStatus, approvalStatus) ||
-                other.approvalStatus == approvalStatus));
+                other.approvalStatus == approvalStatus) &&
+            (identical(other.position, position) ||
+                other.position == position));
   }
 
   @override
@@ -389,6 +411,7 @@ class _$UserEntityImpl extends _UserEntity {
     isActive,
     assignedShift,
     approvalStatus,
+    position,
   );
 
   /// Create a copy of UserEntity
@@ -414,6 +437,7 @@ abstract class _UserEntity extends UserEntity {
     final String? branchId,
     final bool isActive,
     final String? assignedShift,
+    final String? position,
     final ApprovalStatus approvalStatus,
   }) = _$UserEntityImpl;
   const _UserEntity._() : super._();
@@ -454,6 +478,10 @@ abstract class _UserEntity extends UserEntity {
   /// [ApprovalStatus.approved] so legacy documents are never locked out.
   @override
   ApprovalStatus get approvalStatus;
+
+  /// Job position / role title within the branch; null when unspecified.
+  @override
+  String? get position;
 
   /// Create a copy of UserEntity
   /// with the given fields replaced by the non-null parameter values.

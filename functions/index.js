@@ -44,6 +44,9 @@ const BROADCAST_SCHEDULES = "broadcastSchedules";
 const TASKS = "tasks";
 const TASK_REMINDERS = "taskReminders";
 const REMINDER_CONFIG = "reminderConfig";
+const BRANCHES = "branches";
+const WEEKLY_SCHEDULES = "weekly_schedules";
+const SHIFT_SWAPS = "shift_swaps";
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -415,6 +418,260 @@ exports.sendBroadcast = onCall(async (request) => {
   });
 
   return { success: true, ...result };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// approveSwap — the server-authoritative shift-swap exchange (2026-06-25
+// hardening). A coworker-approved swap is finalized HERE, never by a direct
+// client write (firestore.rules deny a client setting status==managerApproved).
+//
+// The function re-validates against the FRESHEST schedule (TOCTOU backstop) and
+// applies the exchange ATOMICALLY in a single transaction — the requester and the
+// target trade shifts on the same day (only two shifts exist, so the target's
+// slot is the opposite of the requester's). Either both move or nothing changes.
+//
+// Validation mirrors `SwapValidation` (lib/features/schedule/domain/
+// swap_validation.dart) — keep the two in sync. Notifications stay client-side
+// (`NotifySwapEvent` fires after this resolves), reusing the existing pipeline.
+const SWAP_DAY_INDEX = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+};
+const SWAP_SHIFTS = ["morning", "night"];
+
+function swapOppositeShift(s) {
+  return s === "night" ? "morning" : "night";
+}
+// Minutes past midnight: morning 08:30–16:30, night 16:30–23:00 (mirrors
+// ScheduleShift.timeRange / SwapEligibility / SwapValidation).
+function swapShiftMinutes(s) {
+  return s === "night"
+    ? { start: 16 * 60 + 30, end: 23 * 60 }
+    : { start: 8 * 60 + 30, end: 16 * 60 + 30 };
+}
+function swapAssignedUids(assignments, day, shift) {
+  const d = assignments && assignments[day];
+  const arr = d && d[shift];
+  return Array.isArray(arr) ? arr : [];
+}
+// Smallest gap (minutes) between any two of the employee's shifts in the week.
+// < 2 shifts → unconstrained. Week-bounded (the adjacent week isn't loaded) —
+// mirrors SwapValidation._minGapMinutes.
+function swapMinGapMinutes(assignments, uid) {
+  const intervals = [];
+  for (const day of Object.keys(SWAP_DAY_INDEX)) {
+    const di = SWAP_DAY_INDEX[day];
+    for (const sh of SWAP_SHIFTS) {
+      if (swapAssignedUids(assignments, day, sh).includes(uid)) {
+        const m = swapShiftMinutes(sh);
+        intervals.push([di * 1440 + m.start, di * 1440 + m.end]);
+      }
+    }
+  }
+  if (intervals.length < 2) return Number.MAX_SAFE_INTEGER;
+  intervals.sort((a, b) => a[0] - b[0]);
+  let minGap = Number.MAX_SAFE_INTEGER;
+  for (let i = 1; i < intervals.length; i++) {
+    const gap = intervals[i][0] - intervals[i - 1][1];
+    if (gap < minGap) minGap = gap;
+  }
+  return minGap;
+}
+
+exports.approveSwap = onCall(async (request) => {
+  const auth = request.auth;
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Please sign in to approve a swap.");
+  }
+  const data = request.data || {};
+  const swapId = String(data.swapId || "").trim();
+  // The client computes the schedule doc id from the LOCAL week start (the way it
+  // was created); the function would mis-format it in UTC, so it's passed in and
+  // re-validated against the swap's branch + slot contents below.
+  const scheduleId = String(data.scheduleId || "").trim();
+  if (!swapId || !scheduleId) {
+    throw new HttpsError("invalid-argument", "Missing swap or schedule reference.");
+  }
+
+  // ── Load the swap (the source of truth for branch / day / shift / parties) ──
+  const swapRef = db.collection(SHIFT_SWAPS).doc(swapId);
+  const swapSnap = await swapRef.get();
+  if (!swapSnap.exists) {
+    throw new HttpsError("not-found", "This swap request no longer exists.");
+  }
+  const swap = swapSnap.data() || {};
+  const branchId = String(swap.branchId || "");
+  const day = String(swap.day || "");
+  const shift = String(swap.shift || "");
+  const opp = swapOppositeShift(shift);
+  const requesterId = String(swap.requesterId || "");
+  const targetId = String(swap.targetId || "");
+
+  // ── Permission: admin, or the manager of THIS branch ──
+  const callerSnap = await db.collection(USERS).doc(auth.uid).get();
+  if (!callerSnap.exists) {
+    throw new HttpsError("permission-denied", "Your account profile was not found.");
+  }
+  const caller = callerSnap.data() || {};
+  const callerRole = caller.role || "employee";
+  const callerBranch = caller.branchId || "";
+  const canApprove =
+    callerRole === "admin" ||
+    (callerRole === "manager" && callerBranch === branchId);
+  if (!canApprove) {
+    throw new HttpsError(
+      "permission-denied",
+      "Only the branch manager or an admin can approve a swap.",
+    );
+  }
+
+  // The passed scheduleId must belong to this swap's branch (forged-id defense).
+  if (!scheduleId.startsWith(`${branchId}_`)) {
+    throw new HttpsError("invalid-argument", "Schedule reference does not match this branch.");
+  }
+
+  if (swap.status !== "employeeApproved") {
+    throw new HttpsError("failed-precondition", "This swap isn’t awaiting manager approval.");
+  }
+
+  // ── Slow-changing config (employees + branch policy), read outside the tx ──
+  const [reqSnap, tgtSnap, branchSnap] = await Promise.all([
+    db.collection(USERS).doc(requesterId).get(),
+    db.collection(USERS).doc(targetId).get(),
+    db.collection(BRANCHES).doc(branchId).get(),
+  ]);
+  const reqUser = reqSnap.exists ? reqSnap.data() || {} : null;
+  const tgtUser = tgtSnap.exists ? tgtSnap.data() || {} : null;
+  if (!reqUser || !tgtUser) {
+    throw new HttpsError("failed-precondition", "One of the employees no longer exists.");
+  }
+  if (reqUser.isActive === false || tgtUser.isActive === false) {
+    throw new HttpsError("failed-precondition", "One of the employees is no longer active.");
+  }
+  const policy = (branchSnap.exists && (branchSnap.data() || {}).swapPolicy) || {};
+  const restrictSamePosition = policy.restrictToSamePosition === true;
+  const minRestHours =
+    Number(policy.minRestHours) > 0 ? Number(policy.minRestHours) : null;
+
+  // Role compatibility (mirror SwapPolicy.positionsCompatible — unset = ok).
+  if (restrictSamePosition) {
+    const pa = String(reqUser.position || "").trim().toLowerCase();
+    const pb = String(tgtUser.position || "").trim().toLowerCase();
+    if (pa && pb && pa !== pb) {
+      throw new HttpsError(
+        "failed-precondition",
+        "You can only swap with a coworker in a compatible role.",
+      );
+    }
+  }
+
+  // Future check (mirror swapSlotInFuture). weekStart is an absolute instant
+  // (local-midnight Sunday); adding the day offset + shift start gives the slot's
+  // start instant, compared against now — timezone-safe (both absolute).
+  const weekStartMs =
+    swap.weekStart && typeof swap.weekStart.toMillis === "function"
+      ? swap.weekStart.toMillis()
+      : null;
+  if (weekStartMs == null) {
+    throw new HttpsError("failed-precondition", "This swap is malformed.");
+  }
+  const slotStartMs =
+    weekStartMs +
+    (SWAP_DAY_INDEX[day] || 0) * 24 * 60 * 60 * 1000 +
+    swapShiftMinutes(shift).start * 60 * 1000;
+  if (slotStartMs <= Date.now()) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This shift has already started — it can no longer be swapped.",
+    );
+  }
+
+  const schedRef = db.collection(WEEKLY_SCHEDULES).doc(scheduleId);
+
+  // ── Atomic re-validate + exchange ──
+  await db.runTransaction(async (tx) => {
+    const sSnap = await tx.get(swapRef);
+    const schSnap = await tx.get(schedRef);
+    if (!sSnap.exists) {
+      throw new HttpsError("not-found", "This swap request no longer exists.");
+    }
+    if ((sSnap.data() || {}).status !== "employeeApproved") {
+      throw new HttpsError("failed-precondition", "This swap isn’t awaiting manager approval.");
+    }
+    if (!schSnap.exists) {
+      throw new HttpsError("failed-precondition", "The schedule for this week no longer exists.");
+    }
+    const sched = schSnap.data() || {};
+    if (String(sched.branchId || "") !== branchId) {
+      throw new HttpsError("invalid-argument", "Schedule reference does not match this branch.");
+    }
+    const assignments = sched.assignments || {};
+    const shiftArr = swapAssignedUids(assignments, day, shift);
+    const oppArr = swapAssignedUids(assignments, day, opp);
+
+    // Slot integrity (TOCTOU): both parties must still hold their slots.
+    if (!shiftArr.includes(requesterId)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "The schedule changed — the requester is no longer on that shift.",
+      );
+    }
+    if (!oppArr.includes(targetId)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "The schedule changed — your coworker is no longer on the opposite shift.",
+      );
+    }
+
+    // Post-exchange arrays (deterministic — no array-transform collisions).
+    const newShiftArr = shiftArr.filter((u) => u !== requesterId);
+    if (!newShiftArr.includes(targetId)) newShiftArr.push(targetId);
+    const newOppArr = oppArr.filter((u) => u !== targetId);
+    if (!newOppArr.includes(requesterId)) newOppArr.push(requesterId);
+
+    // Double-booking guard: neither party ends on both shifts that day.
+    for (const uid of [requesterId, targetId]) {
+      if (newShiftArr.includes(uid) && newOppArr.includes(uid)) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This swap would double-book someone on the same day.",
+        );
+      }
+    }
+
+    // Rest-hours guard (post-exchange, week-bounded) — only if the branch sets it.
+    if (minRestHours != null) {
+      const after = {};
+      for (const d of Object.keys(SWAP_DAY_INDEX)) {
+        const dd = assignments[d] || {};
+        after[d] = {};
+        for (const sh of SWAP_SHIFTS) {
+          after[d][sh] = Array.isArray(dd[sh]) ? dd[sh].slice() : [];
+        }
+      }
+      after[day][shift] = newShiftArr;
+      after[day][opp] = newOppArr;
+      for (const uid of [requesterId, targetId]) {
+        if (swapMinGapMinutes(after, uid) < minRestHours * 60) {
+          throw new HttpsError(
+            "failed-precondition",
+            `This swap would leave less than ${minRestHours} hours of rest between shifts.`,
+          );
+        }
+      }
+    }
+
+    tx.update(swapRef, {
+      status: "managerApproved",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    tx.update(schedRef, {
+      [`assignments.${day}.${shift}`]: newShiftArr,
+      [`assignments.${day}.${opp}`]: newOppArr,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { success: true };
 });
 
 /**

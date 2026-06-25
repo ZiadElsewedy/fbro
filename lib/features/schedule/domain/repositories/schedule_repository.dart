@@ -63,7 +63,11 @@ abstract class ScheduleRepository {
     required SwapStatus status,
   });
 
-  /// Manager approval: marks the swap [SwapStatus.managerApproved] **and**
-  /// applies it to the schedule (requester removed, target added on the slot).
+  /// Manager approval: finalizes the swap via the server-authoritative
+  /// `approveSwap` Cloud Function, which re-validates against the freshest
+  /// schedule and **atomically exchanges the two slots** — the requester and the
+  /// target trade shifts on the same day (Ziad's Night ⇄ Ahmed's Morning), then
+  /// the swap is marked [SwapStatus.managerApproved]. Either both move or nothing
+  /// changes; a partial roster mutation is impossible.
   Future<void> managerApproveSwap(ShiftSwapEntity swap);
 }
