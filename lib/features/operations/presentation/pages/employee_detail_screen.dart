@@ -86,7 +86,6 @@ class EmployeeDetailScreen extends StatelessWidget {
 
     if (mine.isEmpty) {
       return const TaskEmptyState(
-        icon: Icons.assignment_turned_in_outlined,
         message: 'No tasks assigned to this employee yet.',
       );
     }

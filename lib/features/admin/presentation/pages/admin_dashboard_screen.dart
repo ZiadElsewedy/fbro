@@ -11,6 +11,7 @@ import 'package:fbro/core/widgets/action_card.dart';
 import 'package:fbro/core/widgets/admin_section_header.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/dashboard_metric_card.dart';
+import 'package:fbro/core/widgets/brand_watermark.dart';
 import 'package:fbro/core/widgets/glass_container.dart';
 import 'package:fbro/core/widgets/status_badge.dart';
 import 'package:fbro/core/widgets/user_avatar.dart';
@@ -132,7 +133,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         onSwaps: () => context.push(RouteNames.adminSchedule),
                         onApprovals: () =>
                             context.push(RouteNames.adminApprovals),
-                        onReviews: () => context.push(RouteNames.adminTasks),
+                        onReviews: () => context.push(RouteNames.adminReview),
                         onOverdue: () => context.push(RouteNames.adminTasks),
                       ))),
           const SizedBox(height: AppSpacing.xl),
@@ -427,7 +428,7 @@ class _Hero extends StatelessWidget {
       summary =
           '$reviews ${reviews == 1 ? 'task' : 'tasks'} submitted and waiting for your review.';
       cta = 'Review tasks';
-      route = RouteNames.adminTasks;
+      route = RouteNames.adminReview;
       accent = AppColors.warning;
       highlight = true;
       icon = Icons.rate_review_rounded;
@@ -457,7 +458,8 @@ class _Hero extends StatelessWidget {
       highlight: highlight,
       accent: accent,
       padding: const EdgeInsets.all(AppSpacing.xl),
-      child: Column(
+      child: BrandWatermark(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -533,6 +535,7 @@ class _Hero extends StatelessWidget {
             onPressed: () => context.push(route),
           ),
         ],
+        ),
       ),
     );
   }

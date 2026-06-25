@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/glass_container.dart';
+import 'package:fbro/core/widgets/app_glass_card.dart';
+import 'package:fbro/core/widgets/metric_pill.dart';
 
 /// Admin Home **Pending Actions** panel (spec §1) — a consolidated, actionable
 /// queue of everything waiting on the admin: shift-swap requests, employee
@@ -81,7 +82,7 @@ class PendingActions extends StatelessWidget {
 
     if (rows.isEmpty) {
       // All clear — keep the panel visible so the admin knows it's here.
-      return GlassContainer(
+      return AppGlassCard(
         child: Row(
           children: [
             Container(
@@ -111,11 +112,50 @@ class PendingActions extends StatelessWidget {
       );
     }
 
-    return GlassContainer(
+    // Glanceable summary pills (non-zero only) above the actionable rows.
+    final pills = <Widget>[
+      if (reviews > 0)
+        MetricPill(
+          value: '$reviews',
+          label: reviews == 1 ? 'review' : 'reviews',
+          icon: Icons.rate_review_rounded,
+          tone: AppColors.warning,
+        ),
+      if (approvals > 0)
+        MetricPill(
+          value: '$approvals',
+          label: 'approvals',
+          icon: Icons.how_to_reg_rounded,
+          tone: AppColors.warning,
+        ),
+      if (swaps > 0)
+        MetricPill(
+          value: '$swaps',
+          label: swaps == 1 ? 'swap' : 'swaps',
+          icon: Icons.swap_horiz_rounded,
+          tone: AppColors.warning,
+        ),
+      if (overdue > 0)
+        MetricPill(
+          value: '$overdue',
+          label: 'overdue',
+          icon: Icons.warning_amber_rounded,
+          tone: AppColors.error,
+        ),
+    ];
+
+    return AppGlassCard(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (pills.length > 1) ...[
+            const SizedBox(height: AppSpacing.md),
+            Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: pills),
+            const SizedBox(height: AppSpacing.sm),
+            const Divider(color: AppColors.darkBorder, height: 1),
+          ],
           for (var i = 0; i < rows.length; i++) ...[
             if (i > 0) const Divider(color: AppColors.darkBorder, height: 1),
             rows[i],

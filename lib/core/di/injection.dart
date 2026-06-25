@@ -76,6 +76,7 @@ import 'package:fbro/features/notifications/data/datasources/notification_remote
 import 'package:fbro/features/notifications/data/repositories/notification_repository_impl.dart';
 import 'package:fbro/features/notifications/domain/repositories/notification_repository.dart';
 import 'package:fbro/features/notifications/domain/usecases/mark_notification_read.dart';
+import 'package:fbro/features/notifications/domain/usecases/notify_swap_event.dart';
 import 'package:fbro/features/notifications/domain/usecases/notify_task_event.dart';
 import 'package:fbro/features/notifications/presentation/cubit/notification_cubit.dart';
 
@@ -140,8 +141,8 @@ class AppDependencies {
 
     // Branch repository is built early — the TaskCubit needs it for the admin's
     // New Task branch dropdown (the admin module reuses the same instance).
-    final branchRemoteDataSource =
-        BranchRemoteDataSourceImpl(FirebaseFirestore.instance);
+    final branchRemoteDataSource = BranchRemoteDataSourceImpl(
+        FirebaseFirestore.instance, FirebaseStorage.instance);
     final BranchRepository branchRepository =
         BranchRepositoryImpl(branchRemoteDataSource);
 
@@ -210,7 +211,11 @@ class AppDependencies {
     );
     scheduleCubit =
         ScheduleCubit(scheduleRepository, GetUsersByBranch(authRepository));
-    shiftSwapCubit = ShiftSwapCubit(scheduleRepository);
+    shiftSwapCubit = ShiftSwapCubit(
+      scheduleRepository,
+      NotifySwapEvent(notificationRepository),
+      GetUsersByBranch(authRepository),
+    );
 
     // ─── Branch Operations cockpit ────────────────────────────
     // Read/derive cubit composing the task stream × branch members × today's

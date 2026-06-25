@@ -52,6 +52,11 @@ class StatusBadge extends StatelessWidget {
   }
 }
 
+/// The single source for a task status' semantic colour — reused by
+/// [StatusBadge.task] and the premium card glow ([AppGlassCard]) so the mapping
+/// lives in exactly one place.
+Color taskStatusColor(TaskStatus s) => _taskColor(s);
+
 Color _taskColor(TaskStatus s) {
   switch (s) {
     case TaskStatus.pending:
@@ -88,13 +93,14 @@ String _taskLabel(TaskStatus s) {
 Color _swapColor(SwapStatus s) {
   switch (s) {
     case SwapStatus.pending:
-      return AppColors.textTertiary;
     case SwapStatus.employeeApproved:
-      return AppColors.warning;
+      return AppColors.warning; // pending stages = amber
     case SwapStatus.managerApproved:
-      return AppColors.success;
+      return AppColors.success; // approved = emerald
     case SwapStatus.rejected:
-      return AppColors.error;
+      return AppColors.error; // rejected = red
+    case SwapStatus.cancelled:
+      return AppColors.textTertiary; // cancelled = neutral grey
   }
 }
 
@@ -108,6 +114,8 @@ String _swapLabel(SwapStatus s) {
       return 'Approved';
     case SwapStatus.rejected:
       return 'Rejected';
+    case SwapStatus.cancelled:
+      return 'Cancelled';
   }
 }
 

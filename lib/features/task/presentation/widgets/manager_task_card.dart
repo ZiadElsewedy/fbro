@@ -42,6 +42,18 @@ class ManagerTaskCard extends StatelessWidget {
     if (confirmed && context.mounted) cubit.deleteTask(task.id);
   }
 
+  Future<void> _confirmReopen(BuildContext context) async {
+    final cubit = context.read<TaskCubit>();
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Reopen task?',
+      message:
+          '"${task.title}" will move back into the workflow so it can be edited. The approval will be cleared.',
+      confirmLabel: 'Reopen',
+    );
+    if (confirmed && context.mounted) cubit.reopenTask(task);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cubit = context.read<TaskCubit>();
@@ -62,44 +74,60 @@ class ManagerTaskCard extends StatelessWidget {
         ),
         transitionDuration: const Duration(milliseconds: 320),
       )),
-      child: TaskCard(
-        task: task,
-        directory: directory,
-        onAssigneesTap: () =>
-            showAssignSheet(context: context, cubit: cubit, task: task),
-        actions: [
-          if (task.status == TaskStatus.waitingReview)
-            TaskActionButton(
-              label: 'Review',
-              icon: Icons.rate_review_outlined,
-              onPressed: () =>
-                  showReviewSheet(context: context, cubit: cubit, task: task),
-            ),
-          TaskActionButton(
-            label: 'Assign',
-            icon: Icons.person_add_alt_1_outlined,
-            onPressed: () =>
-                showAssignSheet(context: context, cubit: cubit, task: task),
-          ),
-          TaskActionButton(
-            label: 'Edit',
-            icon: Icons.edit_outlined,
-            onPressed: () => showTaskFormSheet(
-              context: context,
-              cubit: cubit,
-              existing: task,
-              isAdmin: isAdmin,
-              defaultBranchId: defaultBranchId,
-            ),
-          ),
-          TaskActionButton(
-            label: 'Delete',
-            icon: Icons.delete_outline_rounded,
-            color: AppColors.error,
-            onPressed: () => _confirmDelete(context),
-          ),
-        ],
-      ),
+      child: Builder(builder: (context) {
+        // An approved task is a locked, reviewed record: no Assign / Edit /
+        // Delete. An admin keeps a single Reopen escape hatch.
+        final locked = task.status == TaskStatus.approved;
+        return TaskCard(
+          task: task,
+          directory: directory,
+          premium: true,
+          onAssigneesTap: locked
+              ? null
+              : () => showAssignSheet(context: context, cubit: cubit, task: task),
+          actions: [
+            if (task.status == TaskStatus.waitingReview)
+              TaskActionButton(
+                label: 'Review',
+                icon: Icons.rate_review_outlined,
+                onPressed: () =>
+                    showReviewSheet(context: context, cubit: cubit, task: task),
+              ),
+            if (locked) ...[
+              if (isAdmin)
+                TaskActionButton(
+                  label: 'Reopen',
+                  icon: Icons.lock_open_rounded,
+                  onPressed: () => _confirmReopen(context),
+                ),
+            ] else ...[
+              TaskActionButton(
+                label: 'Assign',
+                icon: Icons.person_add_alt_1_outlined,
+                onPressed: () =>
+                    showAssignSheet(context: context, cubit: cubit, task: task),
+              ),
+              TaskActionButton(
+                label: 'Edit',
+                icon: Icons.edit_outlined,
+                onPressed: () => showTaskFormSheet(
+                  context: context,
+                  cubit: cubit,
+                  existing: task,
+                  isAdmin: isAdmin,
+                  defaultBranchId: defaultBranchId,
+                ),
+              ),
+              TaskActionButton(
+                label: 'Delete',
+                icon: Icons.delete_outline_rounded,
+                color: AppColors.error,
+                onPressed: () => _confirmDelete(context),
+              ),
+            ],
+          ],
+        );
+      }),
     );
   }
 }

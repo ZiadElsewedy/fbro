@@ -6,6 +6,8 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/app_glass_card.dart';
+import 'package:fbro/core/widgets/premium_button.dart';
 import 'package:fbro/core/widgets/user_avatar.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
@@ -34,9 +36,16 @@ class TaskCard extends StatelessWidget {
     this.actions = const [],
     this.onAssigneesTap,
     this.onChecklistToggle,
+    this.premium = false,
   });
 
   final TaskEntity task;
+
+  /// When true, the card renders on the premium [AppGlassCard] surface with a
+  /// subtle semantic status glow (approved = emerald · in-review = amber ·
+  /// rejected = red; otherwise monochrome). Opt-in so only migrated surfaces
+  /// (the manager card) change; every other [TaskCard] keeps the flat surface.
+  final bool premium;
 
   /// uid → user, used to render real assignee + creator names/avatars.
   final Map<String, UserEntity> directory;
@@ -57,15 +66,7 @@ class TaskCard extends StatelessWidget {
     final proof = task.proofImageUrl ?? '';
     final assignedBy = _assignedBy(directory, task);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface,
-        borderRadius: AppRadius.cardAll,
-        border: Border.all(color: AppColors.darkBorder),
-      ),
-      child: Column(
+    final content = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── Lifecycle badge (NEW / REWORK #n / Rejected / Approved) ──
@@ -161,7 +162,30 @@ class TaskCard extends StatelessWidget {
             ),
           ],
         ],
+      );
+
+    // Premium surface (manager card) — AppGlassCard with a subtle status glow;
+    // otherwise the original flat monochrome surface (every other TaskCard).
+    if (premium) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: AppGlassCard(
+          glowStatus: task.status,
+          padding: const EdgeInsets.all(18),
+          child: content,
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface,
+        borderRadius: AppRadius.cardAll,
+        border: Border.all(color: AppColors.darkBorder),
       ),
+      child: content,
     );
   }
 }
@@ -304,19 +328,13 @@ class TaskActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextButton.icon(
+    // Renders via the canonical PremiumButton (tonal) so card actions share one
+    // button; [color] becomes the semantic tone (e.g. error for Delete).
+    return PremiumButton(
+      label: label,
+      icon: icon ?? Icons.chevron_right_rounded,
       onPressed: onPressed,
-      icon: Icon(icon ?? Icons.chevron_right_rounded, size: 16),
-      label: Text(label),
-      style: TextButton.styleFrom(
-        foregroundColor: color ?? AppColors.textPrimary,
-        backgroundColor: AppColors.darkSurfaceElevated,
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        textStyle: AppTypography.caption.copyWith(fontWeight: FontWeight.w600),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
+      tone: color,
     );
   }
 }

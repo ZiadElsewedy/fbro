@@ -86,7 +86,6 @@ class BranchTaskListScreen extends StatelessWidget {
         Expanded(
           child: tasks.isEmpty
               ? const TaskEmptyState(
-                  icon: Icons.assignment_outlined,
                   message: 'No tasks in this branch yet.\nTap "New Task".',
                 )
               : ListView(

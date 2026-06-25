@@ -7,6 +7,8 @@ class BranchModel {
   final String name;
   final String? location;
   final bool isActive;
+  final String? logoUrl;
+  final String? coverUrl;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? deletedAt;
@@ -16,6 +18,8 @@ class BranchModel {
     required this.name,
     this.location,
     this.isActive = true,
+    this.logoUrl,
+    this.coverUrl,
     this.createdAt,
     this.updatedAt,
     this.deletedAt,
@@ -27,6 +31,8 @@ class BranchModel {
         name: map['name'] as String? ?? '',
         location: map['location'] as String?,
         isActive: map['isActive'] as bool? ?? true,
+        logoUrl: map['logoUrl'] as String?,
+        coverUrl: map['coverUrl'] as String?,
         createdAt: map.date('createdAt'),
         updatedAt: map.date('updatedAt'),
         deletedAt: map.date('deletedAt'),
@@ -37,13 +43,17 @@ class BranchModel {
         name: e.name,
         location: e.location,
         isActive: e.isActive,
+        logoUrl: e.logoUrl,
+        coverUrl: e.coverUrl,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
         deletedAt: e.deletedAt,
       );
 
   /// Writable fields. Timestamps + `deletedAt` are managed by the datasource
-  /// (server timestamps / soft-delete), so they're excluded here.
+  /// (server timestamps / soft-delete), so they're excluded here. Media URLs are
+  /// written by the dedicated upload path (`setBranchImage`), not `toMap`, so an
+  /// edit-form save never clobbers an existing logo/cover.
   Map<String, dynamic> toMap() => {
         'id': id,
         'name': name,
@@ -56,6 +66,8 @@ class BranchModel {
         name: name,
         location: location,
         isActive: isActive,
+        logoUrl: logoUrl,
+        coverUrl: coverUrl,
         createdAt: createdAt,
         updatedAt: updatedAt,
         deletedAt: deletedAt,
@@ -66,6 +78,8 @@ class BranchModel {
         name: name,
         location: location,
         isActive: isActive,
+        logoUrl: logoUrl,
+        coverUrl: coverUrl,
         createdAt: createdAt,
         updatedAt: updatedAt,
         deletedAt: deletedAt,

@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fbro/core/enums/user_role.dart';
 import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_dialog.dart';
+import 'package:fbro/core/widgets/app_glass_card.dart';
+import 'package:fbro/core/widgets/branch_avatar.dart';
+import 'package:fbro/core/widgets/drop_empty_state.dart';
+import 'package:fbro/core/widgets/premium_button.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/app_search_field.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
@@ -191,41 +194,15 @@ class _BranchManagementScreenState extends State<BranchManagementScreen> {
     final employees = _employeesByBranch[branch.id] ?? 0;
     final statusColor = branch.isActive ? AppColors.success : AppColors.error;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.darkSurfaceElevated, AppColors.darkSurface],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: AppRadius.cardAll,
-        border: Border.all(color: AppColors.darkBorder),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.black.withAlpha(40),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: AppGlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: AppColors.darkSurface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.darkBorder),
-                ),
-                child: const Icon(Icons.store_mall_directory_outlined,
-                    color: AppColors.primary, size: 22),
-              ),
+              BranchAvatar.fromBranch(branch),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
@@ -293,55 +270,24 @@ class _BranchManagementScreenState extends State<BranchManagementScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _btn(String label, IconData icon, VoidCallback onTap, {Color? color}) {
-    return TextButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 16),
-      label: Text(label),
-      style: TextButton.styleFrom(
-        foregroundColor: color ?? AppColors.primary,
-        backgroundColor: AppColors.darkSurfaceElevated,
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        textStyle: AppTypography.caption,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
 
-  Widget _empty(bool noBranchesAtAll) => LayoutBuilder(
-        builder: (context, c) => SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: c.maxHeight),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.pagePadding),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                        noBranchesAtAll
-                            ? Icons.store_mall_directory_outlined
-                            : Icons.search_off_rounded,
-                        size: 44,
-                        color: AppColors.textTertiary),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                        noBranchesAtAll
-                            ? 'No branches yet.\nTap "New Branch" to add one.'
-                            : 'No branches match "$_query".',
-                        style: AppTypography.bodySmall,
-                        textAlign: TextAlign.center),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
+  Widget _btn(String label, IconData icon, VoidCallback onTap, {Color? color}) {
+    return PremiumButton(
+      label: label,
+      icon: icon,
+      onPressed: onTap,
+      tone: color,
+    );
+  }
+
+  Widget _empty(bool noBranchesAtAll) => DropEmptyState(
+        title: noBranchesAtAll ? 'No branches yet' : 'No matches',
+        message: noBranchesAtAll
+            ? 'Tap "New Branch" to add your first branch.'
+            : 'No branches match "$_query".',
       );
 }
 

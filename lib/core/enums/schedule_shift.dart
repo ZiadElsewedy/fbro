@@ -11,6 +11,11 @@ enum ScheduleShift {
   /// Capitalized label for the UI (e.g. `Morning`).
   String get label => '${name[0].toUpperCase()}${name.substring(1)}';
 
+  /// The other shift — there are only two, so a swap exchanges a slot for its
+  /// opposite (morning ⇄ night). Drives the shift-swap exchange.
+  ScheduleShift get opposite =>
+      this == ScheduleShift.morning ? ScheduleShift.night : ScheduleShift.morning;
+
   /// Human-readable default hours (mirrors the Phase 2 shift times). Display
   /// only — the schedule itself stores who works, not the clock times.
   String get timeRange =>

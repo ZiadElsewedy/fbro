@@ -8,10 +8,11 @@ import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
+import 'package:fbro/core/widgets/branch_avatar.dart';
+import 'package:fbro/core/widgets/premium_button.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
 import 'package:fbro/features/auth/presentation/widgets/app_text_field.dart';
-import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
 import 'package:fbro/features/branch/presentation/cubit/branch_cubit.dart';
 import 'package:fbro/features/branch/presentation/cubit/branch_state.dart';
 import 'package:fbro/features/schedule/domain/entities/shift_swap_entity.dart';
@@ -169,13 +170,13 @@ class _SwapCard extends StatelessWidget {
           label: 'Approve',
           icon: Icons.check_circle_outline_rounded,
           color: AppColors.success,
-          onPressed: () => cubit.managerApprove(swap),
+          onPressed: () => cubit.managerApprove(swap, actorId: currentUid),
         ));
         buttons.add(_SwapButton(
           label: 'Reject',
           icon: Icons.cancel_outlined,
           color: AppColors.error,
-          onPressed: () => cubit.reject(swap),
+          onPressed: () => cubit.reject(swap, actorId: currentUid),
         ));
       }
     } else {
@@ -192,14 +193,14 @@ class _SwapCard extends StatelessWidget {
           label: 'Decline',
           icon: Icons.close_rounded,
           color: AppColors.error,
-          onPressed: () => cubit.reject(swap),
+          onPressed: () => cubit.reject(swap, actorId: currentUid),
         ));
       } else if (isRequester && !swap.status.isResolved) {
         buttons.add(_SwapButton(
           label: 'Cancel',
           icon: Icons.undo_rounded,
           color: AppColors.warning,
-          onPressed: () => cubit.reject(swap),
+          onPressed: () => cubit.cancelSwap(swap),
         ));
       }
     }
@@ -231,23 +232,15 @@ class _BranchLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<BranchCubit, BranchState>(
       builder: (context, state) {
-        final branches = state.maybeWhen(
-          loaded: (b, _) => b,
-          orElse: () => const <BranchEntity>[],
-        );
-        String name = branchId.isEmpty ? 'Unassigned branch' : branchId;
-        for (final b in branches) {
-          if (b.id == branchId) {
-            name = b.name;
-            break;
-          }
-        }
+        final branch = context.read<BranchCubit>().branchById(branchId);
+        final name = branch?.name ??
+            (branchId.isEmpty ? 'Unassigned branch' : branchId);
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.store_mall_directory_outlined,
-                size: 13, color: AppColors.textTertiary),
-            const SizedBox(width: 4),
+            BranchAvatar(
+                logoUrl: branch?.logoUrl, name: name, size: 18, radius: 6),
+            const SizedBox(width: 6),
             Text(name, style: AppTypography.caption),
           ],
         );
@@ -271,18 +264,11 @@ class _SwapButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextButton.icon(
+    return PremiumButton(
+      label: label,
+      icon: icon,
       onPressed: onPressed,
-      icon: Icon(icon, size: 16),
-      label: Text(label),
-      style: TextButton.styleFrom(
-        foregroundColor: color ?? AppColors.primary,
-        backgroundColor: AppColors.darkSurfaceElevated,
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        textStyle: AppTypography.caption,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
+      tone: color,
     );
   }
 }
@@ -298,6 +284,7 @@ class _SwapStatusChip extends StatelessWidget {
       SwapStatus.employeeApproved => AppColors.warning,
       SwapStatus.managerApproved => AppColors.success,
       SwapStatus.rejected => AppColors.error,
+      SwapStatus.cancelled => AppColors.textTertiary,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

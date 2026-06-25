@@ -126,7 +126,6 @@ class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen> {
                 onRefresh: () async => _load(),
                 child: rows.isEmpty
                     ? const TaskEmptyState(
-                        icon: Icons.store_mall_directory_outlined,
                         message:
                             'No branches yet.\nCreate a branch, then add tasks.',
                       )

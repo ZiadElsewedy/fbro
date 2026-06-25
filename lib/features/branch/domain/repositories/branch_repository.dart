@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
 
 /// Contract for branch data access (Phase 5). Admin-only writes are enforced
@@ -16,4 +18,12 @@ abstract class BranchRepository {
 
   /// Soft delete — marks the branch deleted/inactive rather than removing it.
   Future<void> deleteBranch(String branchId);
+
+  /// Uploads a branch logo ([isLogo] true) or cover image, persists its URL on
+  /// the branch doc, and returns the download URL. (§8 Branch Media.)
+  Future<String> uploadBranchImage(
+    String branchId,
+    File file, {
+    required bool isLogo,
+  });
 }

@@ -16,6 +16,11 @@ class BranchEntity with _$BranchEntity {
     /// Optional area / address label.
     String? location,
     @Default(true) bool isActive,
+    /// Branch **logo** (square mark) — Storage `branches/{id}/logo.jpg`. Drives
+    /// [BranchAvatar]; null falls back to initials. (§8 Branch Media.)
+    String? logoUrl,
+    /// Branch **cover** banner — Storage `branches/{id}/cover.jpg`. Null = none.
+    String? coverUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
     /// Soft-delete marker; null while the branch is live.

@@ -25,7 +25,12 @@ enum NotificationType {
   // ── Broadcast events (`sendBroadcast` / `dispatchBroadcast` Cloud Function) ──
   broadcastAnnouncement,
   broadcastReminder,
-  broadcastEmergency;
+  broadcastEmergency,
+  // ── Shift-swap workflow (client `NotifySwapEvent` via ShiftSwapCubit) ──
+  swapRequested, // → the target coworker
+  swapAccepted, // → the branch manager/admin (needs review)
+  swapApproved, // → both employees (schedule exchanged)
+  swapRejected; // → both employees (declined)
 
   String get value => name;
 

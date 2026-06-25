@@ -19,5 +19,16 @@ service firebase.storage {
     match /tasks/{taskId}/{allPaths=**} {
       allow read, write: if request.auth != null;
     }
+
+    // Branch media (§8): branches/{branchId}/logo.jpg and cover.jpg. Any
+    // signed-in user may read (logos appear on schedules / dashboards for every
+    // role). Write is left to any signed-in user here because Storage rules
+    // can't cheaply read the caller's role; the meaningful gate is the Firestore
+    // write of the URL onto branches/{id} (firestore.rules) — admin-only — so a
+    // non-admin upload can never be attached to a branch.
+    match /branches/{branchId}/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
   }
 }

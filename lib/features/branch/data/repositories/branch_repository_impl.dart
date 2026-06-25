@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fbro/core/errors/exceptions.dart';
 import 'package:fbro/core/errors/failures.dart';
 import 'package:fbro/features/branch/data/datasources/branch_remote_datasource.dart';
@@ -91,6 +93,24 @@ class BranchRepositoryImpl implements BranchRepository {
     try {
       await _remote.softDeleteBranch(branchId);
       _invalidateBranches();
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<String> uploadBranchImage(
+    String branchId,
+    File file, {
+    required bool isLogo,
+  }) async {
+    try {
+      final url =
+          await _remote.uploadBranchImage(branchId, file, isLogo: isLogo);
+      // The URL is now on the branch doc — drop the cache so the next read
+      // (and the cubit reload) reflects the new media everywhere.
+      _invalidateBranches();
+      return url;
     } on ServerException catch (e) {
       throw ServerFailure(e.message);
     }

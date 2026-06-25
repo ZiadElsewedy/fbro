@@ -7,7 +7,7 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
-import 'package:fbro/core/widgets/drop_logo.dart';
+import 'package:fbro/core/widgets/drop_auth_mark.dart';
 import 'package:fbro/features/auth/presentation/animations/fade_slide_transition.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_state.dart';
@@ -62,7 +62,7 @@ class _LoginPageState extends State<LoginPage> {
 
                 const FadeSlideTransition(
                   delay: Duration(milliseconds: 30),
-                  child: DropLogo(height: 52),
+                  child: DropAuthMark(),
                 ),
 
                 const SizedBox(height: AppSpacing.xxl),

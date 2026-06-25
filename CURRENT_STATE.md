@@ -11,8 +11,188 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-24 (Schedule grid premium redesign — faces + names per shift cell)
-**Version:** 1.0.0+1 · **Branch:** `feature/cache-layer` (DROP — monochrome enterprise UX)
+**Last updated:** 2026-06-25 (FCM routing audit — exclusive token ownership fix)
+**Version:** 1.0.0+1 · **Branch:** `enhancement/ui-refactor` (DROP — monochrome premium UX)
+
+> **FCM routing audit (2026-06-25) — CRITICAL fix:** Proved the cross-user
+> notification-leak bug is real. **Root cause:** non-exclusive token ownership —
+> registration only ADDS a device token to the signed-in user; the only cross-user
+> release is the client's best-effort `forgetUser` on logout, and clients can't
+> write other users' docs (rules), so a token can linger on multiple users → a send
+> to the old user hits a device now used by someone else. Audience resolution +
+> within-send dedup are CORRECT (not the bug). **Fix:** new server-only Cloud
+> Function **`claimFcmToken`** (`onDocumentUpdated('users/{uid}')`) — on a token
+> being added, removes it from every other user's `fcmTokens` + legacy `fcmToken`
+> (loop-safe), so a token belongs to at most one user. No client/schema/rules/index
+> change. `node --check` valid; Flutter side untouched (analyze clean / 192 tests).
+> ⚠️ **DEPLOY REQUIRED** to activate: `firebase deploy --only functions` (now 6
+> functions). Until deployed, the leak persists in production.
+
+> **Shift Swap System (2026-06-25):** Evolved the existing swap workflow into a true
+> employee-to-employee **exchange** (approval swaps **both** employees across the
+> two shifts — Ziad Night ⇄ Ahmed Morning — not a one-way handover) with **swap
+> notifications**. Built on the existing `shift_swaps`/`ShiftSwapCubit` slice (no
+> matching engine / new schedule schema). New: `ScheduleShift.opposite` + 4-op
+> `managerApproveSwap`; opposite-shift coworker picker (`_requestSwap`); `cancelled`
+> status (+ `cancelSwap`); **`NotifySwapEvent`** producer (request→coworker ·
+> accept→branch manager(s) · approve/reject→both) reusing the notification pipeline
+> — lights up the §5 inbox's **Schedule** category + a swap awaiting approval is
+> **critical**. Guards: requester≠target · same branch · future shift · target-slot
+> exists · no duplicate pending · terminal-when-resolved. Kept the existing 4 status
+> names (= spec's pendingCoworker/pendingManager/approved/rejected) + added cancelled.
+> `flutter analyze` clean; **192 tests pass** (+9). **No deploy needed** (reuses the
+> live `notifications` rule + `onNotificationCreated` push). ⚠️ on-device QA of the
+> swap flow recommended.
+
+> **Release Stabilization (2026-06-25):** Production-readiness pass after the
+> Premium UX/Logic Refactor (§1–§11). **The long-standing deploy debt is CLEARED** —
+> deployed `firestore:rules` + `storage` + all 5 `functions` to production
+> `bazic-d9ad7`; deleted two orphaned analytics functions so the live set matches
+> the code (no client/server drift). Critical checks live: approved-task lock,
+> broadcast sender self-exclusion, branch-media uploads. Automated gate green
+> (analyze clean · **183 tests** · `node --check` valid). Static perf/UX audits
+> clean (two pre-existing minor hot paths noted, not regressions). **Full manual QA
+> matrix + audit record in [RELEASE_QA.md](RELEASE_QA.md)** — execute on a device
+> across the three roles before sign-off. Maintenance note: `firebase-functions` is
+> an older major (future `@latest` bump). **No earlier "⚠️ deploy pending" warnings
+> apply anymore — the server side is live.**
+
+> **Premium UX/Logic Refactor · §5 — notification UX (2026-06-25):** Rebuilt the
+> Notification Center into an **operations inbox** (intentionally reversing the
+> 2026-06-23 lean feed, owner-directed; monochrome/subtle preserved). **5a IA**
+> (`notification_format.dart`, pure + tested): **priority** (critical/high/normal/
+> low via `notificationPriority`), **category** filter pills (All/Tasks/Reviews/
+> Broadcast via `NotificationCategory`/`categoryOf`), **time grouping**
+> (`groupByTime` → Today/Yesterday/Earlier, priority-first within each); critical →
+> stronger unread dot on the tile. **5b** swipe right=mark-read · left=archive
+> (delete in Archived view), re-added **Archived view** toggle, bulk **Mark all
+> read** + **Clear archived** (`NotificationCubit.clearArchived`), deep-links
+> verified (no dead notifications). **5c** dot fade · swipe spring · pill transition
+> · light haptics. **Data:** kept single `readAt` (= isRead); `isSeen` NOT added
+> (documented — too invasive for a small inbox). **Documented gap:** Schedule/System
+> category pills + "swap approval" critical have **no producer** (trimmed types) —
+> omitted to avoid dead pills; re-add with a producer. `flutter analyze` clean;
+> **183 tests pass**. ⚠️ swipe/haptics need an on-device check. Reused
+> `NotificationTile` + `AppGlassCard`.
+
+> **Premium UX/Logic Refactor · §8c — branch hero completion (2026-06-25):** Closed
+> the parked §8b/§9 chain. New **`_BranchHero`** on the Branch Operations cockpit —
+> a **16:9** premium surface: branch **cover** photo (≈70% dark scrim) +
+> `BranchAvatar` + name + **employee count** + active-shift summary; **monochrome
+> fallback** when no `coverUrl`. Carries a ≤**0.03** `BrandWatermark` (the §9b
+> branch-dashboard watermark, now **unblocked**). **Schedule header** secondary
+> label is now **"Weekly Schedule · N employees"** (threaded `members.length`).
+> Reuses §8 `coverUrl`/`logoUrl` + the §8b `BranchCubit` directory — no schema/rules/
+> DI change. `flutter analyze` clean; **180 tests pass**. ⚠️ Hero (cover image /
+> nested 16:9 Stack) wants an on-device check. **§8 + §9 complete.** Only noted gap:
+> the Communications Center header watermark (bare AppBar, no hero card — deferred).
+> **Next:** §5 notification UX polish.
+
+> **Premium UX/Logic Refactor · §9b — brand rollout (2026-06-25):** Wired the §9a
+> brand primitives into the product, **restrained** (heavy brand only on
+> auth/empty/full-loading; one subtle hero watermark; **no** brand in
+> cards/tiles/rows). **Wave 1 (auth):** new shared **`DropAuthMark`** (DropLogo +
+> "DROP OPERATIONS SYSTEM" tagline) leads login + register; splash left intact
+> (already on-brand; fixed stale "indigo" comment); OTP deferred. **Wave 2 (states):**
+> empties → **`DropEmptyState`** (`TaskEmptyState` [5 sites, dropped its `icon`],
+> notifications, branches+search); full-page loaders → **`DropLoadingState`** (manager
+> + employee schedule views) — skeletons/button spinners untouched. **Wave 3
+> (headers):** new reusable **`BrandWatermark`** (clipped ≤0.05-opacity wordmark)
+> on the Admin Home hero; comms header (bare AppBar) + branch dashboard hero
+> (parked §8b cover-hero) deferred — no card surface yet. No new assets; no indigo.
+> `flutter analyze` clean; **180 tests pass** (+3). **Parked from §8b:** the
+> operations cover-image hero + schedule "• N employees" label.
+
+> **Premium UX/Logic Refactor · §9a — brand primitives (2026-06-25):** First step of
+> §9, the **brand primitives only** (ahead of the broad rollout), built on the
+> existing `DropLogo` PNG. New `core/widgets`: **`DropWordmark`** (typographic DROP
+> logotype — vector-crisp inline complement to the PNG), **`DropEmptyState`**
+> (brand-led empty state — faded logo + message, sibling of `AppEmptyState`),
+> **`DropLoadingState`** (pulsing-logo full-area loader). `flutter analyze` clean;
+> **177 tests pass** (+3 `brand_primitives_test`). **Not wired into screens yet** —
+> the broad branding pass (splash/auth/empties/loading/headers) is the next slice.
+> (§5 notif UI still deferred.)
+
+> **Premium UX/Logic Refactor · §8b — branch identity rollout (2026-06-25):**
+> Finished §8 by surfacing `BranchAvatar` wherever branch identity matters, via the
+> **app-wide `BranchCubit` as a directory** (`branchById` + `loadIfNeeded`,
+> warm-preloaded for every role in `main.dart`). Wired into: the **schedule header**
+> (`manager_schedule_view` — branch logo + name above the controls), the **operations/
+> branch dashboard header** (`branch_operations_screen` AppBar title), the **employee
+> profile** (new "Assigned branch" `AppGlassCard` section), and **swap request cards**
+> (`swap_view._BranchLine`). `flutter analyze` clean; **174 tests pass**. **§8 (media +
+> identity) is complete.** **Next:** §9 branding — first the brand primitives
+> (`DropWordmark`/`DropEmptyState`/`DropLoadingState`), then a broad rollout. (§5
+> notif UI still deferred.)
+
+> **Premium UX/Logic Refactor · §8 Branch Media (2026-06-25):** Admin branch
+> branding — `BranchEntity`/`BranchModel` gain **`logoUrl` + `coverUrl`** (freezed
+> regenerated; `toMap` excludes them so an edit-save never clobbers an uploaded
+> logo). New Storage path `branches/{branchId}/{logo|cover}.jpg` via
+> `BranchRemoteDataSource.uploadBranchImage` → `BranchRepository` (cache-invalidating)
+> → `BranchCubit.uploadBranchImage`; `BranchRemoteDataSourceImpl` now takes
+> `FirebaseStorage` (DI updated). New reusable **`BranchAvatar`** (logo · else
+> monochrome initials · else store glyph). Upload UI in the branch form sheet
+> (**editing only** — a new branch has no id; shows a "save first" hint): logo row +
+> cover field with inline spinners. Branch management card now leads with
+> `BranchAvatar`. **No chromatic `branchTheme`** (monochrome ruling). `storage.rules`
+> add the `branches/{id}` path. `flutter analyze` clean; **174 tests pass** (+7
+> `branch_media_test`). ⚠️ **Deploy** `firebase deploy --only storage`.
+> **Deferred display wiring:** `BranchAvatar` on the schedule header / operations
+> dashboard / employee-profile branch (each needs that surface to carry `logoUrl`).
+> **Next:** §9 branding (now on a stabilised UI), §5 notif UI.
+
+> **Premium UX/Logic Refactor · Slice 2b — component rollout cleanup (2026-06-25):**
+> Finished the Slice 2 rollout. Swept every remaining ad-hoc compact action button
+> (`swap_view._SwapButton` · `admin_user_card.AdminActionButton` ·
+> `branch_management._btn` · `employee_home._ActionButton`) onto **`PremiumButton`**,
+> and the only two remaining hand-rolled glass-gradient cards
+> (`branch_management._card` · `employee_home._HeroTodayCard`) onto **`AppGlassCard`**.
+> Audit confirms **0** remaining glass-card dups and **0** remaining compact-button
+> dups; justified remainders (standard Material `TextButton`/`OutlinedButton`
+> one-offs, auth focus shadows, the animated status-aura header) left as-is.
+> `AppGlassCard`/`PremiumButton` are now the **default premium primitives**.
+> `flutter analyze` clean; **167 tests pass**. **Next:** §8 Branch Media (then §9
+> branding on the stabilised UI).
+
+> **Premium UX/Logic Refactor · Slice 2 (2026-06-25):** §10/§11 — a reusable
+> premium component layer, built to **reduce** duplication (the §11 goal) instead
+> of forking parallel widgets. New `core/widgets`: **`AppGlassCard`** (premium
+> card; maps task status → a **subtle glow**, emerald/amber/red only — no indigo),
+> **`MetricPill`** (compact `[icon] value · label`), **`PremiumButton`** (canonical
+> compact inline action button — distinct from the 56px form `AppButton`).
+> Enhanced `GlassContainer` with an optional `glow` (one shared decoration) and
+> exposed `taskStatusColor` (single status→colour source). Validated by migrating
+> **three** surfaces only (no full-screen redesigns): the **Manager Task card**
+> (`TaskCard` opt-in `premium` flag → `AppGlassCard` + status glow; `TaskActionButton`
+> → `PremiumButton`), the **Admin Home pending card** (`PendingActions` →
+> `AppGlassCard` + `MetricPill` summary), and the **Notifications list**
+> (`NotificationTile` → `AppGlassCard` + a reused-`StatusBadge` category badge).
+> Strictly monochrome + subtle status glows only. `flutter analyze` clean (0
+> issues); **167 tests pass** (+5 `premium_components_test`). **Deferred:**
+> migrating the remaining ad-hoc card buttons + §5/§8/§9.
+
+> **Premium UX/Logic Refactor · Slice 1 (2026-06-25):** First slice of a 12-point
+> refactor prompt, scoped down after a reality-check + owner rulings (**strictly
+> monochrome + subtle status glows only, no indigo**; **logic/correctness first**;
+> **keep the `fcmTokens` array** — the `fcmDevices` rebuild was rejected as
+> over-engineering, since multi-device + logout-removal + refresh-rotation +
+> dead-token pruning already work). Shipped four correctness fixes: **§1** admin
+> **Pending Review** drill-down (Summary → Branch → Employee → Task; new
+> `pending_review_screen.dart` + `/admin/review` route; review CTAs rewired off the
+> branch-operations overview); **§2** employee home counts only the **active
+> operational window** (new pure `active_window.dart` — approved-today counts,
+> older approved drops out, so "Done X/Y" stops growing forever); **§4** a broadcast
+> no longer notifies its **own sender** for implicit audiences (everyone/branch/role
+> — explicit DM/custom honoured); **§6** **approved tasks are locked** (cubit guards
+> + admin-only `reopenTask` + `firestore.rules` backstop + locked UI on card &
+> detail). `flutter analyze` clean (0 issues); **162 tests pass** (+5
+> `active_window_test`); `node --check functions/index.js` valid. ⚠️ **Deploy**
+> `firestore:rules` (approved lock) + `functions` (sender self-exclude).
+> **Prompt items already done / rejected:** §3 FCM (array already correct), §7 swap
+> workflow (coworker→manager flow already exists), §5 notif UI (badges/swipe were
+> deliberately removed in the 2026-06-24 lean pass). **Deferred slices:** §8 branch
+> media, §9 DROP brand presence, §10/§11 premium-card/component system.
 
 > **Schedule grid premium redesign (2026-06-24):** Reworked the admin + manager
 > weekly schedule grid (shared `ManagerScheduleView` → `ScheduleGrid` →

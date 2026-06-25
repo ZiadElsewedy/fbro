@@ -115,11 +115,25 @@ class _DetailsView extends StatelessWidget {
   final Map<String, UserEntity> directory;
   final TaskCubit cubit;
 
+  Future<void> _confirmReopen(BuildContext context) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Reopen task?',
+      message:
+          'This moves the task back into the workflow so it can be edited. The approval will be cleared.',
+      confirmLabel: 'Reopen',
+    );
+    if (confirmed && context.mounted) cubit.reopenTask(task);
+  }
+
   @override
   Widget build(BuildContext context) {
     final role = context.currentRole;
     final isEmployee = role?.isEmployee ?? true;
     final isManagerOrAdmin = !(role?.isEmployee ?? true);
+    final isAdmin = role?.isAdmin ?? false;
+    // An approved task is a locked, reviewed record — no Assign / Edit.
+    final isLocked = task.status == TaskStatus.approved;
 
     return Scaffold(
       backgroundColor: AppColors.darkBg,
@@ -134,7 +148,7 @@ class _DetailsView extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          if (isManagerOrAdmin) ...[
+          if (isManagerOrAdmin && !isLocked) ...[
             IconButton(
               icon: const Icon(Icons.person_add_alt_1_outlined,
                   color: AppColors.textSecondary),
@@ -152,12 +166,28 @@ class _DetailsView extends StatelessWidget {
                   context: context,
                   cubit: cubit,
                   existing: task,
-                  isAdmin: role?.isAdmin ?? false,
+                  isAdmin: isAdmin,
                   defaultBranchId: user?.branchId ?? '',
                 );
               },
             ),
           ],
+          // Approved & locked: an admin keeps a Reopen escape hatch; a manager
+          // sees only a non-interactive lock glyph.
+          if (isManagerOrAdmin && isLocked)
+            if (isAdmin)
+              IconButton(
+                icon: const Icon(Icons.lock_open_rounded,
+                    color: AppColors.textSecondary),
+                tooltip: 'Reopen',
+                onPressed: () => _confirmReopen(context),
+              )
+            else
+              const Padding(
+                padding: EdgeInsets.only(right: AppSpacing.md),
+                child: Icon(Icons.lock_outline_rounded,
+                    size: 20, color: AppColors.textTertiary),
+              ),
         ],
       ),
       body: ListView(
@@ -174,6 +204,12 @@ class _DetailsView extends StatelessWidget {
             branchName: cubit.branchNames[task.branchId ?? ''],
           ),
           const SizedBox(height: AppSpacing.xl),
+
+          // ── Locked notice (approved) ───────────────────────────
+          if (isLocked) ...[
+            _LockedBanner(canReopen: isAdmin),
+            const SizedBox(height: AppSpacing.xl),
+          ],
 
           // ── Assignment ─────────────────────────────────────────
           _Section(
@@ -1068,6 +1104,43 @@ class _EventCard extends StatelessWidget {
 }
 
 // ─── Employee action area ───────────────────────────────────────────
+
+/// Shown at the top of an approved task's details — a calm, monochrome notice
+/// that the task is a locked, reviewed record (the status glow on the header
+/// above carries the colour; this banner stays neutral).
+class _LockedBanner extends StatelessWidget {
+  const _LockedBanner({required this.canReopen});
+  final bool canReopen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurfaceElevated,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.lock_outline_rounded,
+              size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              canReopen
+                  ? 'Approved and locked. Reopen the task to make changes.'
+                  : 'Approved and locked. This task can no longer be changed.',
+              style: AppTypography.caption
+                  .copyWith(color: AppColors.textSecondary, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _EmployeeActions extends StatelessWidget {
   const _EmployeeActions({required this.task, required this.cubit});

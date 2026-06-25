@@ -7,6 +7,8 @@ import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
+import 'package:fbro/core/widgets/branch_avatar.dart';
+import 'package:fbro/core/widgets/drop_loading_state.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/core/extensions/context_extensions.dart';
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
@@ -59,6 +61,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       context.read<BranchCubit>().load();
       context.read<ScheduleCubit>().load(branchId: '');
     } else {
+      // Branch directory for the header logo (§8b) — the manager's own branch.
+      context.read<BranchCubit>().loadIfNeeded();
       context.read<ScheduleCubit>().load(branchId: _user?.branchId ?? '');
     }
   }
@@ -76,7 +80,7 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         listener: (context, state) =>
             state.whenOrNull(error: (m) => AppSnackbar.error(context, m)),
         builder: (context, state) => state.maybeWhen(
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const DropLoadingState(message: 'Loading schedule…'),
           loaded: (branchId, weekStart, schedule, members, busy) =>
               _body(branchId, weekStart, schedule, members, busy),
           orElse: () => const SizedBox.shrink(),
@@ -96,7 +100,7 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
     return Column(
       children: [
         if (busy) const LinearProgressIndicator(minHeight: 2),
-        _controls(branchId, weekStart, cubit),
+        _controls(branchId, weekStart, cubit, members.length),
         Expanded(
           child: RefreshIndicator(
             onRefresh: () => cubit.refresh(),
@@ -111,7 +115,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   }
 
   // ── Controls ───────────────────────────────────────────────────
-  Widget _controls(String branchId, DateTime weekStart, ScheduleCubit cubit) {
+  Widget _controls(String branchId, DateTime weekStart, ScheduleCubit cubit,
+      int memberCount) {
     return Container(
       padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, AppSpacing.sm,
           AppSpacing.pagePadding, AppSpacing.md),
@@ -120,6 +125,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       ),
       child: Column(
         children: [
+          _branchHeader(branchId, memberCount),
+          const SizedBox(height: AppSpacing.sm),
           if (widget.isAdmin) ...[
             _branchSelector(branchId),
             const SizedBox(height: AppSpacing.sm),
@@ -169,6 +176,43 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
           child: Icon(icon, size: 20, color: AppColors.textSecondary),
         ),
       ),
+    );
+  }
+
+  /// Branch identity header (§8b/§8c) — logo + name + "Weekly Schedule · N
+  /// employees" for the schedule's branch.
+  Widget _branchHeader(String branchId, int memberCount) {
+    return BlocBuilder<BranchCubit, BranchState>(
+      builder: (context, _) {
+        final branch = context.read<BranchCubit>().branchById(branchId);
+        final name = branch?.name ??
+            (branchId.isEmpty ? 'No branch selected' : 'Branch');
+        // Only show the count once a branch is selected (admin all-branches view
+        // has no members until one is picked).
+        final subtitle = branchId.isEmpty
+            ? 'Weekly schedule'
+            : 'Weekly Schedule · $memberCount '
+                '${memberCount == 1 ? 'employee' : 'employees'}';
+        return Row(
+          children: [
+            BranchAvatar(
+                logoUrl: branch?.logoUrl, name: name, size: 34, radius: 10),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      style: AppTypography.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  Text(subtitle, style: AppTypography.caption),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

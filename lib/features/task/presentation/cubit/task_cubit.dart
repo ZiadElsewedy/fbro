@@ -258,6 +258,13 @@ class TaskCubit extends Cubit<TaskState> {
   }
 
   Future<void> editTask(TaskEntity task) async {
+    // An approved task is a locked, reviewed record — block edits/reassignment
+    // (the UI hides the affordance; this is the cubit-level backstop). An admin
+    // must reopen it first (reopenTask).
+    if (_taskById(task.id)?.status == TaskStatus.approved) {
+      _emitTransientError('Approved tasks are locked. Reopen the task to edit it.');
+      return;
+    }
     // Notify only employees newly added by this edit (not the existing ones).
     final before = _taskById(task.id)?.assigneeIds.toSet() ?? const {};
     final added =
@@ -273,8 +280,42 @@ class TaskCubit extends Cubit<TaskState> {
     }
   }
 
-  Future<void> deleteTask(String taskId) =>
-      _mutate(() => _deleteTask(taskId));
+  Future<void> deleteTask(String taskId) async {
+    if (_taskById(taskId)?.status == TaskStatus.approved) {
+      _emitTransientError(
+          'Approved tasks are locked. Reopen the task before deleting it.');
+      return;
+    }
+    await _mutate(() => _deleteTask(taskId));
+  }
+
+  /// Admin escape hatch — reopens an approved task for correction. Moves it back
+  /// to `started` (clearing the approval audit) and logs the reopen on the
+  /// timeline, so a mistaken approval is recoverable. Wired only behind an
+  /// admin-gated affordance; `firestore.rules` permits only an admin to move a
+  /// task out of `approved`.
+  Future<void> reopenTask(TaskEntity task) async {
+    if (task.status != TaskStatus.approved) return;
+    await _mutate(() async {
+      final now = DateTime.now();
+      await _updateTask(task.copyWith(
+        status: TaskStatus.started,
+        approvedBy: null,
+        approvedAt: null,
+        requiresRework: false,
+        activityLog: [
+          ...task.activityLog,
+          ActivityEntry(
+            status: TaskStatus.started.value,
+            actorId: _user?.uid ?? '',
+            actorName: _user?.displayName,
+            at: now,
+            note: 'Reopened for changes',
+          ),
+        ],
+      ));
+    });
+  }
 
   Future<void> assignEmployees({
     required String taskId,
@@ -282,6 +323,11 @@ class TaskCubit extends Cubit<TaskState> {
     String? shiftId,
   }) async {
     final existing = _taskById(taskId);
+    if (existing?.status == TaskStatus.approved) {
+      _emitTransientError(
+          'Approved tasks are locked. Reopen the task to change assignees.');
+      return;
+    }
     final before = existing?.assigneeIds.toSet() ?? const {};
     final added = employeeIds.where((id) => !before.contains(id)).toList();
     final ok = await _mutate(() => _assignTask(

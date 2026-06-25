@@ -91,7 +91,8 @@ class _SplashPageState extends State<SplashPage>
       backgroundColor: AppColors.darkBg,
       body: Stack(
         children: [
-          // Soft indigo glow bloom behind the brand lockup.
+          // Soft white glow bloom behind the brand lockup (monochrome — the
+          // accent is white, never indigo).
           Center(
             child: Container(
               width: 320,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fbro/core/extensions/context_extensions.dart';
@@ -6,7 +7,9 @@ import 'package:fbro/core/routes/route_names.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/app_dialog.dart';
 import 'package:fbro/core/widgets/app_empty_state.dart';
+import 'package:fbro/core/widgets/drop_empty_state.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/list_skeleton.dart';
 import 'package:fbro/features/notifications/domain/entities/notification_entity.dart';
@@ -15,11 +18,12 @@ import 'package:fbro/features/notifications/presentation/cubit/notification_stat
 import 'package:fbro/features/notifications/presentation/notification_format.dart';
 import 'package:fbro/features/notifications/presentation/widgets/notification_tile.dart';
 
-/// The in-app Notification Center — every role's action inbox. Deliberately lean
-/// (2026-06-23 simplification): an **All / Unread** filter, **Needs action**
-/// notifications grouped above **Earlier**, tap to open (marks read + deep-links),
-/// swipe to delete, and mark-all-read. No search / type filters / pin / archive
-/// surface — those were power-user clutter for a small ops team.
+/// The in-app Notification Center — an **operations workflow inbox** (§5). Not a
+/// flat feed: notifications are **grouped by time** (Today / Yesterday / Earlier),
+/// **filtered by category** (All / Tasks / Reviews / Broadcast), and **ordered by
+/// priority** within each section so what needs acting on floats up. Swipe right
+/// to mark read, swipe left to archive (delete in the Archived view); bulk
+/// Mark-all-read / Clear-archived; every tile deep-links to its destination.
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -29,7 +33,8 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final _scroll = ScrollController();
-  NotificationFilter _filter = NotificationFilter.all;
+  NotificationCategory _category = NotificationCategory.all;
+  bool _showArchived = false;
   bool _loadingMore = false;
 
   @override
@@ -69,8 +74,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     _deepLink(n);
   }
 
-  /// A task notification opens the **exact task**; a broadcast notification opens
-  /// its detail for admin/manager (the body is the message for employees).
+  /// A task / review notification opens the **exact task** (its details screen
+  /// carries the review surface); a broadcast opens its detail for admin/manager.
+  /// Every type routes somewhere — no dead notifications.
   void _deepLink(NotificationEntity n) {
     final role = context.currentRole;
     switch (n.route) {
@@ -88,15 +94,47 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             (role?.isAdmin == true || role?.isManager == true)) {
           context.push(RouteNames.communicationsDetail(id));
         }
+      case 'schedule':
+        // Shift-swap notification → the role's schedule (where the swap queue is).
+        if (role != null) context.push(RouteNames.scheduleForRole(role));
     }
   }
 
-  /// Non-archived notifications passing the active filter. Archived notifications
-  /// stay hidden (archive remains in the data layer, not the UI).
+  /// The notifications in view: the archived set (Archived view) or the live
+  /// inbox, then narrowed to the active category.
   List<NotificationEntity> _visible(List<NotificationEntity> items) => items
-      .where((n) => !n.isArchived)
-      .where(_filter.matches)
+      .where((n) => n.isArchived == _showArchived)
+      .where((n) => _category.matches(n.type))
       .toList();
+
+  Future<void> _onSwipeRead(NotificationEntity n) async {
+    if (n.isUnread) {
+      HapticFeedback.selectionClick();
+      await context.read<NotificationCubit>().markRead(n.id);
+    }
+  }
+
+  Future<void> _onSwipeArchiveOrDelete(NotificationEntity n) async {
+    HapticFeedback.mediumImpact();
+    final cubit = context.read<NotificationCubit>();
+    // Inbox → archive (returns to the Archived view); Archived → delete forever.
+    if (_showArchived) {
+      await cubit.delete(n.id);
+    } else {
+      await cubit.setArchived(n.id, true);
+    }
+  }
+
+  Future<void> _clearArchived() async {
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Clear archived?',
+      message: 'Permanently delete all archived notifications.',
+      confirmLabel: 'Clear',
+      destructive: true,
+    );
+    if (ok && mounted) context.read<NotificationCubit>().clearArchived();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,21 +144,38 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         backgroundColor: AppColors.darkBg,
         elevation: 0,
         titleSpacing: AppSpacing.pagePadding,
-        title: Text('Notifications', style: AppTypography.h3),
+        title: Text(_showArchived ? 'Archived' : 'Notifications',
+            style: AppTypography.h3),
         actions: [
-          BlocBuilder<NotificationCubit, NotificationState>(
-            builder: (context, state) {
-              final hasUnread =
-                  context.read<NotificationCubit>().unreadCount > 0;
-              if (!hasUnread) return const SizedBox.shrink();
-              return TextButton(
-                onPressed: () =>
-                    context.read<NotificationCubit>().markAllRead(),
-                child: Text('Mark all read',
-                    style: AppTypography.caption
-                        .copyWith(color: AppColors.primary)),
-              );
-            },
+          if (_showArchived)
+            TextButton(
+              onPressed: _clearArchived,
+              child: Text('Clear',
+                  style:
+                      AppTypography.caption.copyWith(color: AppColors.error)),
+            )
+          else
+            BlocBuilder<NotificationCubit, NotificationState>(
+              builder: (context, _) {
+                final hasUnread =
+                    context.read<NotificationCubit>().unreadCount > 0;
+                if (!hasUnread) return const SizedBox.shrink();
+                return TextButton(
+                  onPressed: () =>
+                      context.read<NotificationCubit>().markAllRead(),
+                  child: Text('Mark all read',
+                      style: AppTypography.caption
+                          .copyWith(color: AppColors.primary)),
+                );
+              },
+            ),
+          IconButton(
+            tooltip: _showArchived ? 'Inbox' : 'Archived',
+            icon: Icon(
+              _showArchived ? Icons.inbox_outlined : Icons.archive_outlined,
+              color: AppColors.textSecondary,
+            ),
+            onPressed: () => setState(() => _showArchived = !_showArchived),
           ),
         ],
       ),
@@ -136,12 +191,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _content(List<NotificationEntity> items) {
-    final sections = groupByPriority(_visible(items));
+    final sections = groupByTime(_visible(items), DateTime.now());
     return Column(
       children: [
         _FilterBar(
-          filter: _filter,
-          onFilter: (f) => setState(() => _filter = f),
+          category: _category,
+          onSelect: (c) {
+            HapticFeedback.selectionClick();
+            setState(() => _category = c);
+          },
         ),
         Expanded(child: sections.isEmpty ? _empty() : _list(sections)),
       ],
@@ -169,12 +227,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               delay: staggerDelay(animIndex++),
               child: Dismissible(
                 key: ValueKey(n.id),
-                direction: DismissDirection.endToStart,
-                background: _deleteBg(),
-                confirmDismiss: (_) async {
-                  await cubit.delete(n.id);
-                  // The stream re-emits without the item; keep it in the tree
-                  // until then to avoid a dismissed-widget assertion.
+                background: _readBg(),
+                secondaryBackground: _trailingBg(),
+                confirmDismiss: (direction) async {
+                  // Both actions keep the widget in the tree (return false): the
+                  // live stream re-emits without it, avoiding a dismissed-widget
+                  // assertion. The swipe springs back, then the list updates.
+                  if (direction == DismissDirection.startToEnd) {
+                    await _onSwipeRead(n);
+                  } else {
+                    await _onSwipeArchiveOrDelete(n);
+                  }
                   return false;
                 },
                 child: NotificationTile(
@@ -205,37 +268,71 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _deleteBg() {
+  /// Leading background (swipe right) — mark read.
+  Widget _readBg() => _swipeBg(
+        alignment: Alignment.centerLeft,
+        icon: Icons.done_all_rounded,
+        label: 'Mark read',
+        color: AppColors.success,
+      );
+
+  /// Trailing background (swipe left) — archive (inbox) or delete (archived).
+  Widget _trailingBg() => _showArchived
+      ? _swipeBg(
+          alignment: Alignment.centerRight,
+          icon: Icons.delete_outline_rounded,
+          label: 'Delete',
+          color: AppColors.error,
+        )
+      : _swipeBg(
+          alignment: Alignment.centerRight,
+          icon: Icons.archive_outlined,
+          label: 'Archive',
+          color: AppColors.warning,
+        );
+
+  Widget _swipeBg({
+    required Alignment alignment,
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    final children = [
+      Icon(icon, size: 18, color: color),
+      const SizedBox(width: 6),
+      Text(label, style: AppTypography.caption.copyWith(color: color)),
+    ];
     return Container(
-      alignment: Alignment.centerRight,
+      alignment: alignment,
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       decoration: BoxDecoration(
-        color: AppColors.error.withAlpha(24),
+        color: color.withAlpha(24),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.error),
-          const SizedBox(width: 6),
-          Text('Delete',
-              style: AppTypography.caption.copyWith(color: AppColors.error)),
-        ],
+        children: alignment == Alignment.centerRight
+            ? children
+            : children.reversed.toList(),
       ),
     );
   }
 
   Widget _empty() {
-    if (_filter == NotificationFilter.unread) {
-      return const AppEmptyState(
-        icon: Icons.done_all_rounded,
-        title: 'No unread notifications',
-        message: "You're all caught up.",
+    if (_showArchived) {
+      return const DropEmptyState(
+        title: 'Nothing archived',
+        message: 'Archived notifications will collect here.',
       );
     }
-    return const AppEmptyState(
-      icon: Icons.notifications_none_rounded,
+    if (_category != NotificationCategory.all) {
+      return DropEmptyState(
+        title: 'No ${_category.label.toLowerCase()} notifications',
+        message: 'Nothing here right now.',
+      );
+    }
+    return const DropEmptyState(
       title: "You're all caught up",
       message: 'Task updates and announcements will show up here.',
     );
@@ -256,27 +353,29 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       );
 }
 
-/// All / Unread filter chips.
+/// The category filter pills — subtle premium chips (no loud badges).
 class _FilterBar extends StatelessWidget {
-  const _FilterBar({required this.filter, required this.onFilter});
+  const _FilterBar({required this.category, required this.onSelect});
 
-  final NotificationFilter filter;
-  final ValueChanged<NotificationFilter> onFilter;
+  final NotificationCategory category;
+  final ValueChanged<NotificationCategory> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.pagePadding, AppSpacing.sm, AppSpacing.pagePadding, 0),
-      child: Row(
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.pagePadding, AppSpacing.sm, AppSpacing.pagePadding, 0),
         children: [
-          for (final f in NotificationFilter.values)
+          for (final c in NotificationCategory.values)
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.sm),
               child: _Chip(
-                label: f.label,
-                selected: filter == f,
-                onTap: () => onFilter(f),
+                label: c.label,
+                selected: category == c,
+                onTap: () => onSelect(c),
               ),
             ),
         ],
@@ -297,7 +396,9 @@ class _Chip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        alignment: Alignment.center,
         padding:
             const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 7),
         decoration: BoxDecoration(

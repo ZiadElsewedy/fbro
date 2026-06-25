@@ -116,6 +116,10 @@ class App extends StatelessWidget {
               if (u.hasAppAccess) {
                 AppDependencies.statisticsCubit.load(u);
                 AppDependencies.taskCubit.load(u);
+                // Branch directory — small + cached; lets every branch-identity
+                // surface (schedule/operations/profile/swap) resolve a branchId
+                // to its logo via the app-wide BranchCubit. (§8b)
+                AppDependencies.branchCubit.loadIfNeeded();
               }
             },
             unauthenticated: () {

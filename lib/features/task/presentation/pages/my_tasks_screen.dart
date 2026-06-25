@@ -161,7 +161,6 @@ class _ActiveTasksTab extends StatelessWidget {
 
     if (empty) {
       return const TaskEmptyState(
-        icon: Icons.task_alt_rounded,
         message: 'All clear! No active tasks right now.',
       );
     }
@@ -287,7 +286,6 @@ class _DoneTasksTab extends StatelessWidget {
 
     if (done.isEmpty) {
       return const TaskEmptyState(
-        icon: Icons.emoji_events_outlined,
         message: "No completed tasks yet.\nApproved tasks will appear here.",
       );
     }
