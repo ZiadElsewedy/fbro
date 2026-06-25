@@ -3,7 +3,10 @@ import 'package:fbro/core/enums/notification_type.dart';
 import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/app_glass_card.dart';
+import 'package:fbro/core/widgets/status_badge.dart';
 import 'package:fbro/features/notifications/domain/entities/notification_entity.dart';
+import 'package:fbro/features/notifications/presentation/notification_format.dart';
 
 /// A single notification in the inbox — icon (tinted by type), title, body,
 /// time-ago, and an unread dot. Strictly monochrome; semantic colour only for
@@ -24,21 +27,25 @@ class NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final unread = notification.isUnread;
     final accent = _accentFor(notification.type);
+    final (catLabel, catColor) = _category(notification.type);
+    // A critical notification (overdue · emergency) gets a stronger unread
+    // indicator — the dot picks up its semantic accent and grows a touch. Subtle,
+    // still monochrome elsewhere.
+    final critical =
+        notificationPriority(notification.type) == NotificationPriority.critical;
+    final dotColor = critical ? accent : AppColors.primary;
+    final dotSize = critical ? 10.0 : 8.0;
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppGlassCard(
+        onTap: onTap,
         padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          color: unread ? AppColors.darkSurfaceElevated : AppColors.darkSurface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.darkBorder),
-        ),
+        elevated: unread,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Icon bubble — tinted by the notification's semantic accent.
             Container(
               width: 40,
               height: 40,
@@ -67,16 +74,24 @@ class NotificationTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (unread)
-                        Container(
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.only(left: 6, top: 4),
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
+                      // Unread dot — fades out when the notification is read
+                      // (§5c motion); keeps its slot so the title never reflows.
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6, top: 4),
+                        child: AnimatedOpacity(
+                          opacity: unread ? 1 : 0,
+                          duration: const Duration(milliseconds: 320),
+                          curve: Curves.easeOut,
+                          child: Container(
+                            width: dotSize,
+                            height: dotSize,
+                            decoration: BoxDecoration(
+                              color: dotColor,
+                              shape: BoxShape.circle,
+                            ),
                           ),
                         ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -86,9 +101,16 @@ class NotificationTile extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 6),
-                  Text(_timeAgo(notification.createdAt),
-                      style: AppTypography.caption),
+                  const SizedBox(height: AppSpacing.sm),
+                  // Category badge + relative time.
+                  Row(
+                    children: [
+                      StatusBadge(label: catLabel, color: catColor),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(_timeAgo(notification.createdAt),
+                          style: AppTypography.caption),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -96,6 +118,34 @@ class NotificationTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// The notification's category badge — Task · Review · Reminder · Broadcast.
+  /// Monochrome for the neutral kinds; a semantic tint only where it carries
+  /// meaning (a review outcome, a reminder, an emergency).
+  (String, Color) _category(NotificationType type) {
+    switch (type) {
+      case NotificationType.taskAssigned:
+        return ('Task', AppColors.textSecondary);
+      case NotificationType.taskSubmitted:
+      case NotificationType.taskApproved:
+      case NotificationType.taskRejected:
+      case NotificationType.taskRework:
+        return ('Review', _accentFor(type));
+      case NotificationType.taskReminder:
+      case NotificationType.taskOverdue:
+      case NotificationType.broadcastReminder:
+        return ('Reminder', AppColors.warning);
+      case NotificationType.broadcastEmergency:
+        return ('Broadcast', AppColors.error);
+      case NotificationType.broadcastAnnouncement:
+        return ('Broadcast', AppColors.textSecondary);
+      case NotificationType.swapRequested:
+      case NotificationType.swapAccepted:
+      case NotificationType.swapApproved:
+      case NotificationType.swapRejected:
+        return ('Schedule', _accentFor(type));
+    }
   }
 
   IconData _iconFor(NotificationType type) {
@@ -120,19 +170,29 @@ class NotificationTile extends StatelessWidget {
         return Icons.alarm_outlined;
       case NotificationType.broadcastAnnouncement:
         return Icons.campaign_outlined;
+      case NotificationType.swapRequested:
+      case NotificationType.swapAccepted:
+        return Icons.swap_horiz_rounded;
+      case NotificationType.swapApproved:
+        return Icons.check_circle_outline_rounded;
+      case NotificationType.swapRejected:
+        return Icons.cancel_outlined;
     }
   }
 
   Color _accentFor(NotificationType type) {
     switch (type) {
       case NotificationType.taskApproved:
+      case NotificationType.swapApproved:
         return AppColors.success;
       case NotificationType.taskRejected:
       case NotificationType.taskOverdue:
       case NotificationType.broadcastEmergency:
+      case NotificationType.swapRejected:
         return AppColors.error;
       case NotificationType.taskRework:
       case NotificationType.taskReminder:
+      case NotificationType.swapAccepted:
         return AppColors.warning;
       default:
         return AppColors.primary;

@@ -98,7 +98,16 @@ service cloud.firestore {
 
       allow create: if canReachBranch(request.resource.data.get('branchId', ''));
 
-      allow update: if canReachBranch(resource.data.get('branchId', ''))
+      // An APPROVED task is a locked, reviewed record. A manager/admin may not
+      // edit / reassign / re-status it in place; the ONLY change permitted on an
+      // already-approved task is an ADMIN REOPEN — moving it OUT of `approved`
+      // (back into the workflow) so a mistaken approval is recoverable. The
+      // review transition INTO approved is unaffected (the stored status is then
+      // `waitingReview`, so this guard passes).
+      allow update: if (canReachBranch(resource.data.get('branchId', ''))
+            && (resource.data.get('status', 'pending') != 'approved'
+                || (isAdmin()
+                    && request.resource.data.get('status', 'pending') != 'approved')))
         || (isTaskAssignee()
             // employees can't reassign the task (assignees frozen)
             && request.resource.data.get('assigneeIds', [])
@@ -115,7 +124,10 @@ service cloud.firestore {
             && request.resource.data.get('rejectedBy', '')
                  == resource.data.get('rejectedBy', ''));
 
-      allow delete: if canReachBranch(resource.data.get('branchId', ''));
+      // Approved tasks can't be deleted either (reopen first). Matches the lock
+      // above so a reviewed record can't be silently removed.
+      allow delete: if canReachBranch(resource.data.get('branchId', ''))
+        && resource.data.get('status', 'pending') != 'approved';
     }
 
     // ── Task templates (stabilization) ─────────────────────────────

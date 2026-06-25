@@ -7,8 +7,12 @@ import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
+import 'package:fbro/core/widgets/brand_watermark.dart';
+import 'package:fbro/core/widgets/branch_avatar.dart';
 import 'package:fbro/core/widgets/list_skeleton.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
+import 'package:fbro/features/branch/presentation/cubit/branch_cubit.dart';
+import 'package:fbro/features/branch/presentation/cubit/branch_state.dart';
 import 'package:fbro/features/operations/domain/branch_summary.dart';
 import 'package:fbro/features/operations/domain/branch_workload.dart';
 import 'package:fbro/features/operations/domain/shift_filter.dart';
@@ -53,6 +57,8 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
   }
 
   void _load() {
+    // Branch directory for the header logo (§8b) — cheap + cached.
+    context.read<BranchCubit>().loadIfNeeded();
     context
         .read<BranchOperationsCubit>()
         .load(widget.branchId, branchName: widget.branchName);
@@ -97,7 +103,27 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.darkBg,
         elevation: 0,
-        title: Text(_branchLabel, style: AppTypography.h3),
+        title: BlocBuilder<BranchCubit, BranchState>(
+          builder: (context, _) {
+            final branch = context.read<BranchCubit>().branchById(widget.branchId);
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                BranchAvatar(
+                  logoUrl: branch?.logoUrl,
+                  name: branch?.name ?? _branchLabel,
+                  size: 30,
+                  radius: 9,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Flexible(
+                  child: Text(branch?.name ?? _branchLabel,
+                      style: AppTypography.h3, overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            );
+          },
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.checklist_rounded,
@@ -151,6 +177,13 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
           AppSpacing.xxxl * 2,
         ),
         children: [
+          _BranchHero(
+            branchId: widget.branchId,
+            fallbackName: widget.branchName,
+            employeeCount: employees.length,
+            filter: filter,
+          ),
+          const SizedBox(height: AppSpacing.lg),
           _SummaryHeader(summary: workload.summary),
           const SizedBox(height: AppSpacing.xl),
           _ShiftToggle(
@@ -175,6 +208,163 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
       ),
     );
   }
+}
+
+// ─── Branch hero (§8c — cover image · identity · shift) ───────────────────────
+
+/// A premium 16:9 branch hero: the branch **cover** photo (dark-overlaid for
+/// legibility) behind the logo, name, employee count and active-shift summary —
+/// or a premium **monochrome** surface when no cover is set. Carries a subtle
+/// [BrandWatermark] (§9b Wave 3, now unblocked). The cover/logo resolve from the
+/// app-wide [BranchCubit] directory, so it works on any branch.
+class _BranchHero extends StatelessWidget {
+  const _BranchHero({
+    required this.branchId,
+    required this.fallbackName,
+    required this.employeeCount,
+    required this.filter,
+  });
+
+  final String branchId;
+  final String? fallbackName;
+  final int employeeCount;
+  final ShiftFilter filter;
+
+  (IconData, String) get _shift => switch (filter) {
+        ShiftFilter.all => (Icons.schedule_rounded, 'All shifts'),
+        ShiftFilter.morning => (Icons.wb_sunny_outlined, 'Morning shift'),
+        ShiftFilter.night => (Icons.nightlight_outlined, 'Night shift'),
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<BranchCubit, BranchState>(
+      builder: (context, _) {
+        final branch = context.read<BranchCubit>().branchById(branchId);
+        final name = branch?.name ?? fallbackName ?? 'Branch';
+        final cover = branch?.coverUrl ?? '';
+        final hasCover = cover.isNotEmpty;
+        final empLabel =
+            employeeCount == 1 ? '1 employee' : '$employeeCount employees';
+        final (shiftIcon, shiftLabel) = _shift;
+
+        return Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: AppRadius.cardAll,
+            border: Border.all(color: AppColors.darkBorder),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.black.withAlpha(40),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: BrandWatermark(
+              opacity: 0.03,
+              fontSize: 64,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Background — cover photo (with a dark scrim) or premium mono.
+                  if (hasCover) ...[
+                    Image.network(
+                      cover,
+                      fit: BoxFit.cover,
+                      cacheWidth: 1400,
+                      errorBuilder: (_, _, _) => const _MonoHeroBg(),
+                    ),
+                    // ~70% dark overlay for text legibility (gradient = stronger
+                    // at the bottom where the content sits).
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x59000000), Color(0xCC000000)],
+                        ),
+                      ),
+                    ),
+                  ] else
+                    const _MonoHeroBg(),
+
+                  // Content — identity + stats, bottom-left.
+                  Padding(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            BranchAvatar(
+                                logoUrl: branch?.logoUrl,
+                                name: name,
+                                size: 40,
+                                radius: 11),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Text(
+                                name,
+                                style: AppTypography.h2
+                                    .copyWith(color: AppColors.textPrimary),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Row(
+                          children: [
+                            const Icon(Icons.groups_outlined,
+                                size: 14, color: AppColors.textSecondary),
+                            const SizedBox(width: 5),
+                            Text(empLabel,
+                                style: AppTypography.caption
+                                    .copyWith(color: AppColors.textSecondary)),
+                            const SizedBox(width: AppSpacing.sm),
+                            const Text('·',
+                                style: TextStyle(color: AppColors.textTertiary)),
+                            const SizedBox(width: AppSpacing.sm),
+                            Icon(shiftIcon,
+                                size: 14, color: AppColors.textSecondary),
+                            const SizedBox(width: 5),
+                            Text(shiftLabel,
+                                style: AppTypography.caption
+                                    .copyWith(color: AppColors.textSecondary)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The premium monochrome hero background — the cover fallback.
+class _MonoHeroBg extends StatelessWidget {
+  const _MonoHeroBg();
+
+  @override
+  Widget build(BuildContext context) => const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [AppColors.darkSurfaceElevated, AppColors.darkSurface],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+      );
 }
 
 // ─── Summary header (branch health in 3 seconds) ──────────────────────────────

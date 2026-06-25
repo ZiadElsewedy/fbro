@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:fbro/core/constants/app_constants.dart';
 import 'package:fbro/core/errors/exceptions.dart';
 import 'package:fbro/features/branch/data/models/branch_model.dart';
@@ -10,12 +13,23 @@ abstract class BranchRemoteDataSource {
   Future<void> updateBranch(BranchModel branch);
   Future<void> setBranchActive(String branchId, bool isActive);
   Future<void> softDeleteBranch(String branchId);
+
+  /// Uploads a branch **logo** ([isLogo] true) or **cover** image to Storage,
+  /// writes the resulting URL onto `branches/{branchId}` (so the field never
+  /// rides through the edit form's `toMap`), and returns the download URL.
+  /// (§8 Branch Media.)
+  Future<String> uploadBranchImage(
+    String branchId,
+    File file, {
+    required bool isLogo,
+  });
 }
 
 class BranchRemoteDataSourceImpl implements BranchRemoteDataSource {
   final FirebaseFirestore _firestore;
+  final FirebaseStorage _storage;
 
-  BranchRemoteDataSourceImpl(this._firestore);
+  BranchRemoteDataSourceImpl(this._firestore, this._storage);
 
   CollectionReference<Map<String, dynamic>> get _branches =>
       _firestore.collection(AppConstants.branchesCollection);
@@ -70,6 +84,44 @@ class BranchRemoteDataSourceImpl implements BranchRemoteDataSource {
       }, SetOptions(merge: true));
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to update branch.');
+    }
+  }
+
+  static const _uploadTimeout = Duration(seconds: 60);
+
+  @override
+  Future<String> uploadBranchImage(
+    String branchId,
+    File file, {
+    required bool isLogo,
+  }) async {
+    final field = isLogo ? 'logoUrl' : 'coverUrl';
+    final path = 'branches/$branchId/${isLogo ? 'logo' : 'cover'}.jpg';
+    try {
+      // Fixed path → overwrites the previous image; Firebase issues a fresh
+      // token on overwrite so the saved URL changes (no stale cache).
+      final ref = _storage.ref(path);
+      final task =
+          ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+      final snapshot = await task.timeout(
+        _uploadTimeout,
+        onTimeout: () {
+          task.cancel();
+          throw const ServerException(
+              'Upload timed out. Check your connection and try again.');
+        },
+      );
+      final url = await snapshot.ref
+          .getDownloadURL()
+          .timeout(const Duration(seconds: 20));
+      // Persist the URL on the branch doc (admin-only write per firestore.rules).
+      await _branches.doc(branchId).set({
+        field: url,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      return url;
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to upload branch image.');
     }
   }
 

@@ -163,17 +163,34 @@ class ScheduleRepositoryImpl implements ScheduleRepository {
   @override
   Future<void> managerApproveSwap(ShiftSwapEntity swap) async {
     try {
-      // 1) Mark approved. 2) Apply to the schedule: requester gives up the slot,
-      // target takes it. The manager has branch-write access (firestore.rules),
-      // so both writes are permitted.
+      // 1) Mark approved. 2) EXCHANGE the two slots: on the same day the
+      // requester and target trade shifts (only two shifts exist, so the
+      // target's slot is the OPPOSITE of the requester's). Four targeted
+      // nested-array updates (each race-free via array transforms); the manager
+      // has branch-write access (firestore.rules).
       await _remote.updateSwapStatus(
           swapId: swap.id, status: SwapStatus.managerApproved);
       final scheduleId = ScheduleWeek.docId(swap.branchId, swap.weekStart);
+      final opposite = swap.shift.opposite;
+      // Requester leaves their shift, joins the opposite.
       await _remote.removeEmployee(
         scheduleId: scheduleId,
         day: swap.day,
         shift: swap.shift,
         employeeId: swap.requesterId,
+      );
+      await _remote.assignEmployee(
+        scheduleId: scheduleId,
+        day: swap.day,
+        shift: opposite,
+        employeeId: swap.requesterId,
+      );
+      // Target leaves the opposite, joins the requester's old shift.
+      await _remote.removeEmployee(
+        scheduleId: scheduleId,
+        day: swap.day,
+        shift: opposite,
+        employeeId: swap.targetId,
       );
       await _remote.assignEmployee(
         scheduleId: scheduleId,

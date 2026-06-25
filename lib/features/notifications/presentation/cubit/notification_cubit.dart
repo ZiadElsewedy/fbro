@@ -144,6 +144,16 @@ class NotificationCubit extends Cubit<NotificationState> {
     }
   }
 
+  /// Bulk "Clear archived" — permanently deletes every archived notification in
+  /// the current feed (the stream re-emits without them). Small-scale inbox, so
+  /// a client-side fan-out of deletes is fine.
+  Future<void> clearArchived() async {
+    final archived = _items.where((n) => n.isArchived).map((n) => n.id).toList();
+    for (final id in archived) {
+      await delete(id);
+    }
+  }
+
   /// Pins ([pinned] true) / unpins one notification.
   Future<void> setPinned(String id, bool pinned) async {
     try {

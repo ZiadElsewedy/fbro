@@ -10,13 +10,16 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/app_glass_card.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
+import 'package:fbro/core/widgets/premium_button.dart';
 import 'package:fbro/core/widgets/skeleton.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:fbro/features/statistics/domain/entities/statistics_entity.dart';
 import 'package:fbro/features/statistics/presentation/cubit/statistics_cubit.dart';
 import 'package:fbro/features/statistics/presentation/cubit/statistics_state.dart';
+import 'package:fbro/features/task/domain/active_window.dart';
 import 'package:fbro/features/task/domain/entities/task_entity.dart';
 import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
 import 'package:fbro/features/task/presentation/cubit/task_state.dart';
@@ -50,11 +53,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  void _load() {
+  void _load({bool force = false}) {
     final user = context.currentUser;
     if (user != null) {
-      context.read<StatisticsCubit>().load(user);
-      context.read<TaskCubit>().load(user);
+      context.read<StatisticsCubit>().load(user, forceRefresh: force);
+      context.read<TaskCubit>().load(user, forceRefresh: force);
     }
   }
 
@@ -73,7 +76,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         state.whenOrNull(error: (m) => context.showError(m));
       },
       child: RefreshIndicator(
-        onRefresh: () async => _load(),
+        onRefresh: () async => _load(force: true),
         color: AppColors.primary,
         backgroundColor: AppColors.darkSurface,
         child: ListView(
@@ -186,7 +189,11 @@ class _Dashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final counts = _Counts.from(tasks);
+    // Counts reflect only the current operational window — outstanding work plus
+    // work finished *today* — so historically-approved tasks don't inflate the
+    // ring forever (the old "Done 4 / 4" that never reset). The task sections
+    // below only render in-window statuses anyway, so they use the full list.
+    final counts = _Counts.from(activeWindowTasks(tasks, DateTime.now()));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,25 +332,9 @@ class _HeroTodayCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.darkSurfaceElevated, AppColors.darkSurface],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: AppRadius.cardAll,
-        border: Border.all(color: AppColors.darkBorder),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 28,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
+      child: AppGlassCard(
       child: Row(
         children: [
           _ProgressRing(
@@ -364,6 +355,7 @@ class _HeroTodayCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -1106,53 +1098,16 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final disabled = onTap == null;
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: AppTypography.labelSmall.copyWith(
-            color: primary
-                ? AppColors.onPrimary
-                : (disabled
-                    ? AppColors.textTertiary
-                    : AppColors.textPrimary),
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(width: 5),
-        Icon(
-          icon,
-          size: 16,
-          color: primary
-              ? AppColors.onPrimary
-              : (disabled ? AppColors.textTertiary : AppColors.textPrimary),
-        ),
-      ],
-    );
-
+    // Right-aligned card action, now on the canonical PremiumButton (filled for
+    // the primary "Start task" CTA, tonal otherwise).
     return Align(
       alignment: Alignment.centerRight,
-      child: _Pressable(
-        onTap: onTap ?? () {},
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: 7),
-          decoration: BoxDecoration(
-            color: primary && !disabled
-                ? AppColors.primary
-                : AppColors.transparent,
-            borderRadius: BorderRadius.circular(AppRadius.full),
-            border: Border.all(
-              color: primary && !disabled
-                  ? AppColors.primary
-                  : AppColors.darkBorder,
-            ),
-          ),
-          child: content,
-        ),
+      child: PremiumButton(
+        label: label,
+        icon: icon,
+        onPressed: onTap,
+        style:
+            primary ? PremiumButtonStyle.filled : PremiumButtonStyle.tonal,
       ),
     );
   }

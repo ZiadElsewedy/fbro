@@ -6,8 +6,12 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/app_glass_card.dart';
+import 'package:fbro/core/widgets/branch_avatar.dart';
 import 'package:fbro/core/widgets/skeleton.dart';
 import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
+import 'package:fbro/features/branch/presentation/cubit/branch_cubit.dart';
+import 'package:fbro/features/branch/presentation/cubit/branch_state.dart';
 import 'package:fbro/core/extensions/context_extensions.dart';
 import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
 import 'package:fbro/features/profile/presentation/cubit/profile_cubit.dart';
@@ -31,6 +35,8 @@ class _ProfilePageState extends State<ProfilePage> {
   void _load() {
     final uid = context.currentUser?.uid;
     if (uid != null) context.read<ProfileCubit>().loadProfile(uid);
+    // Branch directory for the assigned-branch section logo (§8b).
+    context.read<BranchCubit>().loadIfNeeded();
   }
 
   @override
@@ -83,6 +89,7 @@ class _ProfileContent extends StatelessWidget {
         children: [
           _Identity(profile: profile),
           const SizedBox(height: AppSpacing.xl),
+          const _BranchSection(),
           _Group(children: _infoRows(profile)),
           const SizedBox(height: AppSpacing.lg),
           _Group(
@@ -190,6 +197,65 @@ class _Identity extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The user's **assigned branch** (§8b) — logo + name + location. Renders
+/// nothing for a user with no branch (e.g. a global admin). The branchId comes
+/// from the auth session; identity is resolved via the app-wide [BranchCubit].
+class _BranchSection extends StatelessWidget {
+  const _BranchSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final branchId = context.currentUser?.branchId;
+    if (branchId == null || branchId.isEmpty) return const SizedBox.shrink();
+    return BlocBuilder<BranchCubit, BranchState>(
+      builder: (context, _) {
+        final branch = context.read<BranchCubit>().branchById(branchId);
+        final name = branch?.name ?? 'Your branch';
+        final location = branch?.location ?? '';
+        return Column(
+          children: [
+            AppGlassCard(
+              child: Row(
+                children: [
+                  BranchAvatar(
+                      logoUrl: branch?.logoUrl, name: name, size: 44, radius: 12),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('ASSIGNED BRANCH',
+                            style: AppTypography.caption.copyWith(
+                              letterSpacing: 1.0,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textTertiary,
+                            )),
+                        const SizedBox(height: 4),
+                        Text(name,
+                            style: AppTypography.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                        if (location.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(location,
+                              style: AppTypography.caption,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+        );
+      },
     );
   }
 }

@@ -22,6 +22,7 @@ class GlassContainer extends StatefulWidget {
     this.highlight = false,
     this.accent,
     this.elevated = true,
+    this.glow,
   });
 
   final Widget child;
@@ -36,6 +37,12 @@ class GlassContainer extends StatefulWidget {
 
   /// Paint the soft depth shadow (default). Set false for a flat inset tile.
   final bool elevated;
+
+  /// Optional **subtle semantic glow** — a soft tinted halo + faint border tint
+  /// in this colour (e.g. a task status: emerald / amber / red). Null = the
+  /// default monochrome surface. The premium card system ([AppGlassCard]) maps a
+  /// status to this; the app otherwise stays strictly monochrome.
+  final Color? glow;
 
   @override
   State<GlassContainer> createState() => _GlassContainerState();
@@ -52,9 +59,29 @@ class _GlassContainerState extends State<GlassContainer> {
   @override
   Widget build(BuildContext context) {
     final accent = widget.accent ?? AppColors.warning;
+    final glow = widget.glow;
     final borderColor = widget.highlight
         ? accent.withAlpha(140)
-        : (_hovered ? AppColors.textTertiary : AppColors.darkBorder);
+        : glow != null
+            ? glow.withAlpha(90) // faint semantic border tint
+            : (_hovered ? AppColors.textTertiary : AppColors.darkBorder);
+
+    final shadows = <BoxShadow>[
+      if (widget.elevated)
+        BoxShadow(
+          color: AppColors.black.withAlpha(40),
+          blurRadius: 16,
+          offset: const Offset(0, 6),
+        ),
+      // Subtle coloured halo for a status card — soft, never neon.
+      if (glow != null)
+        BoxShadow(
+          color: glow.withAlpha(48),
+          blurRadius: 24,
+          spreadRadius: -4,
+          offset: const Offset(0, 4),
+        ),
+    ];
 
     final card = AnimatedScale(
       scale: _pressed ? 0.98 : 1.0,
@@ -71,15 +98,7 @@ class _GlassContainerState extends State<GlassContainer> {
           ),
           borderRadius: widget.borderRadius,
           border: Border.all(color: borderColor),
-          boxShadow: widget.elevated
-              ? [
-                  BoxShadow(
-                    color: AppColors.black.withAlpha(40),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ]
-              : null,
+          boxShadow: shadows.isEmpty ? null : shadows,
         ),
         child: widget.child,
       ),

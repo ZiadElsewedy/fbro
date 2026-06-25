@@ -27,7 +27,7 @@
  */
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
@@ -168,6 +168,19 @@ async function dispatchBroadcast(params) {
     branchId = CUSTOM_BRANCH_MARKER;
   } else {
     throw new HttpsError("invalid-argument", "Unknown broadcast audience.");
+  }
+
+  // ── Never deliver a broadcast back to its own sender for an IMPLICIT
+  // audience (everyone / a branch / a role). The sender authored it — pushing
+  // it to their own device + inbox is noise. EXPLICIT audiences are honoured as
+  // chosen: a direct `user` message or a hand-picked `custom` list delivers to
+  // exactly whoever was selected (if the sender deliberately included
+  // themselves, they receive it). ──
+  if (
+    (audience === "allBranches" || audience === "branch") &&
+    senderId
+  ) {
+    recipientDocs = recipientDocs.filter((d) => d.id !== senderId);
   }
 
   const recipientCount = recipientDocs.length;
@@ -413,6 +426,72 @@ exports.sendBroadcast = onCall(async (request) => {
  * `pushedByFunction:true` (already pushed by `sendBroadcast`), so they are
  * skipped here to avoid a double push.
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// claimFcmToken — guarantees EXCLUSIVE token ownership (the FCM routing fix).
+//
+// Root problem: an FCM token is per-device, not per-user, and the client can
+// only ADD it to the signed-in user's `fcmTokens` (clients can't write OTHER
+// users' docs — firestore.rules). The only cross-user cleanup is the client's
+// best-effort `forgetUser` on logout; if that fails (offline / force-kill /
+// timing) the SAME token stays attached to multiple users, so a send to the old
+// user reaches a device now used by someone else (cross-user notification leak).
+//
+// Fix: whenever a token is ADDED to a user, claim it exclusively here (admin
+// privileges) — remove it from every OTHER user's `fcmTokens` and clear any
+// matching legacy `fcmToken`. A token then belongs to AT MOST ONE user (the most
+// recent to register it), independent of whether the client cleanup ran.
+//
+// Loop-safe: removing a token from another user SHRINKS their array (no token
+// ADDED), so that update's `added` set is empty → early return, no cascade.
+exports.claimFcmToken = onDocumentUpdated(`${USERS}/{uid}`, async (event) => {
+  const before = event.data.before.data() || {};
+  const after = event.data.after.data() || {};
+  const beforeTokens = new Set(
+    Array.isArray(before.fcmTokens) ? before.fcmTokens : []);
+  const afterTokens = Array.isArray(after.fcmTokens) ? after.fcmTokens : [];
+  const added = afterTokens.filter((t) => t && !beforeTokens.has(t));
+  if (added.length === 0) return; // nothing claimed → loop-safe no-op
+
+  const uid = event.params.uid;
+  for (const token of added) {
+    try {
+      // Other users still holding this token in their array.
+      const dupes = await db
+        .collection(USERS)
+        .where("fcmTokens", "array-contains", token)
+        .get();
+      // Other users holding it as the legacy single field.
+      const legacy = await db
+        .collection(USERS)
+        .where("fcmToken", "==", token)
+        .get();
+
+      const batch = db.batch();
+      let count = 0;
+      dupes.forEach((d) => {
+        if (d.id === uid) return; // keep it on the claimant
+        batch.update(d.ref, {
+          fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
+        });
+        count++;
+      });
+      legacy.forEach((d) => {
+        if (d.id === uid) return;
+        batch.update(d.ref, {
+          fcmToken: admin.firestore.FieldValue.delete(),
+        });
+        count++;
+      });
+      if (count > 0) {
+        await batch.commit();
+        logger.info("claimFcmToken: reclaimed a token", { uid, removedFrom: count });
+      }
+    } catch (err) {
+      logger.warn("claimFcmToken failed", { uid, error: String(err) });
+    }
+  }
+});
+
 exports.onNotificationCreated = onDocumentCreated(
   `${NOTIFICATIONS}/{id}`,
   async (event) => {

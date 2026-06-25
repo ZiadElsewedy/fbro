@@ -7,6 +7,8 @@ import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
+import 'package:fbro/core/widgets/branch_avatar.dart';
+import 'package:fbro/core/widgets/drop_loading_state.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/core/extensions/context_extensions.dart';
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
@@ -59,6 +61,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       context.read<BranchCubit>().load();
       context.read<ScheduleCubit>().load(branchId: '');
     } else {
+      // Branch directory for the header logo (§8b) — the manager's own branch.
+      context.read<BranchCubit>().loadIfNeeded();
       context.read<ScheduleCubit>().load(branchId: _user?.branchId ?? '');
     }
   }
@@ -76,7 +80,7 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         listener: (context, state) =>
             state.whenOrNull(error: (m) => AppSnackbar.error(context, m)),
         builder: (context, state) => state.maybeWhen(
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const DropLoadingState(message: 'Loading schedule…'),
           loaded: (branchId, weekStart, schedule, members, busy) =>
               _body(branchId, weekStart, schedule, members, busy),
           orElse: () => const SizedBox.shrink(),
@@ -96,7 +100,7 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
     return Column(
       children: [
         if (busy) const LinearProgressIndicator(minHeight: 2),
-        _controls(branchId, weekStart, cubit),
+        _controls(branchId, weekStart, cubit, members.length),
         Expanded(
           child: RefreshIndicator(
             onRefresh: () => cubit.refresh(),
@@ -111,7 +115,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   }
 
   // ── Controls ───────────────────────────────────────────────────
-  Widget _controls(String branchId, DateTime weekStart, ScheduleCubit cubit) {
+  Widget _controls(String branchId, DateTime weekStart, ScheduleCubit cubit,
+      int memberCount) {
     return Container(
       padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, AppSpacing.sm,
           AppSpacing.pagePadding, AppSpacing.md),
@@ -120,6 +125,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       ),
       child: Column(
         children: [
+          _branchHeader(branchId, memberCount),
+          const SizedBox(height: AppSpacing.sm),
           if (widget.isAdmin) ...[
             _branchSelector(branchId),
             const SizedBox(height: AppSpacing.sm),
@@ -169,6 +176,43 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
           child: Icon(icon, size: 20, color: AppColors.textSecondary),
         ),
       ),
+    );
+  }
+
+  /// Branch identity header (§8b/§8c) — logo + name + "Weekly Schedule · N
+  /// employees" for the schedule's branch.
+  Widget _branchHeader(String branchId, int memberCount) {
+    return BlocBuilder<BranchCubit, BranchState>(
+      builder: (context, _) {
+        final branch = context.read<BranchCubit>().branchById(branchId);
+        final name = branch?.name ??
+            (branchId.isEmpty ? 'No branch selected' : 'Branch');
+        // Only show the count once a branch is selected (admin all-branches view
+        // has no members until one is picked).
+        final subtitle = branchId.isEmpty
+            ? 'Weekly schedule'
+            : 'Weekly Schedule · $memberCount '
+                '${memberCount == 1 ? 'employee' : 'employees'}';
+        return Row(
+          children: [
+            BranchAvatar(
+                logoUrl: branch?.logoUrl, name: name, size: 34, radius: 10),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      style: AppTypography.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  Text(subtitle, style: AppTypography.caption),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -299,8 +343,27 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
           ),
           const SizedBox(height: AppSpacing.md),
         ],
+        _gridHint(),
+        const SizedBox(height: AppSpacing.sm),
         // The grid scrolls horizontally inside its own viewport.
         SizedBox(height: grid.height, child: grid),
+      ],
+    );
+  }
+
+  /// One-line affordance hint — the grid scrolls sideways and each cell is
+  /// tappable; say so quietly rather than leaving it to be discovered.
+  Widget _gridHint() {
+    return Row(
+      children: [
+        const Icon(Icons.touch_app_outlined,
+            size: 14, color: AppColors.textTertiary),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text('Tap a shift to assign or manage staff · swipe for more days',
+              style: AppTypography.caption, maxLines: 1,
+              overflow: TextOverflow.ellipsis),
+        ),
       ],
     );
   }
@@ -322,27 +385,66 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       }
     }
     final empty = total - filled;
+    final fraction = total == 0 ? 0.0 : filled / total;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
+        gradient: AppColors.subtleGradient,
         color: AppColors.darkSurface,
         borderRadius: AppRadius.lgAll,
         border: Border.all(color: AppColors.darkBorder),
       ),
-      child: Row(
+      child: Column(
         children: [
-          const Icon(Icons.calendar_month_rounded,
-              size: 20, color: AppColors.textSecondary),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Text(
-              empty == 0
-                  ? 'Every shift has someone assigned'
-                  : '$filled of $total shifts have someone',
-              style: AppTypography.label,
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.darkSurfaceElevated,
+                  borderRadius: AppRadius.mdAll,
+                  border: Border.all(color: AppColors.darkBorder),
+                ),
+                child: const Icon(Icons.calendar_month_rounded,
+                    size: 20, color: AppColors.textPrimary),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      empty == 0
+                          ? 'Every shift is covered'
+                          : '$filled of $total shifts covered',
+                      style: AppTypography.label,
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      empty == 0
+                          ? 'Nice — the whole week is staffed'
+                          : '$empty ${empty == 1 ? 'shift needs' : 'shifts need'} someone',
+                      style: AppTypography.caption,
+                    ),
+                  ],
+                ),
+              ),
+              _summaryPill('${(fraction * 100).round()}%'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          ClipRRect(
+            borderRadius: AppRadius.fullAll,
+            child: LinearProgressIndicator(
+              value: fraction,
+              minHeight: 6,
+              backgroundColor: AppColors.darkBg,
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(AppColors.primary),
             ),
           ),
-          if (empty > 0) _summaryPill('$empty empty'),
         ],
       ),
     );
@@ -350,15 +452,15 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
 
   Widget _summaryPill(String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: AppColors.darkSurfaceElevated,
         borderRadius: AppRadius.fullAll,
         border: Border.all(color: AppColors.darkBorder),
       ),
       child: Text(text,
-          style: AppTypography.caption.copyWith(
-              color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+          style: AppTypography.labelSmall.copyWith(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
     );
   }
 

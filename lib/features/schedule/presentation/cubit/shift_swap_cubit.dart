@@ -1,8 +1,11 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fbro/core/enums/notification_type.dart';
 import 'package:fbro/core/enums/schedule_day.dart';
 import 'package:fbro/core/enums/schedule_shift.dart';
 import 'package:fbro/core/enums/swap_status.dart';
 import 'package:fbro/core/errors/failures.dart';
+import 'package:fbro/features/auth/domain/usecases/get_users_by_branch.dart';
+import 'package:fbro/features/notifications/domain/usecases/notify_swap_event.dart';
 import 'package:fbro/features/schedule/domain/entities/shift_swap_entity.dart';
 import 'package:fbro/features/schedule/domain/repositories/schedule_repository.dart';
 import 'package:fbro/features/schedule/domain/swap_eligibility.dart';
@@ -20,12 +23,15 @@ enum SwapScope { mine, branch, all }
 
 class ShiftSwapCubit extends Cubit<ShiftSwapState> {
   final ScheduleRepository _repository;
+  final NotifySwapEvent _notifySwap;
+  final GetUsersByBranch _getUsersByBranch;
 
   /// Reload context — drives which fetch [_load]/[_mutate] re-run.
   SwapScope _scope = SwapScope.mine;
   String _key = '';
 
-  ShiftSwapCubit(this._repository) : super(const ShiftSwapState.initial());
+  ShiftSwapCubit(this._repository, this._notifySwap, this._getUsersByBranch)
+      : super(const ShiftSwapState.initial());
 
   List<ShiftSwapEntity> get _swaps =>
       state.maybeWhen(loaded: (s, _) => s, orElse: () => const []);
@@ -71,25 +77,45 @@ class ShiftSwapCubit extends Cubit<ShiftSwapState> {
     String? targetName,
     String? note,
   }) async {
-    // Authoritative client gate (spec §2): no swaps for past/in-progress shifts.
-    if (!SwapEligibility.isRequestable(weekStart, day, shift)) {
-      final prev = _swaps;
-      emit(const ShiftSwapState.error(SwapEligibility.pastShiftMessage));
-      emit(ShiftSwapState.loaded(prev));
+    // Guard: can't swap with yourself.
+    if (requesterId == targetId) {
+      _reject("You can't swap a shift with yourself.");
       return;
     }
-    await _mutate(() => _repository.createSwap(ShiftSwapEntity(
-          id: '',
-          branchId: branchId,
-          weekStart: weekStart,
-          day: day,
-          shift: shift,
-          requesterId: requesterId,
-          requesterName: requesterName,
-          targetId: targetId,
-          targetName: targetName,
-          note: note,
-        )));
+    // Guard: one open request at a time (no simultaneous pending swaps).
+    final hasOpen = _swaps.any(
+        (s) => s.requesterId == requesterId && !s.status.isResolved);
+    if (hasOpen) {
+      _reject('You already have a pending swap request. '
+          'Resolve it before requesting another.');
+      return;
+    }
+    // Authoritative client gate (spec §2): no swaps for past/in-progress shifts.
+    if (!SwapEligibility.isRequestable(weekStart, day, shift)) {
+      _reject(SwapEligibility.pastShiftMessage);
+      return;
+    }
+    await _mutate(() async {
+      final created = await _repository.createSwap(ShiftSwapEntity(
+        id: '',
+        branchId: branchId,
+        weekStart: weekStart,
+        day: day,
+        shift: shift,
+        requesterId: requesterId,
+        requesterName: requesterName,
+        targetId: targetId,
+        targetName: targetName,
+        note: note,
+      ));
+      // Notify the coworker their slot was requested.
+      await _notifySwap(
+        swap: created,
+        type: NotificationType.swapRequested,
+        actorId: requesterId,
+        recipients: [targetId],
+      );
+    });
   }
 
   /// One-shot fetch of every **open** swap request (not resolved), across all
@@ -104,18 +130,62 @@ class ShiftSwapCubit extends Cubit<ShiftSwapState> {
     }
   }
 
-  /// Target coworker approves → awaiting manager.
-  Future<void> coworkerApprove(ShiftSwapEntity swap) => _mutate(() => _repository
-      .updateSwapStatus(swapId: swap.id, status: SwapStatus.employeeApproved));
+  /// Target coworker accepts → awaiting manager. Notifies the branch's
+  /// manager(s) that a swap needs review (the spec's "pending swap approval").
+  Future<void> coworkerApprove(ShiftSwapEntity swap) => _mutate(() async {
+        await _repository.updateSwapStatus(
+            swapId: swap.id, status: SwapStatus.employeeApproved);
+        final managers = await _branchManagers(swap.branchId);
+        await _notifySwap(
+          swap: swap,
+          type: NotificationType.swapAccepted,
+          actorId: swap.targetId,
+          recipients: managers,
+        );
+      });
 
-  /// Reject the swap (requester cancel, coworker decline, or manager reject).
-  Future<void> reject(ShiftSwapEntity swap) => _mutate(() =>
-      _repository.updateSwapStatus(swapId: swap.id, status: SwapStatus.rejected));
+  /// Decline the swap (coworker declines, or manager rejects). [actorId] is the
+  /// rejector (excluded from the notification); both employees are told.
+  Future<void> reject(ShiftSwapEntity swap, {required String actorId}) =>
+      _mutate(() async {
+        await _repository.updateSwapStatus(
+            swapId: swap.id, status: SwapStatus.rejected);
+        await _notifySwap(
+          swap: swap,
+          type: NotificationType.swapRejected,
+          actorId: actorId,
+          recipients: [swap.requesterId, swap.targetId],
+        );
+      });
+
+  /// Requester withdraws their own pending request → `cancelled` (distinct from a
+  /// reject). No notification — they're cancelling their own ask.
+  Future<void> cancelSwap(ShiftSwapEntity swap) => _mutate(() => _repository
+      .updateSwapStatus(swapId: swap.id, status: SwapStatus.cancelled));
 
   // ── Manager action ─────────────────────────────────────────────
-  /// Manager approves → schedule updates automatically.
-  Future<void> managerApprove(ShiftSwapEntity swap) =>
-      _mutate(() => _repository.managerApproveSwap(swap));
+  /// Manager/admin approves → schedule is exchanged + both employees notified.
+  /// [actorId] is the reviewer (excluded from the notification).
+  Future<void> managerApprove(ShiftSwapEntity swap, {required String actorId}) =>
+      _mutate(() async {
+        await _repository.managerApproveSwap(swap);
+        await _notifySwap(
+          swap: swap,
+          type: NotificationType.swapApproved,
+          actorId: actorId,
+          recipients: [swap.requesterId, swap.targetId],
+        );
+      });
+
+  /// The branch's manager uids (the swap reviewers). Best-effort.
+  Future<List<String>> _branchManagers(String branchId) async {
+    try {
+      final users = await _getUsersByBranch(branchId);
+      return users.where((u) => u.role.isManager).map((u) => u.uid).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
 
   // ── Internals ──────────────────────────────────────────────────
   Future<List<ShiftSwapEntity>> _fetch() {
@@ -146,6 +216,13 @@ class ShiftSwapCubit extends Cubit<ShiftSwapState> {
     } catch (_) {
       emit(const ShiftSwapState.error('Failed to load swap requests.'));
     }
+  }
+
+  /// Emits a one-shot error (for the snackbar listener) then restores the list.
+  void _reject(String message) {
+    final prev = _swaps;
+    emit(ShiftSwapState.error(message));
+    emit(ShiftSwapState.loaded(prev));
   }
 
   Future<void> _mutate(Future<void> Function() action) async {

@@ -35,6 +35,10 @@ class RouteNames {
   static const String managerTasks = '/manager/tasks';
   static const String myTasks = '/my-tasks';
 
+  /// Admin **Pending Review** drill-down (Summary → Branch → Employee → Task).
+  /// Admin-only (covered by `_isAdminArea`).
+  static const String adminReview = '/admin/review';
+
   /// The single-task deep-link pattern (`/task/:taskId`) — a task notification
   /// opens the exact task here, for every role. Outside the role-area guards: a
   /// user only reaches it via a task they were notified about, and Firestore

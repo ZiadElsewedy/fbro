@@ -1,0 +1,408 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fbro/core/enums/task_status.dart';
+import 'package:fbro/core/extensions/context_extensions.dart';
+import 'package:fbro/core/theme/app_colors.dart';
+import 'package:fbro/core/theme/app_radius.dart';
+import 'package:fbro/core/theme/app_spacing.dart';
+import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/app_empty_state.dart';
+import 'package:fbro/core/widgets/app_motion.dart';
+import 'package:fbro/core/widgets/glass_container.dart';
+import 'package:fbro/core/widgets/list_skeleton.dart';
+import 'package:fbro/core/widgets/user_avatar.dart';
+import 'package:fbro/features/task/domain/entities/task_entity.dart';
+import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
+import 'package:fbro/features/task/presentation/cubit/task_state.dart';
+import 'package:fbro/features/task/presentation/widgets/manager_task_card.dart';
+
+/// The admin **Pending Review** flow (refactor §1).
+///
+/// An admin often spans multiple branches and employees, so jumping straight
+/// into a single task review is wrong. Instead this is a guided drill-down:
+///
+/// ```
+/// Pending Review Summary  →  Branch  →  Employee  →  Task review
+/// ```
+///
+/// It reads the app-wide [TaskCubit] all-branches stream (already live for an
+/// admin), filters to `waitingReview`, and groups by branch then assignee. The
+/// leaf reuses [ManagerTaskCard] (its "Review" action opens the existing review
+/// surface). Strictly monochrome — no new cubit, schema, or data layer.
+class PendingReviewScreen extends StatefulWidget {
+  const PendingReviewScreen({super.key});
+
+  @override
+  State<PendingReviewScreen> createState() => _PendingReviewScreenState();
+}
+
+class _PendingReviewScreenState extends State<PendingReviewScreen> {
+  String? _branchId; // selected branch (level 1+)
+  String? _employeeId; // selected employee (level 2)
+
+  @override
+  void initState() {
+    super.initState();
+    // The cubit is app-wide and already streaming for an admin; load() is
+    // idempotent, so this is a safe no-op that also covers a cold entry.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = context.currentUser;
+      if (user != null) context.read<TaskCubit>().load(user);
+    });
+  }
+
+  /// Drill up one level; pop the route only at the summary root.
+  void _back() {
+    if (_employeeId != null) {
+      setState(() => _employeeId = null);
+    } else if (_branchId != null) {
+      setState(() => _branchId = null);
+    } else {
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<TaskCubit, TaskState>(
+      builder: (context, state) {
+        final cubit = context.read<TaskCubit>();
+        final tasks = state.maybeWhen(
+          loaded: (t, _, _, _, _) => t,
+          orElse: () => const <TaskEntity>[],
+        );
+        final isLoading = state.maybeWhen(loading: () => true, orElse: () => false);
+
+        final reviewTasks = [
+          for (final t in tasks)
+            if (t.status == TaskStatus.waitingReview) t,
+        ];
+        final byBranch = <String, List<TaskEntity>>{};
+        for (final t in reviewTasks) {
+          byBranch.putIfAbsent(t.branchId ?? '', () => []).add(t);
+        }
+
+        final String levelTitle;
+        if (_employeeId != null) {
+          levelTitle = cubit.directory[_employeeId]?.displayName ?? 'Employee';
+        } else if (_branchId != null) {
+          levelTitle = cubit.branchNames[_branchId] ?? 'Branch';
+        } else {
+          levelTitle = 'Pending review';
+        }
+
+        final Widget body;
+        if (isLoading && reviewTasks.isEmpty) {
+          body = const Padding(
+            padding: EdgeInsets.all(AppSpacing.pagePadding),
+            child: ListSkeleton(),
+          );
+        } else if (_branchId != null && _employeeId != null) {
+          body = _employeeLevel(cubit, byBranch[_branchId] ?? const []);
+        } else if (_branchId != null) {
+          body = _branchLevel(cubit, byBranch[_branchId] ?? const []);
+        } else {
+          body = _summaryLevel(cubit, reviewTasks, byBranch);
+        }
+
+        return PopScope(
+          canPop: _branchId == null && _employeeId == null,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _back();
+          },
+          child: Scaffold(
+            backgroundColor: AppColors.darkBg,
+            appBar: AppBar(
+              backgroundColor: AppColors.darkBg,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_rounded,
+                    color: AppColors.textPrimary),
+                onPressed: _back,
+              ),
+              title: Text(levelTitle,
+                  style: AppTypography.label.copyWith(fontSize: 17)),
+            ),
+            body: body,
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Level 0: summary + branch breakdown ───────────────────────────
+  Widget _summaryLevel(
+    TaskCubit cubit,
+    List<TaskEntity> reviewTasks,
+    Map<String, List<TaskEntity>> byBranch,
+  ) {
+    if (reviewTasks.isEmpty) {
+      return const Center(
+        child: AppEmptyState(
+          icon: Icons.check_circle_outline_rounded,
+          title: 'All caught up',
+          message: 'No tasks are waiting for review right now.',
+        ),
+      );
+    }
+
+    final branches = byBranch.keys.toList()
+      ..sort((a, b) {
+        final byCount = byBranch[b]!.length.compareTo(byBranch[a]!.length);
+        if (byCount != 0) return byCount;
+        return (cubit.branchNames[a] ?? a).compareTo(cubit.branchNames[b] ?? b);
+      });
+
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.pagePadding),
+      children: [
+        EntranceFade(child: _SummaryHeader(total: reviewTasks.length, branches: branches.length)),
+        const SizedBox(height: AppSpacing.xl),
+        Text('BY BRANCH',
+            style: AppTypography.caption.copyWith(
+              letterSpacing: 1.1,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textTertiary,
+            )),
+        const SizedBox(height: AppSpacing.md),
+        for (var i = 0; i < branches.length; i++)
+          EntranceFade(
+            delay: Duration(milliseconds: i * 50),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _DrillRow(
+                icon: Icons.storefront_outlined,
+                title: cubit.branchNames[branches[i]] ?? 'Unknown branch',
+                count: byBranch[branches[i]]!.length,
+                onTap: () => setState(() => _branchId = branches[i]),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── Level 1: employees within a branch ────────────────────────────
+  Widget _branchLevel(TaskCubit cubit, List<TaskEntity> branchTasks) {
+    if (branchTasks.isEmpty) {
+      return const Center(
+        child: AppEmptyState(
+          icon: Icons.check_circle_outline_rounded,
+          title: 'All caught up',
+          message: 'Nothing left to review in this branch.',
+        ),
+      );
+    }
+
+    final byEmp = <String, List<TaskEntity>>{};
+    for (final t in branchTasks) {
+      final ids = t.assigneeIds.isEmpty ? const [''] : t.assigneeIds;
+      for (final id in ids) {
+        byEmp.putIfAbsent(id, () => []).add(t);
+      }
+    }
+    final emps = byEmp.keys.toList()
+      ..sort((a, b) {
+        final byCount = byEmp[b]!.length.compareTo(byEmp[a]!.length);
+        if (byCount != 0) return byCount;
+        return _empName(cubit, a).compareTo(_empName(cubit, b));
+      });
+
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.pagePadding),
+      children: [
+        Text('${branchTasks.length} waiting · select an employee',
+            style: AppTypography.bodySmall),
+        const SizedBox(height: AppSpacing.md),
+        for (var i = 0; i < emps.length; i++)
+          EntranceFade(
+            delay: Duration(milliseconds: i * 50),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _DrillRow(
+                avatarName: _empName(cubit, emps[i]),
+                title: _empName(cubit, emps[i]),
+                count: byEmp[emps[i]]!.length,
+                onTap: () => setState(() => _employeeId = emps[i]),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── Level 2: that employee's tasks → review ───────────────────────
+  Widget _employeeLevel(TaskCubit cubit, List<TaskEntity> branchTasks) {
+    final mine = [
+      for (final t in branchTasks)
+        if (_employeeId!.isEmpty
+            ? t.assigneeIds.isEmpty
+            : t.assigneeIds.contains(_employeeId)) t,
+    ];
+    if (mine.isEmpty) {
+      return const Center(
+        child: AppEmptyState(
+          icon: Icons.check_circle_outline_rounded,
+          title: 'All caught up',
+          message: 'No more tasks waiting from this employee.',
+        ),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.pagePadding),
+      children: [
+        for (var i = 0; i < mine.length; i++)
+          EntranceFade(
+            delay: Duration(milliseconds: i * 50),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: ManagerTaskCard(
+                task: mine[i],
+                directory: cubit.directory,
+                isAdmin: true,
+                defaultBranchId: mine[i].branchId ?? '',
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _empName(TaskCubit cubit, String id) {
+    if (id.isEmpty) return 'Unassigned';
+    return cubit.directory[id]?.displayName ?? 'Unknown member';
+  }
+}
+
+// ── Premium monochrome summary header (animated count) ──────────────
+class _SummaryHeader extends StatelessWidget {
+  const _SummaryHeader({required this.total, required this.branches});
+  final int total;
+  final int branches;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassContainer(
+      highlight: true,
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.darkSurfaceElevated,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.darkBorder),
+            ),
+            child: const Icon(Icons.rate_review_rounded,
+                size: 26, color: AppColors.textPrimary),
+          ),
+          const SizedBox(width: AppSpacing.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: total.toDouble()),
+                  duration: const Duration(milliseconds: 700),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, v, _) => Text(
+                    '${v.round()}',
+                    style: AppTypography.display.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.0,
+                      letterSpacing: -1.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  total == 1 ? 'task waiting review' : 'tasks waiting review',
+                  style: AppTypography.body
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Across ${branches == 1 ? '1 branch' : '$branches branches'}',
+                  style: AppTypography.caption,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── A tappable drill row (branch or employee) ───────────────────────
+class _DrillRow extends StatelessWidget {
+  const _DrillRow({
+    required this.title,
+    required this.count,
+    required this.onTap,
+    this.icon,
+    this.avatarName,
+  });
+
+  final String title;
+  final int count;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final String? avatarName;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassContainer(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+      child: Row(
+        children: [
+          if (avatarName != null)
+            UserAvatar(name: avatarName, size: 38)
+          else
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppColors.darkSurfaceElevated,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: AppColors.darkBorder),
+              ),
+              child: Icon(icon, size: 19, color: AppColors.textSecondary),
+            ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              title,
+              style: AppTypography.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.darkSurfaceElevated,
+              borderRadius: BorderRadius.circular(AppRadius.full),
+              border: Border.all(color: AppColors.darkBorder),
+            ),
+            child: Text(
+              '$count',
+              style: AppTypography.caption.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          const Icon(Icons.chevron_right_rounded,
+              size: 20, color: AppColors.textTertiary),
+        ],
+      ),
+    );
+  }
+}

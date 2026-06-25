@@ -23,6 +23,13 @@ mixin _$BranchEntity {
   /// Optional area / address label.
   String? get location => throw _privateConstructorUsedError;
   bool get isActive => throw _privateConstructorUsedError;
+
+  /// Branch **logo** (square mark) — Storage `branches/{id}/logo.jpg`. Drives
+  /// [BranchAvatar]; null falls back to initials. (§8 Branch Media.)
+  String? get logoUrl => throw _privateConstructorUsedError;
+
+  /// Branch **cover** banner — Storage `branches/{id}/cover.jpg`. Null = none.
+  String? get coverUrl => throw _privateConstructorUsedError;
   DateTime? get createdAt => throw _privateConstructorUsedError;
   DateTime? get updatedAt => throw _privateConstructorUsedError;
 
@@ -48,6 +55,8 @@ abstract class $BranchEntityCopyWith<$Res> {
     String name,
     String? location,
     bool isActive,
+    String? logoUrl,
+    String? coverUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? deletedAt,
@@ -73,6 +82,8 @@ class _$BranchEntityCopyWithImpl<$Res, $Val extends BranchEntity>
     Object? name = null,
     Object? location = freezed,
     Object? isActive = null,
+    Object? logoUrl = freezed,
+    Object? coverUrl = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
     Object? deletedAt = freezed,
@@ -95,6 +106,14 @@ class _$BranchEntityCopyWithImpl<$Res, $Val extends BranchEntity>
                 ? _value.isActive
                 : isActive // ignore: cast_nullable_to_non_nullable
                       as bool,
+            logoUrl: freezed == logoUrl
+                ? _value.logoUrl
+                : logoUrl // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            coverUrl: freezed == coverUrl
+                ? _value.coverUrl
+                : coverUrl // ignore: cast_nullable_to_non_nullable
+                      as String?,
             createdAt: freezed == createdAt
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
@@ -127,6 +146,8 @@ abstract class _$$BranchEntityImplCopyWith<$Res>
     String name,
     String? location,
     bool isActive,
+    String? logoUrl,
+    String? coverUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? deletedAt,
@@ -151,6 +172,8 @@ class __$$BranchEntityImplCopyWithImpl<$Res>
     Object? name = null,
     Object? location = freezed,
     Object? isActive = null,
+    Object? logoUrl = freezed,
+    Object? coverUrl = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
     Object? deletedAt = freezed,
@@ -173,6 +196,14 @@ class __$$BranchEntityImplCopyWithImpl<$Res>
             ? _value.isActive
             : isActive // ignore: cast_nullable_to_non_nullable
                   as bool,
+        logoUrl: freezed == logoUrl
+            ? _value.logoUrl
+            : logoUrl // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        coverUrl: freezed == coverUrl
+            ? _value.coverUrl
+            : coverUrl // ignore: cast_nullable_to_non_nullable
+                  as String?,
         createdAt: freezed == createdAt
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
@@ -198,6 +229,8 @@ class _$BranchEntityImpl extends _BranchEntity {
     required this.name,
     this.location,
     this.isActive = true,
+    this.logoUrl,
+    this.coverUrl,
     this.createdAt,
     this.updatedAt,
     this.deletedAt,
@@ -214,6 +247,15 @@ class _$BranchEntityImpl extends _BranchEntity {
   @override
   @JsonKey()
   final bool isActive;
+
+  /// Branch **logo** (square mark) — Storage `branches/{id}/logo.jpg`. Drives
+  /// [BranchAvatar]; null falls back to initials. (§8 Branch Media.)
+  @override
+  final String? logoUrl;
+
+  /// Branch **cover** banner — Storage `branches/{id}/cover.jpg`. Null = none.
+  @override
+  final String? coverUrl;
   @override
   final DateTime? createdAt;
   @override
@@ -225,7 +267,7 @@ class _$BranchEntityImpl extends _BranchEntity {
 
   @override
   String toString() {
-    return 'BranchEntity(id: $id, name: $name, location: $location, isActive: $isActive, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
+    return 'BranchEntity(id: $id, name: $name, location: $location, isActive: $isActive, logoUrl: $logoUrl, coverUrl: $coverUrl, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
   }
 
   @override
@@ -239,6 +281,9 @@ class _$BranchEntityImpl extends _BranchEntity {
                 other.location == location) &&
             (identical(other.isActive, isActive) ||
                 other.isActive == isActive) &&
+            (identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl) &&
+            (identical(other.coverUrl, coverUrl) ||
+                other.coverUrl == coverUrl) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
             (identical(other.updatedAt, updatedAt) ||
@@ -254,6 +299,8 @@ class _$BranchEntityImpl extends _BranchEntity {
     name,
     location,
     isActive,
+    logoUrl,
+    coverUrl,
     createdAt,
     updatedAt,
     deletedAt,
@@ -274,6 +321,8 @@ abstract class _BranchEntity extends BranchEntity {
     required final String name,
     final String? location,
     final bool isActive,
+    final String? logoUrl,
+    final String? coverUrl,
     final DateTime? createdAt,
     final DateTime? updatedAt,
     final DateTime? deletedAt,
@@ -290,6 +339,15 @@ abstract class _BranchEntity extends BranchEntity {
   String? get location;
   @override
   bool get isActive;
+
+  /// Branch **logo** (square mark) — Storage `branches/{id}/logo.jpg`. Drives
+  /// [BranchAvatar]; null falls back to initials. (§8 Branch Media.)
+  @override
+  String? get logoUrl;
+
+  /// Branch **cover** banner — Storage `branches/{id}/cover.jpg`. Null = none.
+  @override
+  String? get coverUrl;
   @override
   DateTime? get createdAt;
   @override

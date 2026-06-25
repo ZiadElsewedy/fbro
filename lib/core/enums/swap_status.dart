@@ -8,10 +8,20 @@
 /// ([managerApproved]), at which point the weekly schedule is updated
 /// automatically. Either party (or the manager) can [rejected] it.
 enum SwapStatus {
+  /// Awaiting the coworker (the spec's `pendingCoworker`).
   pending,
+
+  /// Coworker accepted; awaiting manager/admin (the spec's `pendingManager`).
   employeeApproved,
+
+  /// Final approval — the schedule has been exchanged (the spec's `approved`).
   managerApproved,
-  rejected;
+
+  /// Declined by the coworker or the reviewer.
+  rejected,
+
+  /// Withdrawn by the requester before it resolved.
+  cancelled;
 
   String get value => name;
 
@@ -25,6 +35,8 @@ enum SwapStatus {
         return 'Approved';
       case SwapStatus.rejected:
         return 'Rejected';
+      case SwapStatus.cancelled:
+        return 'Cancelled';
     }
   }
 
@@ -32,9 +44,10 @@ enum SwapStatus {
   bool get isEmployeeApproved => this == SwapStatus.employeeApproved;
   bool get isManagerApproved => this == SwapStatus.managerApproved;
   bool get isRejected => this == SwapStatus.rejected;
+  bool get isCancelled => this == SwapStatus.cancelled;
 
   /// Terminal states — no further action is possible.
-  bool get isResolved => isManagerApproved || isRejected;
+  bool get isResolved => isManagerApproved || isRejected || isCancelled;
 
   /// Parses the stored string; unknown/missing → [pending].
   static SwapStatus fromString(String? raw) {

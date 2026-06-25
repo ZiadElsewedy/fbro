@@ -6,6 +6,7 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_radius.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
+import 'package:fbro/core/widgets/drop_loading_state.dart';
 import 'package:fbro/core/widgets/user_avatar.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 import 'package:fbro/core/extensions/context_extensions.dart';
@@ -147,9 +148,7 @@ class _MyWeekTabState extends State<_MyWeekTab>
         );
       },
       builder: (context, state) => state.maybeWhen(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
-        ),
+        loading: () => const DropLoadingState(message: 'Loading your week…'),
         loaded: (branchId, weekStart, schedule, members, busy) =>
             _buildList(context, weekStart, schedule, members),
         error: (m) => Center(
@@ -263,10 +262,22 @@ class _MyWeekTabState extends State<_MyWeekTab>
     ScheduleShift shift,
   ) {
     if (user == null) return;
-    final coworkers = members.where((u) => u.role.isEmployee).toList();
-    if (coworkers.length < 2) {
+    // Exchange model: you may only swap with a coworker on the OPPOSITE shift
+    // that same day — they hold the slot you want, you hold theirs. This also
+    // enforces "requester ≠ target" and "target slot must exist".
+    final opposite = shift.opposite;
+    final oppositeUids = schedule.employeesFor(day, opposite).toSet();
+    final coworkers = members
+        .where((u) =>
+            u.role.isEmployee &&
+            u.uid != user.uid &&
+            oppositeUids.contains(u.uid))
+        .toList();
+    if (coworkers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No coworkers available to swap with.')),
+        SnackBar(
+            content: Text(
+                'No coworkers on the ${opposite.label} shift to swap with.')),
       );
       return;
     }

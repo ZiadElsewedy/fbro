@@ -3,6 +3,7 @@ import 'package:fbro/core/theme/app_colors.dart';
 import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/glass_container.dart';
+import 'package:fbro/core/widgets/premium_button.dart';
 import 'package:fbro/core/widgets/user_avatar.dart';
 import 'package:fbro/features/auth/domain/entities/user_entity.dart';
 
@@ -160,18 +161,11 @@ class AdminActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextButton.icon(
+    return PremiumButton(
+      label: label,
+      icon: icon ?? Icons.chevron_right_rounded,
       onPressed: onPressed,
-      icon: Icon(icon ?? Icons.chevron_right_rounded, size: 16),
-      label: Text(label),
-      style: TextButton.styleFrom(
-        foregroundColor: color ?? AppColors.primary,
-        backgroundColor: AppColors.darkSurfaceElevated,
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        textStyle: AppTypography.caption,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
+      tone: color,
     );
   }
 }
