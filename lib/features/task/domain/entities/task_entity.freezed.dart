@@ -34,6 +34,10 @@ mixin _$TaskEntity {
   /// Checklist the employee must work through (generated from a template).
   List<ChecklistItem> get checklist => throw _privateConstructorUsedError;
 
+  /// Reference images attached by the manager/admin when creating/editing.
+  List<TaskAttachment> get referenceAttachments =>
+      throw _privateConstructorUsedError;
+
   /// uid of the manager/admin who created the task.
   String? get createdBy => throw _privateConstructorUsedError;
 
@@ -117,6 +121,7 @@ abstract class $TaskEntityCopyWith<$Res> {
     String? branchId,
     List<String> assigneeIds,
     List<ChecklistItem> checklist,
+    List<TaskAttachment> referenceAttachments,
     String? createdBy,
     String? assignedShiftId,
     ScheduleShift? shift,
@@ -166,6 +171,7 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
     Object? branchId = freezed,
     Object? assigneeIds = null,
     Object? checklist = null,
+    Object? referenceAttachments = null,
     Object? createdBy = freezed,
     Object? assignedShiftId = freezed,
     Object? shift = freezed,
@@ -225,6 +231,10 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
                 ? _value.checklist
                 : checklist // ignore: cast_nullable_to_non_nullable
                       as List<ChecklistItem>,
+            referenceAttachments: null == referenceAttachments
+                ? _value.referenceAttachments
+                : referenceAttachments // ignore: cast_nullable_to_non_nullable
+                      as List<TaskAttachment>,
             createdBy: freezed == createdBy
                 ? _value.createdBy
                 : createdBy // ignore: cast_nullable_to_non_nullable
@@ -344,6 +354,7 @@ abstract class _$$TaskEntityImplCopyWith<$Res>
     String? branchId,
     List<String> assigneeIds,
     List<ChecklistItem> checklist,
+    List<TaskAttachment> referenceAttachments,
     String? createdBy,
     String? assignedShiftId,
     ScheduleShift? shift,
@@ -393,6 +404,7 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
     Object? branchId = freezed,
     Object? assigneeIds = null,
     Object? checklist = null,
+    Object? referenceAttachments = null,
     Object? createdBy = freezed,
     Object? assignedShiftId = freezed,
     Object? shift = freezed,
@@ -452,6 +464,10 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
             ? _value._checklist
             : checklist // ignore: cast_nullable_to_non_nullable
                   as List<ChecklistItem>,
+        referenceAttachments: null == referenceAttachments
+            ? _value._referenceAttachments
+            : referenceAttachments // ignore: cast_nullable_to_non_nullable
+                  as List<TaskAttachment>,
         createdBy: freezed == createdBy
             ? _value.createdBy
             : createdBy // ignore: cast_nullable_to_non_nullable
@@ -550,6 +566,7 @@ class _$TaskEntityImpl extends _TaskEntity {
     this.branchId,
     final List<String> assigneeIds = const <String>[],
     final List<ChecklistItem> checklist = const <ChecklistItem>[],
+    final List<TaskAttachment> referenceAttachments = const <TaskAttachment>[],
     this.createdBy,
     this.assignedShiftId,
     this.shift,
@@ -572,6 +589,7 @@ class _$TaskEntityImpl extends _TaskEntity {
     this.updatedAt,
   }) : _assigneeIds = assigneeIds,
        _checklist = checklist,
+       _referenceAttachments = referenceAttachments,
        _activityLog = activityLog,
        super._();
 
@@ -619,6 +637,19 @@ class _$TaskEntityImpl extends _TaskEntity {
     if (_checklist is EqualUnmodifiableListView) return _checklist;
     // ignore: implicit_dynamic_type
     return EqualUnmodifiableListView(_checklist);
+  }
+
+  /// Reference images attached by the manager/admin when creating/editing.
+  final List<TaskAttachment> _referenceAttachments;
+
+  /// Reference images attached by the manager/admin when creating/editing.
+  @override
+  @JsonKey()
+  List<TaskAttachment> get referenceAttachments {
+    if (_referenceAttachments is EqualUnmodifiableListView)
+      return _referenceAttachments;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_referenceAttachments);
   }
 
   /// uid of the manager/admin who created the task.
@@ -713,7 +744,7 @@ class _$TaskEntityImpl extends _TaskEntity {
 
   @override
   String toString() {
-    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, createdBy: $createdBy, assignedShiftId: $assignedShiftId, shift: $shift, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, revisionNumber: $revisionNumber, requiresRework: $requiresRework, rejectionReason: $rejectionReason, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, referenceAttachments: $referenceAttachments, createdBy: $createdBy, assignedShiftId: $assignedShiftId, shift: $shift, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, revisionNumber: $revisionNumber, requiresRework: $requiresRework, rejectionReason: $rejectionReason, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -738,6 +769,10 @@ class _$TaskEntityImpl extends _TaskEntity {
             const DeepCollectionEquality().equals(
               other._checklist,
               _checklist,
+            ) &&
+            const DeepCollectionEquality().equals(
+              other._referenceAttachments,
+              _referenceAttachments,
             ) &&
             (identical(other.createdBy, createdBy) ||
                 other.createdBy == createdBy) &&
@@ -793,6 +828,7 @@ class _$TaskEntityImpl extends _TaskEntity {
     branchId,
     const DeepCollectionEquality().hash(_assigneeIds),
     const DeepCollectionEquality().hash(_checklist),
+    const DeepCollectionEquality().hash(_referenceAttachments),
     createdBy,
     assignedShiftId,
     shift,
@@ -835,6 +871,7 @@ abstract class _TaskEntity extends TaskEntity {
     final String? branchId,
     final List<String> assigneeIds,
     final List<ChecklistItem> checklist,
+    final List<TaskAttachment> referenceAttachments,
     final String? createdBy,
     final String? assignedShiftId,
     final ScheduleShift? shift,
@@ -883,6 +920,10 @@ abstract class _TaskEntity extends TaskEntity {
   /// Checklist the employee must work through (generated from a template).
   @override
   List<ChecklistItem> get checklist;
+
+  /// Reference images attached by the manager/admin when creating/editing.
+  @override
+  List<TaskAttachment> get referenceAttachments;
 
   /// uid of the manager/admin who created the task.
   @override

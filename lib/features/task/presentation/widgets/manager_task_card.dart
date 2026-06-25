@@ -81,7 +81,7 @@ class ManagerTaskCard extends StatelessWidget {
         return TaskCard(
           task: task,
           directory: directory,
-          premium: true,
+          branchName: cubit.branchNames[task.branchId ?? ''],
           onAssigneesTap: locked
               ? null
               : () => showAssignSheet(context: context, cubit: cubit, task: task),

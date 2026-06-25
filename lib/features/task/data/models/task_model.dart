@@ -30,6 +30,7 @@ class TaskModel {
   final String? branchId;
   final List<String> assigneeIds;
   final List<ChecklistItem> checklist;
+  final List<TaskAttachment> referenceAttachments;
   final String? createdBy;
   final String? assignedShiftId;
   final ScheduleShift? shift;
@@ -61,6 +62,7 @@ class TaskModel {
     this.branchId,
     this.assigneeIds = const [],
     this.checklist = const [],
+    this.referenceAttachments = const [],
     this.createdBy,
     this.assignedShiftId,
     this.shift,
@@ -93,6 +95,7 @@ class TaskModel {
         branchId: map['branchId'] as String?,
         assigneeIds: _assigneesFromMap(map),
         checklist: _checklistFromList(map['checklist']),
+        referenceAttachments: _attachmentsFromList(map['referenceAttachments']),
         createdBy: map['createdBy'] as String?,
         assignedShiftId: map['assignedShiftId'] as String?,
         shift: ScheduleShift.fromStringOrNull(map['shift'] as String?),
@@ -125,6 +128,7 @@ class TaskModel {
         branchId: e.branchId,
         assigneeIds: e.assigneeIds,
         checklist: e.checklist,
+        referenceAttachments: e.referenceAttachments,
         createdBy: e.createdBy,
         assignedShiftId: e.assignedShiftId,
         shift: e.shift,
@@ -162,6 +166,7 @@ class TaskModel {
         'assigneeIds': assigneeIds,
         'assignedEmployeeId': assigneeIds.isEmpty ? null : assigneeIds.first,
         'checklist': _checklistToList(checklist),
+        'referenceAttachments': _attachmentsToList(referenceAttachments),
         'createdBy': createdBy,
         'assignedShiftId': assignedShiftId,
         'shift': shift?.value,
@@ -193,6 +198,7 @@ class TaskModel {
         branchId: branchId,
         assigneeIds: assigneeIds,
         checklist: checklist,
+        referenceAttachments: referenceAttachments,
         createdBy: createdBy,
         assignedShiftId: assignedShiftId,
         shift: shift,
@@ -225,6 +231,7 @@ class TaskModel {
         branchId: branchId,
         assigneeIds: assigneeIds,
         checklist: checklist,
+        referenceAttachments: referenceAttachments,
         createdBy: createdBy,
         assignedShiftId: assignedShiftId,
         shift: shift,

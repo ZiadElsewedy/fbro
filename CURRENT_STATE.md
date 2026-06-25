@@ -11,8 +11,38 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-25 (FCM routing audit — exclusive token ownership fix)
+**Last updated:** 2026-06-25 (Premium task UX slice — reference images + de-flashed card redesign)
 **Version:** 1.0.0+1 · **Branch:** `enhancement/ui-refactor` (DROP — monochrome premium UX)
+
+> **Premium task UX slice (2026-06-25):** Acted on the task-management UX audit.
+> **#1 — Admin/Manager reference images:** new `TaskEntity.referenceAttachments`
+> (`List<TaskAttachment>`, freezed hand-regenerated; `TaskModel` (de)serializes
+> it; back-compat → empty when absent). Managers/admins attach reference photos in
+> the New/Edit Task sheet (the reused `AttachmentPickerField` in images-only mode,
+> with removable already-uploaded thumbnails); `TaskCubit.createTask`/`editTask`
+> upload them (new `_uploadReferences`) to `tasks/{id}/attachments/{attId}.<ext>`
+> (existing path → **no storage-rules change**); the employee sees a "Reference"
+> gallery on the details screen **before** starting. **#2 — Premium (de-flashed)
+> task card:** the shared `TaskCard` (manager/admin surfaces) was rebuilt from a
+> label→value spec sheet into status-pill + **High-only** priority + signal-chip
+> strip (branch · due/overdue · `N refs`) + a **single thin checklist bar** (only
+> when a checklist exists) + a **minimal one-line** assignee footer; inline
+> proof/notes/review removed (now details-only). **De-flash ruling (premium ≠
+> flashy, Linear/Notion/Stripe):** the flat surface (solid fill + hairline border +
+> *whisper* shadow — **no gradient/glow/pulse**) is defined **once** in a reusable
+> **`TaskSurface`** (shared by the card + `TaskDetailsScreen._StatusHeader` — no
+> duplicated decoration), **not** `AppGlassCard`; the card pill reuses the canonical
+> `taskStatusColor` (no forked colour map); the details header was flattened to
+> match (pulse + glow + gradient removed). **Scoped to task surfaces only — the
+> shared `GlassContainer`/`AppGlassCard` are deliberately untouched** (`TaskSurface`
+> is the one place to promote if we globalise later). Strictly monochrome; **no new
+> dependencies**. ⚠️ This session's Flutter is **3.10.4 < `^3.12.1`**, so
+> `build_runner`/`analyze`/`test` can't run here — the freezed file was hand-edited;
+> **run `dart run build_runner build --delete-conflicting-outputs`, `flutter
+> analyze`, `flutter test` on a current SDK (3.12.2)** before merge. New test
+> `task_model_reference_test`; `task_card_layout_test` updated. **Deferred** (audit
+> backlog): drag-and-drop upload, on-image annotation, `Blocked` status, double-tap
+> zoom, `cached_network_image`, swipe/haptics, employee minimal-card alignment.
 
 > **FCM routing audit (2026-06-25) — CRITICAL fix:** Proved the cross-user
 > notification-leak bug is real. **Root cause:** non-exclusive token ownership —

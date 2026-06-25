@@ -49,7 +49,7 @@ void main() {
                 child: TaskCard(
                   task: task,
                   directory: const {'u1': user},
-                  onChecklistToggle: (_) {},
+                  branchName: 'Maadi Branch',
                 ),
               ),
             ],

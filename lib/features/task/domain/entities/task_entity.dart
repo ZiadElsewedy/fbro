@@ -6,6 +6,7 @@ import 'package:fbro/core/enums/schedule_shift.dart';
 import 'package:fbro/features/task/domain/entities/activity_entry.dart';
 import 'package:fbro/features/task/domain/entities/checklist_item.dart';
 import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
+import 'package:fbro/features/task/domain/entities/task_attachment.dart';
 
 part 'task_entity.freezed.dart';
 
@@ -38,6 +39,12 @@ class TaskEntity with _$TaskEntity {
     @Default(<String>[]) List<String> assigneeIds,
     /// Checklist the employee must work through (generated from a template).
     @Default(<ChecklistItem>[]) List<ChecklistItem> checklist,
+    /// Reference images attached by the manager/admin when creating/editing the
+    /// task — "what good looks like" / context the employee sees **before** doing
+    /// the work. Distinct from employee *proof* media, which lives on the
+    /// submission [ActivityEntry] (and the legacy [proofImageUrl]). Stored in
+    /// Storage at `tasks/{id}/attachments/{attId}.<ext>` like all task media.
+    @Default(<TaskAttachment>[]) List<TaskAttachment> referenceAttachments,
     /// uid of the manager/admin who created the task.
     String? createdBy,
     /// Optional shift this task belongs to (references `shifts/{shiftId}`).
@@ -94,6 +101,9 @@ class TaskEntity with _$TaskEntity {
   /// the monochrome `NEW` badge (Notification System Phase 1).
   bool get isNew =>
       status == TaskStatus.pending && revisionNumber == 0 && !requiresRework;
+
+  /// Whether the manager attached any reference images.
+  bool get hasReferences => referenceAttachments.isNotEmpty;
 
   // ─── Checklist progress (Phase 9) ──────────────────────────────
   bool get hasChecklist => checklist.isNotEmpty;

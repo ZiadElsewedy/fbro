@@ -29,6 +29,7 @@ import 'package:fbro/features/task/presentation/widgets/submission_details_sheet
 import 'package:fbro/features/task/presentation/widgets/submission_loading_overlay.dart';
 import 'package:fbro/features/task/presentation/widgets/task_action_sheets.dart';
 import 'package:fbro/features/task/presentation/widgets/task_card.dart';
+import 'package:fbro/features/task/presentation/widgets/task_surface.dart';
 
 /// Full-screen task details for all roles. Employees work through their
 /// checklist and submit proof here. Managers see full context + review controls.
@@ -233,6 +234,32 @@ class _DetailsView extends StatelessWidget {
             const SizedBox(height: AppSpacing.xl),
           ],
 
+          // ── Reference images (manager-attached) ────────────────
+          if (task.hasReferences) ...[
+            _Section(
+              icon: Icons.image_outlined,
+              title: 'Reference',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'What good looks like — attached by the manager.',
+                    style: AppTypography.caption
+                        .copyWith(color: AppColors.textTertiary),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AttachmentGallery(
+                    attachments: task.referenceAttachments,
+                    columns: 2,
+                    showDuration: true,
+                    showCaption: false,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+          ],
+
           // ── Checklist ──────────────────────────────────────────
           if (task.hasChecklist) ...[
             _Section(
@@ -335,139 +362,58 @@ class _DetailsView extends StatelessWidget {
 
 // ─── Status header ─────────────────────────────────────────────────
 
-class _StatusHeader extends StatefulWidget {
+/// The task's status header — **de-flashed** (2026-06-25): a flat solid surface
+/// with a hairline border and a whisper of depth. No breathing pulse, no glow,
+/// no gradient (the status pill carries the state; it still cross-fades on a
+/// status change, which is a one-shot transition, not a pulse).
+class _StatusHeader extends StatelessWidget {
   const _StatusHeader({required this.task, this.branchName});
   final TaskEntity task;
   final String? branchName;
 
   @override
-  State<_StatusHeader> createState() => _StatusHeaderState();
-}
-
-class _StatusHeaderState extends State<_StatusHeader>
-    with SingleTickerProviderStateMixin {
-  // A slow breathing controller — only In Review pulses; others use a static
-  // soft glow (read at t=0).
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1900),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    if (_pulsing) _pulse.repeat(reverse: true);
-  }
-
-  @override
-  void didUpdateWidget(_StatusHeader old) {
-    super.didUpdateWidget(old);
-    // Start/stop the pulse as the task moves in/out of "In Review".
-    if (_pulsing && !_pulse.isAnimating) {
-      _pulse.repeat(reverse: true);
-    } else if (!_pulsing && _pulse.isAnimating) {
-      _pulse.stop();
-      _pulse.value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  bool get _pulsing => widget.task.status == TaskStatus.waitingReview;
-
-  /// The status accent (null = no glow, plain surface). Monochrome base is kept;
-  /// the colour appears only as a soft glow + faint tint.
-  Color? get _aura => switch (widget.task.status) {
-        TaskStatus.waitingReview => AppColors.warning,
-        TaskStatus.approved => AppColors.success,
-        TaskStatus.rejected => AppColors.error,
-        _ => null,
-      };
-
-  double _lerp(double a, double b, double t) => a + (b - a) * t;
-
-  @override
   Widget build(BuildContext context) {
-    final aura = _aura;
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, child) {
-        final t = _pulsing ? _pulse.value : 0.0;
-        BoxDecoration decoration;
-        if (aura == null) {
-          decoration = BoxDecoration(
-            color: AppColors.darkSurface,
-            borderRadius: AppRadius.cardAll,
-            border: Border.all(color: AppColors.darkBorder),
-          );
-        } else {
-          final glow = _pulsing ? _lerp(28, 64, t) : 46;
-          final blur = _pulsing ? _lerp(16, 30, t) : 24.0;
-          final tint = _pulsing ? _lerp(8, 16, t) : 12;
-          final borderA = _pulsing ? _lerp(55, 120, t) : 85;
-          decoration = BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [AppColors.darkSurface, aura.withAlpha(tint.round())],
-            ),
-            borderRadius: AppRadius.cardAll,
-            border: Border.all(color: aura.withAlpha(borderA.round())),
-            boxShadow: [
-              BoxShadow(
-                color: aura.withAlpha(glow.round()),
-                blurRadius: blur,
-                spreadRadius: 0,
-              ),
-            ],
-          );
-        }
-        return Container(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          decoration: decoration,
-          child: child,
-        );
-      },
+    // Reuses the shared de-flashed [TaskSurface] (same flat surface + whisper
+    // shadow as the task card) so the treatment is defined in one place.
+    return TaskSurface(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      borderRadius: AppRadius.cardAll,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Status pill
-          _StatusPill(widget.task.status),
+          _StatusPill(task.status),
           const SizedBox(height: AppSpacing.md),
           // Meta row
           Wrap(
             spacing: AppSpacing.xl,
             runSpacing: AppSpacing.sm,
             children: [
-              if ((widget.branchName ?? '').isNotEmpty)
+              if ((branchName ?? '').isNotEmpty)
                 _MetaPill(
                   icon: Icons.store_mall_directory_outlined,
-                  label: widget.branchName!,
+                  label: branchName!,
                 ),
               _MetaPill(
                 icon: Icons.flag_outlined,
-                label: _priorityLabel(widget.task.priority),
+                label: _priorityLabel(task.priority),
               ),
               _MetaPill(
                 icon: Icons.label_outline_rounded,
-                label: widget.task.type.value,
+                label: task.type.value,
               ),
-              if (widget.task.deadline != null) ...[
+              if (task.deadline != null) ...[
                 _MetaPill(
                   icon: Icons.schedule_outlined,
-                  label: _dateLabel(widget.task.deadline!),
-                  highlight: _isOverdue(widget.task),
+                  label: _dateLabel(task.deadline!),
+                  highlight: _isOverdue(task),
                 ),
               ],
-              if (widget.task.recurrence != null &&
-                  widget.task.recurrence!.frequency.value != 'none')
+              if (task.recurrence != null &&
+                  task.recurrence!.frequency.value != 'none')
                 _MetaPill(
                   icon: Icons.repeat_rounded,
-                  label: widget.task.recurrence!.frequency.label,
+                  label: task.recurrence!.frequency.label,
                 ),
             ],
           ),

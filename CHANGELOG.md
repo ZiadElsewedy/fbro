@@ -12,6 +12,102 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-06-25 — De-flash: premium ≠ flashy on task surfaces)
+
+Owner ruling: premium **but not flashy** (Linear / Notion / Stripe), and **do not
+touch the shared `GlassContainer`/`AppGlassCard` yet** (large blast radius). So
+this refines the card redesign from the entry below, **scoped to task surfaces
+only**, keeping *subtle* depth (border + whisper shadow) — not full-flat. Visual
+direction approved via mockup first. Presentation-only; no schema/logic/dependency
+change. ⚠️ Run `flutter analyze` / `flutter test` on a current SDK (this session's
+is 3.10.4); parse-checked here with `dart format`.
+
+- **`TaskCard` renders its own flat surface** instead of `AppGlassCard`: solid
+  `darkSurface` + hairline `darkBorder` + a *whisper* shadow (`black @45%`, blur 3,
+  offset 0,1), radius 14. **Removed:** the gradient, the **status glow halo**, and
+  the **4-segment animated lifecycle track**. The shared `GlassContainer`/
+  `AppGlassCard` are **untouched** (other surfaces unchanged) — global de-flash is
+  deferred until this language is validated in use.
+- **Priority is High-only** (`_HighPriorityFlag`) — Medium/Low show nothing
+  (removed the per-card priority chip noise; dropped the unused `_priorityLabel`).
+- **Progress simplified** — a single thin `_ChecklistBar` shown **only when the
+  task has a checklist** (the status pill carries state otherwise), replacing the
+  always-present segmented track. Most cards now show no progress widget at all.
+- **Minimal one-line footer** (`_AssigneeFooter`) — avatar · name · "· by Creator"
+  inline (was two lines), smaller avatars; keeps the card compact (no height
+  increase, per the owner constraint).
+- **`TaskDetailsScreen._StatusHeader` de-flashed** — converted from a stateful,
+  **breathing-pulse + glow + gradient** header to a flat stateless surface (solid
+  fill + hairline border + whisper shadow). The status pill's one-shot cross-fade
+  on a status change is kept (a transition, not a pulse).
+- **Meta contrast** lifted off the dim tertiary grey onto the readable secondary.
+- **Maintainability (no duplication / fragmentation):** the de-flashed surface is
+  defined **once** in a new reusable **`TaskSurface`**
+  ([task_surface.dart](lib/features/task/presentation/widgets/task_surface.dart)) —
+  the single source of the flat fill + hairline border + whisper shadow, consumed
+  by both `TaskCard` and `TaskDetailsScreen._StatusHeader` (no inline decoration
+  copies). It is intentionally feature-local and distinct from
+  `GlassContainer`/`AppGlassCard` (the calmer language is scoped to tasks until
+  validated; `TaskSurface` is the one place to promote if globalised). The card's
+  status pill now sources its colour from the canonical `taskStatusColor` (no
+  third status→colour map; only its label + icon are card-local).
+- `task_card_layout_test` continues to cover the new card (no API change from the
+  redesign entry below).
+
+### Added + Changed (2026-06-25 — Premium task UX slice: reference images + card redesign)
+
+Acted on the task-management UX audit (slices #1 + #2). **#1 — Admin/Manager
+reference images:** managers/admins can now attach reference photos ("what good
+looks like") when creating/editing a task; the employee sees them on the task
+details screen **before** starting. **#2 — Premium task card redesign:** the
+shared `TaskCard` (manager/admin surfaces) was rebuilt from a label→value spec
+sheet into a scannable, signal-driven premium card. Strictly monochrome with the
+existing semantic accents; no new dependencies. ⚠️ **Run on a current SDK** (this
+session's Flutter is 3.10.4 < `^3.12.1`): `dart run build_runner build
+--delete-conflicting-outputs` (the `task_entity.freezed.dart` was hand-edited to
+match), `flutter analyze`, `flutter test`. **No deploy needed** — Storage rules
+already cover `tasks/{id}/**`; the `tasks` create/update rules already permit the
+manager/admin write (no new field whitelist).
+
+- **Schema — `TaskEntity.referenceAttachments`** (`List<TaskAttachment>`, default
+  empty; freezed hand-regenerated) + `hasReferences` getter. `TaskModel`
+  (de)serializes it via the existing attachment (de)serializers (back-compat:
+  absent → empty). Stored in Storage at `tasks/{id}/attachments/{attId}.<ext>`
+  (the existing task-media path) — distinct from employee *proof*, which still
+  lives on the submission `ActivityEntry` / legacy `proofImageUrl`.
+- **Upload flow (`TaskCubit`)** — `createTask` gains `referenceAttachments:
+  List<PickedAttachment>` (uploads **after** create, when the task id exists, then
+  patches the doc); `editTask` gains `newReferenceAttachments` (uploads + appends
+  to the kept refs). New private `_uploadReferences` (parallel upload, reuses
+  `UploadTaskAttachment`); a failure rolls back via `_mutate` so the manager can
+  retry.
+- **Picker (`AttachmentPickerField`)** — reused for both roles instead of forking:
+  new `allowVideo` (images-only for references — hides the video menu rows +
+  counter), `title`/`hint` overrides, and `existing` + `onRemoveExisting` so
+  already-uploaded refs render as removable network thumbnails (`_ExistingTile`)
+  beside the newly-picked ones; the count cap now spans both groups.
+- **Form (`task_action_sheets`)** — a "Reference images" section after the
+  description; edit mode seeds the kept refs and threads new picks to the cubit.
+- **Details (`task_details_screen`)** — a new "Reference" section (2-col
+  `AttachmentGallery`, tap → fullscreen/zoom) shown before the checklist on any
+  task with references.
+- **Card redesign (`TaskCard`)** — replaced the `_MetaRow` label→value table with:
+  a tinted **status pill** + **priority** signal (only High carries red), a
+  **signal-chip strip** (branch · due/overdue · `N refs`), a **universal 4-segment
+  lifecycle track** (Assigned → Started → Review → Done — answers "where is this?"
+  even with no checklist; checklist % layered in when present), and an **assignee
+  footer** ("by Creator"). Inline proof image / notes / review notes were
+  **removed** from the card (they live on the details screen) — decluttered. The
+  `premium` flag is gone — every `TaskCard` is now the `AppGlassCard` premium
+  surface with the status glow; `ManagerTaskCard` passes the resolved `branchName`.
+  `onChecklistToggle` (only ever used by a test) removed. Employee `_MinimalCard`
+  / `_HomeTaskCard` are separate surfaces, left for a follow-up.
+- **Tests** — new `task_model_reference_test` (serialization + entity round-trip +
+  `hasReferences`); `task_card_layout_test` updated to the new API.
+- **Deferred (called out in the audit, not in this slice):** drag-and-drop upload
+  (new dep), on-image annotation, a `Blocked` status, double-tap zoom,
+  `cached_network_image`, swipe/haptics, and aligning the employee minimal card.
+
 ### Fixed (2026-06-25 — FCM routing audit: exclusive token ownership)
 
 **Critical (privacy):** a device's FCM token could be attached to **multiple**
