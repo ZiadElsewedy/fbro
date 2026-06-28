@@ -11,9 +11,18 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-28 (User-detail input validation + account-switch push fix on shared device)
+**Last updated:** 2026-06-28 (Branch cover photo on task overview + user-detail validation + account-switch push fix)
 **Version:** 1.0.0+1 · **Branch:** `enhancement/ui-refactor` (DROP — monochrome premium UX)
 
+> **Branch cover photo on the admin task overview (2026-06-28):** The branch cards in
+> `AdminTaskOverviewScreen` now lead with the branch **cover photo** (new `_CoverHeader`:
+> 16:7 image + scrim + logo/name/location + attention pill + chevron) **when the branch
+> has an uploaded `coverUrl`** — branches without media keep the plain text header.
+> Metrics stay below on the dark surface for legibility. `_BranchRow` carries
+> `coverUrl`/`logoUrl` from `TaskCubit.branches()`; reuses `BranchAvatar` + the §8b media
+> pipeline (extends the branch-identity-in-tasks work). No data layer, no deploy. **227
+> tests pass.**
+>
 > **User-detail input validation (2026-06-28):** New shared **`Validators`**
 > (`lib/core/utils/validators.dart`, pure + unicode-aware for Arabic) enforces the
 > right *kind* of value on user-detail fields — `phone` (digits + `+ - ( )`, rejects

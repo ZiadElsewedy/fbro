@@ -8,6 +8,7 @@ import 'package:fbro/core/theme/app_spacing.dart';
 import 'package:fbro/core/theme/app_typography.dart';
 import 'package:fbro/core/widgets/app_motion.dart';
 import 'package:fbro/core/widgets/app_snackbar.dart';
+import 'package:fbro/core/widgets/branch_avatar.dart';
 import 'package:fbro/core/widgets/list_skeleton.dart';
 import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
 import 'package:fbro/features/operations/presentation/pages/branch_operations_screen.dart';
@@ -189,6 +190,8 @@ class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen> {
           name: b.name,
           location: b.location,
           metrics: _BranchMetrics.from(byBranch[b.id] ?? const []),
+          coverUrl: b.coverUrl,
+          logoUrl: b.logoUrl,
         ),
     ];
 
@@ -225,11 +228,18 @@ class _BranchRow {
     required this.name,
     required this.location,
     required this.metrics,
+    this.coverUrl,
+    this.logoUrl,
   });
   final String branchId;
   final String name;
   final String? location;
   final _BranchMetrics metrics;
+
+  /// Branch identity media (§8b) — when [coverUrl] is set the card leads with the
+  /// branch's cover photo. Null on synthetic "Unknown branch" rows.
+  final String? coverUrl;
+  final String? logoUrl;
 }
 
 /// Operational vitals for a set of tasks (one branch, or the whole company).
@@ -391,11 +401,12 @@ class _BranchOverviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = row.metrics;
     final pct = m.completionRate;
+    final hasCover = (row.coverUrl ?? '').isNotEmpty;
     return GestureDetector(
       onTap: onTap,
       child: Container(
+        clipBehavior: Clip.antiAlias,
         margin: const EdgeInsets.only(bottom: AppSpacing.md),
-        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: AppColors.darkSurface,
           borderRadius: AppRadius.cardAll,
@@ -408,77 +419,184 @@ class _BranchOverviewCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            // Identity: the branch cover photo when one is uploaded (§8b),
+            // otherwise the plain text header. Metrics always sit below, on the
+            // dark surface, so they stay legible regardless of the photo.
+            if (hasCover)
+              _CoverHeader(row: row)
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+                child: _plainHeader(m),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, AppSpacing.lg, 18, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _Metric(value: '${m.active}', label: 'Active'),
+                      _Metric(
+                          value: '${m.pendingReview}', label: 'Pending review'),
+                      _Metric(
+                        value: '${m.overdue}',
+                        label: 'Overdue',
+                        alert: m.overdue > 0,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    pct == null
+                        ? 'No tasks yet'
+                        : 'Completion ${(pct * 100).round()}%',
+                    style: AppTypography.caption
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                  if (pct != null) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: pct,
+                        minHeight: 5,
+                        backgroundColor: AppColors.darkSurfaceElevated,
+                        valueColor:
+                            const AlwaysStoppedAnimation(AppColors.textPrimary),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The text-only identity header used when a branch has no cover photo.
+  Widget _plainHeader(_BranchMetrics m) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                row.name,
+                style: AppTypography.label
+                    .copyWith(fontWeight: FontWeight.w600, fontSize: 16),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if ((row.location ?? '').isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(row.location!, style: AppTypography.caption),
+              ],
+            ],
+          ),
+        ),
+        if (m.needsAttention)
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: _AttentionPill(
+              overdue: m.overdue,
+              pendingReview: m.pendingReview,
+            ),
+          ),
+        const Icon(Icons.chevron_right_rounded,
+            size: 20, color: AppColors.textTertiary),
+      ],
+    );
+  }
+}
+
+/// The branch **cover** photo as a card header — the branch's uploaded cover
+/// (dark scrim for legibility) with its logo + name + location overlaid, the
+/// attention pill in the corner, and a chevron affordance. Mirrors the task
+/// details branch banner so a branch reads consistently across surfaces.
+class _CoverHeader extends StatelessWidget {
+  const _CoverHeader({required this.row});
+  final _BranchRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = row.metrics;
+    return AspectRatio(
+      aspectRatio: 16 / 7,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            row.coverUrl!,
+            fit: BoxFit.cover,
+            cacheWidth: 1000,
+            errorBuilder: (_, _, _) =>
+                const ColoredBox(color: AppColors.darkSurfaceElevated),
+          ),
+          // Dark scrim, stronger at the bottom where the label sits.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0x33000000), Color(0xE6000000)],
+              ),
+            ),
+          ),
+          if (m.needsAttention)
+            Positioned(
+              top: AppSpacing.sm,
+              right: AppSpacing.sm,
+              child: _AttentionPill(
+                overdue: m.overdue,
+                pendingReview: m.pendingReview,
+              ),
+            ),
+          Positioned(
+            left: AppSpacing.md,
+            right: AppSpacing.md,
+            bottom: AppSpacing.md,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                BranchAvatar(
+                    logoUrl: row.logoUrl, name: row.name, size: 36, radius: 10),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         row.name,
                         style: AppTypography.label.copyWith(
-                            fontWeight: FontWeight.w600, fontSize: 16),
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if ((row.location ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(row.location!, style: AppTypography.caption),
-                      ],
+                      if ((row.location ?? '').isNotEmpty)
+                        Text(
+                          row.location!,
+                          style: AppTypography.caption
+                              .copyWith(color: AppColors.textSecondary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                     ],
                   ),
                 ),
-                if (m.needsAttention)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: _AttentionPill(
-                      overdue: m.overdue,
-                      pendingReview: m.pendingReview,
-                    ),
-                  ),
                 const Icon(Icons.chevron_right_rounded,
-                    size: 20, color: AppColors.textTertiary),
+                    size: 20, color: AppColors.textPrimary),
               ],
             ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                _Metric(value: '${m.active}', label: 'Active'),
-                _Metric(value: '${m.pendingReview}', label: 'Pending review'),
-                _Metric(
-                  value: '${m.overdue}',
-                  label: 'Overdue',
-                  alert: m.overdue > 0,
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Text(
-                  pct == null
-                      ? 'No tasks yet'
-                      : 'Completion ${(pct * 100).round()}%',
-                  style: AppTypography.caption
-                      .copyWith(color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-            if (pct != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: pct,
-                  minHeight: 5,
-                  backgroundColor: AppColors.darkSurfaceElevated,
-                  valueColor:
-                      const AlwaysStoppedAnimation(AppColors.textPrimary),
-                ),
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

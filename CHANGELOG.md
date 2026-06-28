@@ -12,6 +12,20 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-06-28 — Branch cover photo on the admin task overview)
+
+Owner request: show the branch **cover photo** on the branch cards in the admin Task
+Management overview (`AdminTaskOverviewScreen`), matching the branch-identity banner
+already on Task Details. Each `_BranchOverviewCard` now leads with a `_CoverHeader`
+(16:7 cover image + dark scrim + logo/name/location + attention pill + chevron
+overlaid) **when the branch has an uploaded `coverUrl`**; branches without media keep
+the plain text header. Metrics (Active / Pending review / Overdue / Completion) always
+render below on the dark surface so they stay legible over any photo. `_BranchRow`
+gained `coverUrl`/`logoUrl` (populated from `TaskCubit.branches()` → already-loaded
+`BranchEntity`; synthetic "Unknown branch" rows have none). Reuses `BranchAvatar` +
+the existing §8b media pipeline — no new data layer, no deploy. `flutter analyze`
+clean; **227 tests pass**.
+
 ### Added (2026-06-28 — Input validation on user-detail fields)
 
 Owner request: a newly-created user completing their profile (and admins entering
