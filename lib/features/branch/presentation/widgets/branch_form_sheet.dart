@@ -2,16 +2,17 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/branch_avatar.dart';
-import 'package:fbro/core/widgets/premium_button.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_text_field.dart';
-import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
-import 'package:fbro/features/branch/presentation/cubit/branch_cubit.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/branch_avatar.dart';
+import 'package:drop/core/widgets/premium_button.dart';
+import 'package:drop/features/auth/presentation/widgets/app_button.dart';
+import 'package:drop/features/auth/presentation/widgets/app_text_field.dart';
+import 'package:drop/features/branch/domain/entities/branch_entity.dart';
+import 'package:drop/features/branch/presentation/cubit/branch_cubit.dart';
+import 'package:drop/features/schedule/domain/swap_policy.dart';
 
 /// Create or edit a branch (admin). Editing also offers **branch media** —
 /// logo + cover upload to Storage (§8).
@@ -51,6 +52,11 @@ class _BranchFormSheetState extends State<_BranchFormSheet> {
   bool _busyLogo = false;
   bool _busyCover = false;
 
+  // Branch shift-swap policy (edit-only), seeded from the branch.
+  late bool _restrictPositions =
+      widget.existing?.swapPolicy?.restrictToSamePosition ?? false;
+  late int _minRestHours = widget.existing?.swapPolicy?.minRestHours ?? 0;
+
   @override
   void dispose() {
     _name.dispose();
@@ -67,9 +73,17 @@ class _BranchFormSheetState extends State<_BranchFormSheet> {
     final location = _location.text.trim().isEmpty ? null : _location.text.trim();
     final existing = widget.existing;
     if (existing == null) {
+      // Swap rules are configured when editing (they default to permissive).
       widget.cubit.createBranch(name: name, location: location);
     } else {
-      widget.cubit.editBranch(existing.copyWith(name: name, location: location));
+      widget.cubit.editBranch(existing.copyWith(
+        name: name,
+        location: location,
+        swapPolicy: SwapPolicy(
+          restrictToSamePosition: _restrictPositions,
+          minRestHours: _minRestHours > 0 ? _minRestHours : null,
+        ),
+      ));
     }
     Navigator.of(context).pop();
   }
@@ -155,6 +169,28 @@ class _BranchFormSheetState extends State<_BranchFormSheet> {
                 busy: _busyCover,
                 onPick: () => _pick(isLogo: false),
               ),
+
+              // ── Shift-swap rules (edit-only) ──
+              const SizedBox(height: AppSpacing.xl),
+              Text('SHIFT-SWAP RULES',
+                  style: AppTypography.caption.copyWith(
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textTertiary,
+                  )),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                  'Optional limits applied when employees swap shifts. Off by '
+                  'default — any coworker on the opposite shift can swap.',
+                  style: AppTypography.caption),
+              const SizedBox(height: AppSpacing.md),
+              _SwapRulesSection(
+                restrictPositions: _restrictPositions,
+                minRestHours: _minRestHours,
+                onRestrictChanged: (v) =>
+                    setState(() => _restrictPositions = v),
+                onRestChanged: (v) => setState(() => _minRestHours = v),
+              ),
             ],
 
             if (_error != null) ...[
@@ -169,6 +205,156 @@ class _BranchFormSheetState extends State<_BranchFormSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The branch swap-policy editor: a same-position toggle + a min-rest stepper
+/// (0 = off). Monochrome, premium.
+class _SwapRulesSection extends StatelessWidget {
+  const _SwapRulesSection({
+    required this.restrictPositions,
+    required this.minRestHours,
+    required this.onRestrictChanged,
+    required this.onRestChanged,
+  });
+
+  final bool restrictPositions;
+  final int minRestHours;
+  final ValueChanged<bool> onRestrictChanged;
+  final ValueChanged<int> onRestChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface,
+        borderRadius: AppRadius.cardAll,
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: _RuleLabel(
+                  title: 'Same role only',
+                  subtitle: 'Block swaps between different job positions',
+                ),
+              ),
+              Switch(
+                value: restrictPositions,
+                onChanged: onRestrictChanged,
+                activeThumbColor: AppColors.primary,
+              ),
+            ],
+          ),
+          const Divider(height: AppSpacing.lg, color: AppColors.darkBorder),
+          Row(
+            children: [
+              const Expanded(
+                child: _RuleLabel(
+                  title: 'Minimum rest',
+                  subtitle: 'Hours required between shifts after a swap',
+                ),
+              ),
+              _Stepper(
+                value: minRestHours,
+                min: 0,
+                max: 16,
+                format: (v) => v == 0 ? 'Off' : '${v}h',
+                onChanged: onRestChanged,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RuleLabel extends StatelessWidget {
+  const _RuleLabel({required this.title, required this.subtitle});
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: AppTypography.label),
+        const SizedBox(height: 2),
+        Text(subtitle, style: AppTypography.caption),
+      ],
+    );
+  }
+}
+
+class _Stepper extends StatelessWidget {
+  const _Stepper({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.format,
+    required this.onChanged,
+  });
+
+  final int value;
+  final int min;
+  final int max;
+  final String Function(int) format;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _StepBtn(
+          icon: Icons.remove_rounded,
+          onTap: value > min ? () => onChanged(value - 1) : null,
+        ),
+        Container(
+          constraints: const BoxConstraints(minWidth: 40),
+          alignment: Alignment.center,
+          child: Text(format(value),
+              style: AppTypography.label.copyWith(fontWeight: FontWeight.w700)),
+        ),
+        _StepBtn(
+          icon: Icons.add_rounded,
+          onTap: value < max ? () => onChanged(value + 1) : null,
+        ),
+      ],
+    );
+  }
+}
+
+class _StepBtn extends StatelessWidget {
+  const _StepBtn({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.full),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.darkSurfaceElevated,
+          border: Border.all(color: AppColors.darkBorder),
+        ),
+        child: Icon(icon,
+            size: 16,
+            color: enabled ? AppColors.textPrimary : AppColors.textTertiary),
       ),
     );
   }

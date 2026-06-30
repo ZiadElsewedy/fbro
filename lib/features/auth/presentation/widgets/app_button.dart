@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
-import 'package:fbro/core/theme/app_typography.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_typography.dart';
 
 enum AppButtonVariant { primary, secondary, ghost }
 
@@ -135,11 +135,16 @@ class _PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The primary action carries the single indigo accent — the most important
+    // interactive element on any screen. Flat (no glow), hairline-clean.
     return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: AppColors.primaryGradient,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.accentHover, AppColors.accent],
+        ),
         borderRadius: AppRadius.buttonAll,
-        boxShadow: AppColors.primaryGlow(),
       ),
       child: Center(child: _buildChild()),
     );
@@ -152,11 +157,11 @@ class _PrimaryButton extends StatelessWidget {
         height: 22,
         child: CircularProgressIndicator(
           strokeWidth: 2.5,
-          color: AppColors.onPrimary,
+          color: AppColors.onAccent,
         ),
       );
     }
-    final textStyle = AppTypography.labelLarge.copyWith(color: AppColors.onPrimary);
+    final textStyle = AppTypography.labelLarge.copyWith(color: AppColors.onAccent);
     if (icon != null) {
       return Row(
         mainAxisSize: MainAxisSize.min,

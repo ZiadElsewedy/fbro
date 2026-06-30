@@ -1,19 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/user_avatar.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
-import 'package:fbro/features/schedule/presentation/widgets/schedule_helpers.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/user_avatar.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
 
 /// A compact, premium employee row — avatar · name · role, with a status dot and
 /// an optional [trailing] action. Replaces the old developer-looking chips; the
 /// single employee presentation across the shift sheet, the assign picker, and
 /// the resolve flow.
 ///
-/// The status dot reflects account health: green = active & approved, amber =
-/// pending approval or deactivated.
+/// The status dot reflects account health: green = active, amber = deactivated.
 class EmployeeRow extends StatelessWidget {
   const EmployeeRow({
     super.key,
@@ -99,7 +98,7 @@ class EmployeeRow extends StatelessWidget {
   }
 
   Color _statusColor(UserEntity u) =>
-      (u.isActive && u.isApproved) ? AppColors.success : AppColors.warning;
+      u.isActive ? AppColors.success : AppColors.warning;
 }
 
 class _StatusDot extends StatelessWidget {

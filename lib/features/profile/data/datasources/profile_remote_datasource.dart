@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:fbro/core/errors/exceptions.dart';
-import 'package:fbro/features/profile/data/models/profile_model.dart';
+import 'package:drop/core/errors/exceptions.dart';
+import 'package:drop/features/profile/data/models/profile_model.dart';
 
 abstract class ProfileRemoteDataSource {
   Future<ProfileModel?> getProfile(String uid);
@@ -22,6 +22,8 @@ abstract class ProfileRemoteDataSource {
     DateTime? birthDate,
     String? profileImage,
     String? coverImage,
+    String? emergencyContact,
+    String? address,
   });
 
   /// Uploads [file] to Storage and returns its download URL.
@@ -69,6 +71,8 @@ class ProfileRemoteDataSourceImpl implements ProfileRemoteDataSource {
     DateTime? birthDate,
     String? profileImage,
     String? coverImage,
+    String? emergencyContact,
+    String? address,
   }) async {
     try {
       final map = ProfileModel.editMap(
@@ -83,6 +87,8 @@ class ProfileRemoteDataSourceImpl implements ProfileRemoteDataSource {
         birthDate: birthDate,
         profileImage: profileImage,
         coverImage: coverImage,
+        emergencyContact: emergencyContact,
+        address: address,
       );
       await _users.doc(uid).set(map, SetOptions(merge: true));
     } on FirebaseException catch (e) {

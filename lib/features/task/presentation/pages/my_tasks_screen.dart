@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fbro/core/enums/task_status.dart';
-import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_snackbar.dart';
-import 'package:fbro/core/widgets/list_skeleton.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
-import 'package:fbro/features/task/domain/entities/task_entity.dart';
-import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
-import 'package:fbro/features/task/presentation/cubit/task_state.dart';
-import 'package:fbro/features/task/presentation/pages/task_details_screen.dart';
-import 'package:fbro/features/task/presentation/widgets/task_empty_state.dart';
+import 'package:drop/core/enums/task_status.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/core/widgets/list_skeleton.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/task/domain/entities/task_entity.dart';
+import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
+import 'package:drop/features/task/presentation/cubit/task_state.dart';
+import 'package:drop/features/task/presentation/pages/task_details_screen.dart';
+import 'package:drop/features/task/presentation/widgets/task_empty_state.dart';
 
 /// Employee task screen — sectioned, animated, and optimised for speed.
 /// The workflow is: open app → see today's tasks → open task → complete
@@ -47,24 +48,19 @@ class _MyTasksScreenState extends State<MyTasksScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: Text('My Tasks', style: AppTypography.h3),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'Refresh',
-            onPressed: () => context.read<TaskCubit>().refresh(),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(44),
-          child: _TabBar(controller: _tabs),
+    return AdaptiveScaffold(
+      title: 'My Tasks',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Refresh',
+          onPressed: () => context.read<TaskCubit>().refresh(),
         ),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(44),
+        child: _TabBar(controller: _tabs),
       ),
       body: BlocConsumer<TaskCubit, TaskState>(
         listener: (context, state) =>

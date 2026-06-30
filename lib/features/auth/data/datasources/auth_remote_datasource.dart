@@ -1,39 +1,33 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:fbro/core/errors/exceptions.dart';
-import 'package:fbro/features/auth/data/models/user_model.dart';
+import 'dart:async';
+import 'dart:io';
 
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart' show PlatformException;
+import 'package:drop/core/errors/exceptions.dart';
+import 'package:drop/features/auth/data/models/user_model.dart';
+
+/// Firebase Auth access. DROP is **admin-provisioned** — there is no public
+/// registration, Google sign-in, or phone/OTP path here. Accounts are created
+/// server-side by the `createUserAccount` Cloud Function; clients only sign in
+/// with email/password, reset/change their password, and keep the Auth profile
+/// (display name / photo) in sync with Firestore.
 abstract class AuthRemoteDataSource {
   Stream<UserModel?> get authStateChanges;
   UserModel? get currentUser;
 
   Future<UserModel> signInWithEmail({required String email, required String password});
-  Future<UserModel> registerWithEmail({required String email, required String password});
-  Future<void> verifyPhoneNumber({
-    required String phoneNumber,
-    required void Function(String verificationId) onCodeSent,
-    required void Function(String error) onFailed,
-    void Function(UserModel user)? onAutoVerified,
-  });
-  Future<UserModel> signInWithOtp({required String verificationId, required String smsCode});
-  Future<UserModel> signInWithGoogle();
   Future<void> signOut();
 
   Future<void> sendPasswordResetEmail(String email);
-  Future<void> sendEmailVerification();
-  Future<UserModel> reloadUser();
   Future<void> updateDisplayName(String displayName);
   Future<void> updatePhotoUrl(String photoUrl);
   Future<void> changePassword({required String currentPassword, required String newPassword});
-  Future<void> deleteAccount({required String? currentPassword, required String? accessToken});
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   final FirebaseAuth _auth;
-  final GoogleSignIn _googleSignIn;
 
-  AuthRemoteDataSourceImpl(this._auth, {GoogleSignIn? googleSignIn})
-      : _googleSignIn = googleSignIn ?? GoogleSignIn();
+  AuthRemoteDataSourceImpl(this._auth);
 
   String _resolveProvider(User user) {
     if (user.providerData.isEmpty) return 'unknown';
@@ -68,10 +62,21 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         email: email,
         password: password,
       );
-      final user = credential.user!;
+      final user = credential.user;
+      if (user == null) {
+        throw const AuthException(
+          'Sign in succeeded but no account was returned. Please try again.',
+        );
+      }
       return UserModel.fromFirebaseUser(user, authProvider: _resolveProvider(user));
     } on FirebaseAuthException catch (e) {
       throw AuthException(_resolveSignInError(e.code, e.message));
+    } catch (e) {
+      // Anything that is not a FirebaseAuthException (raw socket/DNS/SSL
+      // failures, method-channel PlatformExceptions, timeouts) used to escape
+      // this layer and surface as an opaque "no internet" string from the
+      // native SDK. Map it to a precise, actionable message instead.
+      throw AuthException(_resolveInfraError(e));
     }
   }
 
@@ -86,180 +91,65 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       case 'invalid-email':
         return 'The email address is not valid.';
       case 'user-disabled':
-        return 'This account has been disabled. Contact support.';
+        return 'This account has been disabled. Contact your administrator.';
       case 'too-many-requests':
         return 'Too many attempts. Please wait and try again.';
       case 'network-request-failed':
-        return 'Network error. Check your connection and try again.';
+        // Distinct from "you're offline": on macOS this most often means the
+        // request never left the sandbox (missing network.client entitlement)
+        // or the auth host is unreachable — not a wrong password.
+        return 'Could not reach the authentication server. Check your '
+            'connection and that the app is allowed network access, then '
+            'try again.';
+      case 'operation-not-allowed':
+        return 'Email/password sign-in is disabled for this project. '
+            'Contact your administrator.';
+      case 'api-key-not-valid':
+      case 'invalid-api-key':
+        return 'The app is misconfigured (invalid Firebase API key). '
+            'Contact your administrator.';
       default:
         return message ?? 'Sign in failed. Please try again.';
     }
   }
 
-  @override
-  Future<UserModel> registerWithEmail({
-    required String email,
-    required String password,
-  }) async {
-    try {
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      final user = credential.user!;
-      return UserModel.fromFirebaseUser(user, authProvider: _resolveProvider(user));
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_resolveRegisterError(e.code, e.message));
+  /// Maps non-Firebase infrastructure errors (socket/DNS/SSL/timeout/method
+  /// channel) to precise, user-actionable messages. Keeps the generic
+  /// "no internet" bucket from swallowing genuinely different root causes.
+  String _resolveInfraError(Object error) {
+    if (error is AuthException) return error.message;
+    if (error is TimeoutException) {
+      return 'The connection timed out. Check your network and try again.';
     }
-  }
-
-  String _resolveRegisterError(String code, String? message) {
-    switch (code) {
-      case 'email-already-in-use':
-        return 'An account already exists with this email.';
-      case 'invalid-email':
-        return 'The email address is not valid.';
-      case 'weak-password':
-        return 'Password is too weak. Use at least 6 characters.';
-      case 'operation-not-allowed':
-        return 'Email sign-up is not enabled. Contact support.';
-      case 'network-request-failed':
-        return 'Network error. Check your connection and try again.';
-      default:
-        return message ?? 'Registration failed. Please try again.';
+    if (error is SocketException) {
+      final msg = error.osError?.message.toLowerCase() ?? '';
+      if (msg.contains('nodename') ||
+          msg.contains('not known') ||
+          msg.contains('resolve') ||
+          error.message.toLowerCase().contains('failed host lookup')) {
+        return 'Could not resolve the server address (DNS issue). '
+            'Check your network/DNS settings and try again.';
+      }
+      return 'Unable to reach the server. The network may be down or the '
+          'app may be blocked from making connections.';
     }
-  }
-
-  @override
-  Future<void> verifyPhoneNumber({
-    required String phoneNumber,
-    required void Function(String verificationId) onCodeSent,
-    required void Function(String error) onFailed,
-    void Function(UserModel user)? onAutoVerified,
-  }) async {
-    try {
-      await _auth.verifyPhoneNumber(
-        phoneNumber: phoneNumber,
-        verificationCompleted: (credential) async {
-          try {
-            final result = await _auth.signInWithCredential(credential);
-            if (result.user != null) {
-              final u = result.user!;
-              onAutoVerified?.call(
-                  UserModel.fromFirebaseUser(u, authProvider: _resolveProvider(u)));
-            }
-          } on FirebaseAuthException catch (e) {
-            onFailed(e.message ?? 'Auto-verification failed');
-          } catch (_) {
-            onFailed('Auto-verification failed. Please try again.');
-          }
-        },
-        verificationFailed: (e) {
-          final message = _resolvePhoneError(e.code, e.message);
-          onFailed(message);
-        },
-        codeSent: (verificationId, _) => onCodeSent(verificationId),
-        codeAutoRetrievalTimeout: (_) {},
-      );
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_resolvePhoneError(e.code, e.message));
-    } catch (e) {
-      throw AuthException('Phone verification failed. Please try again.');
+    if (error is HandshakeException || error is TlsException) {
+      return 'A secure connection could not be established (SSL/TLS error). '
+          'Check your system date/time and network, then try again.';
     }
-  }
-
-  String _resolvePhoneError(String code, String? message) {
-    switch (code) {
-      case 'invalid-phone-number':
-        return 'The phone number is not valid. Please include the country code.';
-      case 'too-many-requests':
-        return 'Too many attempts. Please wait before trying again.';
-      case 'quota-exceeded':
-        return 'SMS quota exceeded. Please try again later.';
-      case 'network-request-failed':
-        return 'Network error. Check your connection and try again.';
-      case 'operation-not-allowed':
-        return 'Phone sign-in is not enabled. Contact support.';
-      default:
-        return message ?? 'Verification failed. Please try again.';
+    if (error is PlatformException) {
+      final code = error.code.toLowerCase();
+      if (code.contains('network')) {
+        return 'Could not reach the authentication server. Check your '
+            'connection and that the app is allowed network access.';
+      }
+      return error.message ?? 'Sign in failed (${error.code}). Please try again.';
     }
+    return 'An unexpected error occurred during sign in. Please try again.';
   }
 
   @override
-  Future<UserModel> signInWithOtp({
-    required String verificationId,
-    required String smsCode,
-  }) async {
-    try {
-      final credential = PhoneAuthProvider.credential(
-        verificationId: verificationId,
-        smsCode: smsCode,
-      );
-      final result = await _auth.signInWithCredential(credential);
-      final u = result.user!;
-      return UserModel.fromFirebaseUser(u, authProvider: _resolveProvider(u));
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_resolveOtpError(e.code, e.message));
-    }
-  }
-
-  String _resolveOtpError(String code, String? message) {
-    switch (code) {
-      case 'invalid-verification-code':
-        return 'The code you entered is incorrect. Please try again.';
-      case 'invalid-verification-id':
-      case 'session-expired':
-        return 'This code has expired. Please request a new one.';
-      case 'too-many-requests':
-        return 'Too many attempts. Please wait and try again.';
-      case 'network-request-failed':
-        return 'Network error. Check your connection and try again.';
-      default:
-        return message ?? 'Verification failed. Please try again.';
-    }
-  }
-
-  @override
-  Future<UserModel> signInWithGoogle() async {
-    try {
-      final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) throw const AuthException('Google sign-in was cancelled.');
-
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      final result = await _auth.signInWithCredential(credential);
-      final u = result.user!;
-      return UserModel.fromFirebaseUser(u, authProvider: 'google');
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_resolveGoogleError(e.code, e.message));
-    } on AuthException {
-      rethrow;
-    } catch (_) {
-      throw const AuthException('Google sign-in failed. Please try again.');
-    }
-  }
-
-  String _resolveGoogleError(String code, String? message) {
-    switch (code) {
-      case 'account-exists-with-different-credential':
-        return 'An account already exists with this email using a different sign-in method.';
-      case 'network-request-failed':
-        return 'Network error. Check your connection and try again.';
-      default:
-        return message ?? 'Google sign-in failed.';
-    }
-  }
-
-  @override
-  Future<void> signOut() async {
-    await Future.wait([
-      _auth.signOut(),
-      _googleSignIn.signOut(),
-    ]);
-  }
+  Future<void> signOut() => _auth.signOut();
 
   @override
   Future<void> sendPasswordResetEmail(String email) async {
@@ -267,6 +157,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       await _auth.sendPasswordResetEmail(email: email);
     } on FirebaseAuthException catch (e) {
       throw AuthException(_resolvePasswordResetError(e.code, e.message));
+    } catch (e) {
+      throw AuthException(_resolveInfraError(e));
     }
   }
 
@@ -283,26 +175,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       default:
         return message ?? 'Failed to send reset email.';
     }
-  }
-
-  @override
-  Future<void> sendEmailVerification() async {
-    final user = _auth.currentUser;
-    if (user == null) throw const AuthException('No user is signed in.');
-    try {
-      await user.sendEmailVerification();
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(e.message ?? 'Failed to send verification email.');
-    }
-  }
-
-  @override
-  Future<UserModel> reloadUser() async {
-    final user = _auth.currentUser;
-    if (user == null) throw const AuthException('No user is signed in.');
-    await user.reload();
-    final refreshed = _auth.currentUser!;
-    return UserModel.fromFirebaseUser(refreshed, authProvider: _resolveProvider(refreshed));
   }
 
   @override
@@ -343,6 +215,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       await user.updatePassword(newPassword);
     } on FirebaseAuthException catch (e) {
       throw AuthException(_resolveChangePasswordError(e.code, e.message));
+    } catch (e) {
+      throw AuthException(_resolveInfraError(e));
     }
   }
 
@@ -359,44 +233,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         return 'Please sign out and sign in again before changing your password.';
       default:
         return message ?? 'Failed to change password.';
-    }
-  }
-
-  @override
-  Future<void> deleteAccount({
-    required String? currentPassword,
-    required String? accessToken,
-  }) async {
-    final user = _auth.currentUser;
-    if (user == null) throw const AuthException('No user is signed in.');
-    try {
-      if (currentPassword != null && user.email != null) {
-        final credential = EmailAuthProvider.credential(
-          email: user.email!,
-          password: currentPassword,
-        );
-        await user.reauthenticateWithCredential(credential);
-      } else if (accessToken != null) {
-        final credential = GoogleAuthProvider.credential(accessToken: accessToken);
-        await user.reauthenticateWithCredential(credential);
-      }
-      await user.delete();
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_resolveDeleteError(e.code, e.message));
-    }
-  }
-
-  String _resolveDeleteError(String code, String? message) {
-    switch (code) {
-      case 'wrong-password':
-      case 'invalid-credential':
-        return 'Incorrect password. Account was not deleted.';
-      case 'requires-recent-login':
-        return 'Please sign out and sign in again before deleting your account.';
-      case 'network-request-failed':
-        return 'Network error. Check your connection and try again.';
-      default:
-        return message ?? 'Failed to delete account.';
     }
   }
 }

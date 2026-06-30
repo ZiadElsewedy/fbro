@@ -1,4 +1,4 @@
-import 'package:fbro/features/communications/domain/entities/broadcast_entity.dart';
+import 'package:drop/features/communications/domain/entities/broadcast_entity.dart';
 
 /// Contract for the Communications Center (Phase 1). The branch/role access
 /// model is enforced server-side by `firestore.rules` (`broadcasts/{id}`): admin
@@ -25,4 +25,7 @@ abstract class BroadcastRepository {
   /// Archives ([archived] true) / unarchives a broadcast.
   Future<void> setArchived(String id, bool archived);
 
+  /// Permanently deletes a broadcast (`broadcasts/{id}`). Allowed only for an
+  /// admin, the original sender, or the owning-branch manager (Firestore rules).
+  Future<void> delete(String id);
 }

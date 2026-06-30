@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fbro/core/enums/task_status.dart';
-import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_empty_state.dart';
-import 'package:fbro/core/widgets/app_motion.dart';
-import 'package:fbro/core/widgets/glass_container.dart';
-import 'package:fbro/core/widgets/list_skeleton.dart';
-import 'package:fbro/core/widgets/user_avatar.dart';
-import 'package:fbro/features/task/domain/entities/task_entity.dart';
-import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
-import 'package:fbro/features/task/presentation/cubit/task_state.dart';
-import 'package:fbro/features/task/presentation/widgets/manager_task_card.dart';
+import 'package:drop/core/enums/task_status.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/animated_count.dart';
+import 'package:drop/core/widgets/app_empty_state.dart';
+import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/glass_container.dart';
+import 'package:drop/core/widgets/list_skeleton.dart';
+import 'package:drop/core/widgets/live_list_item.dart';
+import 'package:drop/core/widgets/user_avatar.dart';
+import 'package:drop/features/task/domain/entities/task_entity.dart';
+import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
+import 'package:drop/features/task/presentation/cubit/task_state.dart';
+import 'package:drop/features/task/presentation/widgets/manager_task_card.dart';
 
 /// The admin **Pending Review** flow (refactor §1).
 ///
@@ -39,6 +41,11 @@ class PendingReviewScreen extends StatefulWidget {
 class _PendingReviewScreenState extends State<PendingReviewScreen> {
   String? _branchId; // selected branch (level 1+)
   String? _employeeId; // selected employee (level 2)
+
+  /// Review-task ids already seen this session — so a fresh arrival (an id not
+  /// seen before, after the first load) can be highlighted, while existing rows
+  /// stay calm. Populated during build (read-only effect; no setState).
+  final Set<String> _knownTaskIds = {};
 
   @override
   void initState() {
@@ -82,6 +89,16 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
           byBranch.putIfAbsent(t.branchId ?? '', () => []).add(t);
         }
 
+        // Flag genuinely-new arrivals (an unseen id, but never on the first load
+        // — otherwise every row would highlight at once). Update the seen-set
+        // after, as a read-only build effect (the next emit sees them as known).
+        final isFirstLoad = _knownTaskIds.isEmpty;
+        final freshIds = <String>{
+          for (final t in reviewTasks)
+            if (!isFirstLoad && !_knownTaskIds.contains(t.id)) t.id,
+        };
+        _knownTaskIds.addAll(reviewTasks.map((t) => t.id));
+
         final String levelTitle;
         if (_employeeId != null) {
           levelTitle = cubit.directory[_employeeId]?.displayName ?? 'Employee';
@@ -98,7 +115,8 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
             child: ListSkeleton(),
           );
         } else if (_branchId != null && _employeeId != null) {
-          body = _employeeLevel(cubit, byBranch[_branchId] ?? const []);
+          body = _employeeLevel(
+              cubit, byBranch[_branchId] ?? const [], freshIds);
         } else if (_branchId != null) {
           body = _branchLevel(cubit, byBranch[_branchId] ?? const []);
         } else {
@@ -154,6 +172,7 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
       });
 
     return ListView(
+      key: const PageStorageKey('pr-summary'),
       padding: const EdgeInsets.all(AppSpacing.pagePadding),
       children: [
         EntranceFade(child: _SummaryHeader(total: reviewTasks.length, branches: branches.length)),
@@ -166,8 +185,11 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
             )),
         const SizedBox(height: AppSpacing.md),
         for (var i = 0; i < branches.length; i++)
-          EntranceFade(
-            delay: Duration(milliseconds: i * 50),
+          // Keyed so a stream emit (counts changing) never replays the entrance;
+          // only a newly-appearing branch row animates in.
+          LiveListItem(
+            key: ValueKey('b:${branches[i]}'),
+            entranceDelay: Duration(milliseconds: i * 40),
             child: Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
               child: _DrillRow(
@@ -209,14 +231,16 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
       });
 
     return ListView(
+      key: const PageStorageKey('pr-branch'),
       padding: const EdgeInsets.all(AppSpacing.pagePadding),
       children: [
         Text('${branchTasks.length} waiting · select an employee',
             style: AppTypography.bodySmall),
         const SizedBox(height: AppSpacing.md),
         for (var i = 0; i < emps.length; i++)
-          EntranceFade(
-            delay: Duration(milliseconds: i * 50),
+          LiveListItem(
+            key: ValueKey('e:${emps[i]}'),
+            entranceDelay: Duration(milliseconds: i * 40),
             child: Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
               child: _DrillRow(
@@ -232,7 +256,14 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
   }
 
   // ── Level 2: that employee's tasks → review ───────────────────────
-  Widget _employeeLevel(TaskCubit cubit, List<TaskEntity> branchTasks) {
+  // This is the actual live task list: cards are keyed by task id so a stream
+  // emit never re-animates the rows on screen (scroll position is preserved),
+  // and a genuinely-new submission ([freshIds]) slides in with a brief highlight.
+  Widget _employeeLevel(
+    TaskCubit cubit,
+    List<TaskEntity> branchTasks,
+    Set<String> freshIds,
+  ) {
     final mine = [
       for (final t in branchTasks)
         if (_employeeId!.isEmpty
@@ -249,19 +280,21 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
       );
     }
     return ListView(
+      key: const PageStorageKey('pr-leaf'),
       padding: const EdgeInsets.all(AppSpacing.pagePadding),
       children: [
         for (var i = 0; i < mine.length; i++)
-          EntranceFade(
-            delay: Duration(milliseconds: i * 50),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: ManagerTaskCard(
-                task: mine[i],
-                directory: cubit.directory,
-                isAdmin: true,
-                defaultBranchId: mine[i].branchId ?? '',
-              ),
+          LiveListItem(
+            key: ValueKey('t:${mine[i].id}'),
+            isNew: freshIds.contains(mine[i].id),
+            entranceDelay: Duration(milliseconds: i * 40),
+            // ManagerTaskCard (via TaskCard) carries its own bottom margin, so no
+            // extra Padding here.
+            child: ManagerTaskCard(
+              task: mine[i],
+              directory: cubit.directory,
+              isAdmin: true,
+              defaultBranchId: mine[i].branchId ?? '',
             ),
           ),
       ],
@@ -303,17 +336,13 @@ class _SummaryHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: total.toDouble()),
+                AnimatedCount(
+                  value: total,
                   duration: const Duration(milliseconds: 700),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, v, _) => Text(
-                    '${v.round()}',
-                    style: AppTypography.display.copyWith(
-                      fontWeight: FontWeight.w700,
-                      height: 1.0,
-                      letterSpacing: -1.5,
-                    ),
+                  style: AppTypography.display.copyWith(
+                    fontWeight: FontWeight.w700,
+                    height: 1.0,
+                    letterSpacing: -1.5,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -390,8 +419,9 @@ class _DrillRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(AppRadius.full),
               border: Border.all(color: AppColors.darkBorder),
             ),
-            child: Text(
-              '$count',
+            child: AnimatedCount(
+              value: count,
+              duration: const Duration(milliseconds: 450),
               style: AppTypography.caption.copyWith(
                 fontWeight: FontWeight.w700,
                 color: AppColors.textSecondary,

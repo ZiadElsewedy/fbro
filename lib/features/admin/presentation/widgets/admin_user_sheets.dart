@@ -1,20 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:fbro/core/enums/user_role.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/user_avatar.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
-import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
-import 'package:fbro/features/admin/presentation/cubit/admin_users_cubit.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/utils/validators.dart';
+import 'package:drop/core/widgets/user_avatar.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/auth/presentation/widgets/app_button.dart';
+import 'package:drop/features/auth/presentation/widgets/app_text_field.dart';
+import 'package:drop/features/branch/domain/entities/branch_entity.dart';
+import 'package:drop/features/admin/presentation/cubit/admin_users_cubit.dart';
 
-Future<void> showApproveSheet({
+Future<void> showResetAccountSheet({
   required BuildContext context,
   required AdminUsersCubit cubit,
   required UserEntity user,
 }) =>
-    _sheet(context, _ApproveSheet(cubit: cubit, user: user));
+    _sheet(context, _ResetAccountSheet(cubit: cubit, user: user));
+
+Future<void> showEmploymentStatusSheet({
+  required BuildContext context,
+  required AdminUsersCubit cubit,
+  required UserEntity user,
+}) =>
+    _sheet(context, _EmploymentStatusSheet(cubit: cubit, user: user));
 
 Future<void> showAssignBranchSheet({
   required BuildContext context,
@@ -28,6 +36,20 @@ Future<void> showPromoteManagerSheet({
   required AdminUsersCubit cubit,
 }) =>
     _sheet(context, _PromoteManagerSheet(cubit: cubit));
+
+Future<void> showSetPositionSheet({
+  required BuildContext context,
+  required AdminUsersCubit cubit,
+  required UserEntity user,
+}) =>
+    _sheet(context, _SetPositionSheet(cubit: cubit, user: user));
+
+Future<void> showEditDetailsSheet({
+  required BuildContext context,
+  required AdminUsersCubit cubit,
+  required UserEntity user,
+}) =>
+    _sheet(context, _EditDetailsSheet(cubit: cubit, user: user));
 
 Future<void> _sheet(BuildContext context, Widget child) => showModalBottomSheet(
       context: context,
@@ -131,18 +153,30 @@ class _BranchSelectorState extends State<_BranchSelector> {
   }
 }
 
-// ─── Approve ─────────────────────────────────────────────────────
-class _ApproveSheet extends StatefulWidget {
-  const _ApproveSheet({required this.cubit, required this.user});
+// ─── Reset account (new temp password + re-force change) ─────────
+class _ResetAccountSheet extends StatefulWidget {
+  const _ResetAccountSheet({required this.cubit, required this.user});
   final AdminUsersCubit cubit;
   final UserEntity user;
   @override
-  State<_ApproveSheet> createState() => _ApproveSheetState();
+  State<_ResetAccountSheet> createState() => _ResetAccountSheetState();
 }
 
-class _ApproveSheetState extends State<_ApproveSheet> {
-  UserRole _role = UserRole.employee;
-  late String? _branchId = widget.user.branchId;
+class _ResetAccountSheetState extends State<_ResetAccountSheet> {
+  final _password = TextEditingController();
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final value = _password.text.trim();
+    if (value.length < 6) return;
+    widget.cubit.resetAccount(widget.user, value);
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -151,87 +185,70 @@ class _ApproveSheetState extends State<_ApproveSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _Title('Approve user'),
-          Text(widget.user.email, style: AppTypography.bodySmall),
-          const SizedBox(height: AppSpacing.lg),
-          Text('Role', style: AppTypography.caption),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              _RolePill(
-                label: 'Employee',
-                selected: _role == UserRole.employee,
-                onTap: () => setState(() => _role = UserRole.employee),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              _RolePill(
-                label: 'Manager',
-                selected: _role == UserRole.manager,
-                onTap: () => setState(() => _role = UserRole.manager),
-              ),
-            ],
+          const _Title('Reset account'),
+          Text(
+            'Set a new temporary password for ${widget.user.email}. They will be '
+            'forced to change it on next sign-in.',
+            style: AppTypography.caption,
           ),
           const SizedBox(height: AppSpacing.lg),
-          Text('Branch', style: AppTypography.caption),
-          _BranchSelector(
-            cubit: widget.cubit,
-            selected: _branchId,
-            onChanged: (v) => setState(() => _branchId = v),
+          AppTextField(
+            controller: _password,
+            label: 'Temporary password',
+            hint: 'At least 6 characters',
+            prefixIcon: Icons.lock_reset_rounded,
           ),
-          const SizedBox(height: AppSpacing.lg),
-          AppButton(
-            label: 'Approve',
-            icon: const Icon(Icons.check_circle_outline_rounded,
-                size: 20, color: AppColors.textDark),
-            onPressed: () {
-              widget.cubit
-                  .approve(widget.user, role: _role, branchId: _branchId);
-              Navigator.of(context).pop();
-            },
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppButton.secondary(
-            label: 'Reject',
-            onPressed: () {
-              widget.cubit.reject(widget.user);
-              Navigator.of(context).pop();
-            },
-          ),
+          const SizedBox(height: AppSpacing.xl),
+          AppButton(label: 'Reset account', onPressed: _save),
         ],
       ),
     );
   }
 }
 
-class _RolePill extends StatelessWidget {
-  const _RolePill(
-      {required this.label, required this.selected, required this.onTap});
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+// ─── Employment status (HR label) ────────────────────────────────
+class _EmploymentStatusSheet extends StatelessWidget {
+  const _EmploymentStatusSheet({required this.cubit, required this.user});
+  final AdminUsersCubit cubit;
+  final UserEntity user;
+
+  static const _options = ['active', 'suspended', 'terminated'];
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.primary : AppColors.darkSurfaceElevated,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: selected ? AppColors.primary : AppColors.darkBorder),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: AppTypography.label.copyWith(
-              color: selected ? AppColors.textDark : AppColors.textPrimary,
-            ),
-          ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _Title('Employment status'),
+        Text(
+          'An HR record label. It does not block access on its own — use '
+          'Deactivate to revoke sign-in.',
+          style: AppTypography.caption,
         ),
-      ),
+        const SizedBox(height: AppSpacing.md),
+        for (final s in _options)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              user.employmentStatus == s
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: user.employmentStatus == s
+                  ? AppColors.primary
+                  : AppColors.textTertiary,
+              size: 20,
+            ),
+            title: Text(
+              '${s[0].toUpperCase()}${s.substring(1)}',
+              style: AppTypography.label,
+            ),
+            onTap: () {
+              cubit.changeEmploymentStatus(user, s);
+              Navigator.of(context).pop();
+            },
+          ),
+      ],
     );
   }
 }
@@ -273,6 +290,186 @@ class _AssignBranchSheetState extends State<_AssignBranchSheet> {
   }
 }
 
+// ─── Set job position ────────────────────────────────────────────
+class _SetPositionSheet extends StatefulWidget {
+  const _SetPositionSheet({required this.cubit, required this.user});
+  final AdminUsersCubit cubit;
+  final UserEntity user;
+  @override
+  State<_SetPositionSheet> createState() => _SetPositionSheetState();
+}
+
+class _SetPositionSheetState extends State<_SetPositionSheet> {
+  late final _position =
+      TextEditingController(text: widget.user.position ?? '');
+
+  // Common retail positions — quick-fill chips (free text still allowed).
+  static const _suggestions = ['Cashier', 'Supervisor', 'Stockist', 'Greeter'];
+
+  @override
+  void dispose() {
+    _position.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final value = _position.text.trim();
+    widget.cubit.changePosition(widget.user, value.isEmpty ? null : value);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _Title('Job position'),
+          Text(
+              'Drives shift-swap role compatibility when a branch requires '
+              'same-role swaps. Leave empty for none.',
+              style: AppTypography.caption),
+          const SizedBox(height: AppSpacing.lg),
+          AppTextField(
+            controller: _position,
+            label: 'Position',
+            hint: 'e.g. Cashier',
+            prefixIcon: Icons.badge_outlined,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (final s in _suggestions)
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _position.text = s;
+                    _position.selection = TextSelection.collapsed(
+                        offset: _position.text.length);
+                  }),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: AppColors.darkSurfaceElevated,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.darkBorder),
+                    ),
+                    child: Text(s, style: AppTypography.caption),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          AppButton(label: 'Save', onPressed: _save),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Edit contact details (name / phone / address / emergency) ───
+class _EditDetailsSheet extends StatefulWidget {
+  const _EditDetailsSheet({required this.cubit, required this.user});
+  final AdminUsersCubit cubit;
+  final UserEntity user;
+  @override
+  State<_EditDetailsSheet> createState() => _EditDetailsSheetState();
+}
+
+class _EditDetailsSheetState extends State<_EditDetailsSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final _name =
+      TextEditingController(text: widget.user.displayName ?? '');
+  late final _phone =
+      TextEditingController(text: widget.user.phoneNumber ?? '');
+  late final _address = TextEditingController(text: widget.user.address ?? '');
+  late final _emergency =
+      TextEditingController(text: widget.user.emergencyContact ?? '');
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    _address.dispose();
+    _emergency.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    // Fields are optional here (empty intentionally clears), but a non-empty
+    // value is format-checked — a phone stays a number, a name stays letters.
+    if (!_formKey.currentState!.validate()) return;
+    widget.cubit.updateDetails(
+      widget.user,
+      displayName: _name.text.trim(),
+      phoneNumber: _phone.text.trim(),
+      address: _address.text.trim(),
+      emergencyContact: _emergency.text.trim(),
+    );
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _Title('Edit details'),
+            Text(
+              'Contact information for ${widget.user.email}. Editable anytime — '
+              'leave a field empty to clear it.',
+              style: AppTypography.caption,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            AppTextField(
+              controller: _name,
+              label: 'Full name',
+              hint: 'e.g. Ahmed Hassan',
+              prefixIcon: Icons.person_outline_rounded,
+              validator: (v) => Validators.name(v, required: false),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextField(
+              controller: _phone,
+              label: 'Phone number',
+              hint: 'e.g. +20 100 000 0000',
+              keyboardType: TextInputType.phone,
+              prefixIcon: Icons.phone_outlined,
+              inputFormatters: [Validators.phoneInput],
+              validator: (v) => Validators.phone(v, required: false),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextField(
+              controller: _address,
+              label: 'Address',
+              hint: 'Street, city',
+              prefixIcon: Icons.home_outlined,
+              validator: (v) => Validators.address(v, required: false),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextField(
+              controller: _emergency,
+              label: 'Emergency contact',
+              hint: 'Name · phone',
+              prefixIcon: Icons.emergency_outlined,
+              validator: (v) => Validators.emergencyContact(v, required: false),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            AppButton(label: 'Save details', onPressed: _save),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Promote employee → manager ──────────────────────────────────
 class _PromoteManagerSheet extends StatefulWidget {
   const _PromoteManagerSheet({required this.cubit});
@@ -291,8 +488,8 @@ class _PromoteManagerSheetState extends State<_PromoteManagerSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _Title('Add manager'),
-        Text('Promote an approved employee to manager. Their current branch is '
+        const _Title('Promote to manager'),
+        Text('Promote an existing employee to manager. Their current branch is '
             'kept — reassign it from the manager list if needed.',
             style: AppTypography.caption),
         const SizedBox(height: AppSpacing.md),
@@ -309,7 +506,7 @@ class _PromoteManagerSheetState extends State<_PromoteManagerSheet> {
             if (employees.isEmpty) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-                child: Text('No approved employees to promote.',
+                child: Text('No employees to promote.',
                     style: AppTypography.bodySmall),
               );
             }

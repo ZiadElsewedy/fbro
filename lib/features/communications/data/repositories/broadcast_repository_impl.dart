@@ -1,9 +1,9 @@
-import 'package:fbro/core/errors/exceptions.dart';
-import 'package:fbro/core/errors/failures.dart';
-import 'package:fbro/features/communications/data/datasources/broadcast_remote_datasource.dart';
-import 'package:fbro/features/communications/data/models/broadcast_model.dart';
-import 'package:fbro/features/communications/domain/entities/broadcast_entity.dart';
-import 'package:fbro/features/communications/domain/repositories/broadcast_repository.dart';
+import 'package:drop/core/errors/exceptions.dart';
+import 'package:drop/core/errors/failures.dart';
+import 'package:drop/features/communications/data/datasources/broadcast_remote_datasource.dart';
+import 'package:drop/features/communications/data/models/broadcast_model.dart';
+import 'package:drop/features/communications/domain/entities/broadcast_entity.dart';
+import 'package:drop/features/communications/domain/repositories/broadcast_repository.dart';
 
 class BroadcastRepositoryImpl implements BroadcastRepository {
   final BroadcastRemoteDataSource _remote;
@@ -43,4 +43,12 @@ class BroadcastRepositoryImpl implements BroadcastRepository {
     }
   }
 
+  @override
+  Future<void> delete(String id) async {
+    try {
+      await _remote.delete(id);
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
 }

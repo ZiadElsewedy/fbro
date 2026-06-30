@@ -1,8 +1,7 @@
-import 'package:fbro/core/extensions/firestore_extensions.dart';
+import 'package:drop/core/extensions/firestore_extensions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:fbro/core/enums/user_role.dart';
-import 'package:fbro/core/enums/approval_status.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/core/enums/user_role.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
 
 class UserModel {
   final String uid;
@@ -10,6 +9,8 @@ class UserModel {
   final String? displayName;
   final String? photoUrl;
   final String? phoneNumber;
+  final String? address;
+  final String? emergencyContact;
   final String authProvider;
   final bool isEmailVerified;
   final DateTime? createdAt;
@@ -18,8 +19,12 @@ class UserModel {
   final String? branchId;
   final bool isActive;
   final String? assignedShift;
-  // ─── Approval (account activation) ──────────────────────────
-  final ApprovalStatus approvalStatus;
+  final String? position;
+  // ─── Account provisioning (admin-created) ───────────────────
+  final bool mustChangePassword;
+  final bool isProfileCompleted;
+  final String employmentStatus;
+  final String? createdBy;
 
   const UserModel({
     required this.uid,
@@ -28,13 +33,19 @@ class UserModel {
     this.displayName,
     this.photoUrl,
     this.phoneNumber,
+    this.address,
+    this.emergencyContact,
     this.isEmailVerified = false,
     this.createdAt,
     this.role = UserRole.employee,
     this.branchId,
     this.isActive = true,
     this.assignedShift,
-    this.approvalStatus = ApprovalStatus.approved,
+    this.position,
+    this.mustChangePassword = false,
+    this.isProfileCompleted = true,
+    this.employmentStatus = 'active',
+    this.createdBy,
   });
 
   factory UserModel.fromFirebaseUser(User user, {String authProvider = 'unknown'}) =>
@@ -54,6 +65,8 @@ class UserModel {
         displayName: entity.displayName,
         photoUrl: entity.photoUrl,
         phoneNumber: entity.phoneNumber,
+        address: entity.address,
+        emergencyContact: entity.emergencyContact,
         authProvider: entity.authProvider,
         isEmailVerified: entity.isEmailVerified,
         createdAt: entity.createdAt,
@@ -61,19 +74,26 @@ class UserModel {
         branchId: entity.branchId,
         isActive: entity.isActive,
         assignedShift: entity.assignedShift,
-        approvalStatus: entity.approvalStatus,
+        position: entity.position,
+        mustChangePassword: entity.mustChangePassword,
+        isProfileCompleted: entity.isProfileCompleted,
+        employmentStatus: entity.employmentStatus,
+        createdBy: entity.createdBy,
       );
 
   factory UserModel.fromMap(Map<String, dynamic> map) => UserModel(
-        // Defensive: a malformed / partial user doc (e.g. a phone-auth account
-        // with no email, or a doc seeded out-of-band in the console) must never
-        // crash a whole user-list load (schedule team, assignee picker, admin
-        // lists). Degrade to empty strings like every other model does.
+        // Defensive: a malformed / partial user doc must never crash a whole
+        // user-list load (schedule team, assignee picker, admin lists). Degrade
+        // to empty strings like every other model does.
         uid: map['uid'] as String? ?? '',
         email: map['email'] as String? ?? '',
-        displayName: map['displayName'] as String?,
+        // `name` maps to displayName (canonical), falling back to the legacy
+        // profile `fullName` key the same doc carries.
+        displayName: (map['displayName'] as String?) ?? (map['fullName'] as String?),
         photoUrl: map['photoUrl'] as String?,
         phoneNumber: map['phoneNumber'] as String?,
+        address: map['address'] as String?,
+        emergencyContact: map['emergencyContact'] as String?,
         authProvider: map['authProvider'] as String? ?? 'unknown',
         isEmailVerified: map['isEmailVerified'] as bool? ?? false,
         createdAt: map.date('createdAt'),
@@ -81,20 +101,29 @@ class UserModel {
         branchId: map['branchId'] as String?,
         isActive: map['isActive'] as bool? ?? true,
         assignedShift: map['assignedShift'] as String?,
-        approvalStatus: ApprovalStatus.fromString(map['approvalStatus'] as String?),
+        position: map['position'] as String?,
+        // Legacy / pre-migration docs lack these → default to NOT forced
+        // (mustChangePassword false, isProfileCompleted true) so they're never
+        // trapped in the onboarding flow.
+        mustChangePassword: map['mustChangePassword'] as bool? ?? false,
+        isProfileCompleted: map['isProfileCompleted'] as bool? ?? true,
+        employmentStatus: map['employmentStatus'] as String? ?? 'active',
+        createdBy: map['createdBy'] as String?,
       );
 
-  /// Identity/auth fields written on every sign-in (merge). The privileged
-  /// fields (`role`, `branchId`, `isActive`, `assignedShift`, `approvalStatus`)
-  /// are intentionally EXCLUDED here so a routine re-login can never overwrite an
-  /// admin-assigned role/branch or re-pend an approved account. Those are seeded
-  /// once on first document creation — see [UserRemoteDataSourceImpl.saveUser].
+  /// Identity/auth fields only. The privileged + provisioning fields (`role`,
+  /// `branchId`, `isActive`, `assignedShift`, `position`, `employmentStatus`,
+  /// `createdBy`, `mustChangePassword`, `isProfileCompleted`) are intentionally
+  /// EXCLUDED so a routine write can never overwrite admin-assigned values. Those
+  /// are seeded once, server-side, by the `createUserAccount` Cloud Function.
   Map<String, dynamic> toMap() => {
         'uid': uid,
         'email': email,
         'displayName': displayName,
         'photoUrl': photoUrl,
         'phoneNumber': phoneNumber,
+        'address': address,
+        'emergencyContact': emergencyContact,
         'authProvider': authProvider,
         'isEmailVerified': isEmailVerified,
       };
@@ -105,6 +134,8 @@ class UserModel {
         displayName: displayName,
         photoUrl: photoUrl,
         phoneNumber: phoneNumber,
+        address: address,
+        emergencyContact: emergencyContact,
         authProvider: authProvider,
         isEmailVerified: isEmailVerified,
         createdAt: createdAt,
@@ -112,6 +143,10 @@ class UserModel {
         branchId: branchId,
         isActive: isActive,
         assignedShift: assignedShift,
-        approvalStatus: approvalStatus,
+        position: position,
+        mustChangePassword: mustChangePassword,
+        isProfileCompleted: isProfileCompleted,
+        employmentStatus: employmentStatus,
+        createdBy: createdBy,
       );
 }

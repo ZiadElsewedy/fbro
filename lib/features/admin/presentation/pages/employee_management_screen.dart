@@ -1,23 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_motion.dart';
-import 'package:fbro/core/widgets/app_search_field.dart';
-import 'package:fbro/core/widgets/app_snackbar.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
-import 'package:fbro/features/admin/presentation/cubit/admin_users_cubit.dart';
-import 'package:fbro/features/admin/presentation/cubit/admin_users_state.dart';
-import 'package:fbro/features/admin/presentation/employee_metrics.dart';
-import 'package:fbro/features/admin/presentation/widgets/admin_user_card.dart';
-import 'package:fbro/features/admin/presentation/widgets/admin_user_sheets.dart';
-import 'package:fbro/features/admin/presentation/widgets/employee_card.dart';
-import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
-import 'package:fbro/features/task/domain/entities/task_entity.dart';
-import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
+import 'package:go_router/go_router.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/app_search_field.dart';
+import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/admin/presentation/cubit/admin_users_cubit.dart';
+import 'package:drop/features/admin/presentation/cubit/admin_users_state.dart';
+import 'package:drop/features/admin/presentation/employee_metrics.dart';
+import 'package:drop/features/admin/presentation/widgets/admin_user_card.dart';
+import 'package:drop/features/admin/presentation/widgets/admin_user_sheets.dart';
+import 'package:drop/features/admin/presentation/widgets/employee_card.dart';
+import 'package:drop/features/branch/domain/entities/branch_entity.dart';
+import 'package:drop/features/task/domain/entities/task_entity.dart';
+import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
 
 const _kAll = '__all__';
 const _kNone = '__none__';
@@ -99,20 +102,23 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: Text('Employees', style: AppTypography.h3),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'Refresh',
-            onPressed: () => context.read<AdminUsersCubit>().refresh(),
-          ),
-        ],
+    return AdaptiveScaffold(
+      title: 'Employees',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Refresh',
+          onPressed: () => context.read<AdminUsersCubit>().refresh(),
+        ),
+      ],
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push(RouteNames.adminCreateAccount),
+        backgroundColor: AppColors.accent,
+        foregroundColor: AppColors.onAccent,
+        icon: const Icon(Icons.person_add_alt_1_rounded),
+        label: Text('Create account',
+            style: AppTypography.label.copyWith(color: AppColors.onAccent)),
       ),
       body: BlocConsumer<AdminUsersCubit, AdminUsersState>(
         listener: (context, state) =>
@@ -261,10 +267,28 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         onPressed: () => _showDetails(user),
       ),
       AdminActionButton(
+        label: 'Edit Info',
+        icon: Icons.edit_outlined,
+        onPressed: () =>
+            showEditDetailsSheet(context: context, cubit: cubit, user: user),
+      ),
+      AdminActionButton(
         label: 'Change Branch',
         icon: Icons.store_mall_directory_outlined,
         onPressed: () =>
             showAssignBranchSheet(context: context, cubit: cubit, user: user),
+      ),
+      AdminActionButton(
+        label: 'Position',
+        icon: Icons.badge_outlined,
+        onPressed: () =>
+            showSetPositionSheet(context: context, cubit: cubit, user: user),
+      ),
+      AdminActionButton(
+        label: 'Reset',
+        icon: Icons.lock_reset_rounded,
+        onPressed: () =>
+            showResetAccountSheet(context: context, cubit: cubit, user: user),
       ),
       AdminActionButton(
         label: user.isActive ? 'Deactivate' : 'Activate',
@@ -293,15 +317,26 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _detail('Email', user.email),
+            if ((user.phoneNumber ?? '').trim().isNotEmpty)
+              _detail('Phone', user.phoneNumber!.trim()),
+            if ((user.address ?? '').trim().isNotEmpty)
+              _detail('Address', user.address!.trim()),
+            if ((user.emergencyContact ?? '').trim().isNotEmpty)
+              _detail('Emergency', user.emergencyContact!.trim()),
             _detail('Role', user.role.value),
+            if ((user.position ?? '').trim().isNotEmpty)
+              _detail('Position', user.position!.trim()),
             _detail(
                 'Branch',
                 user.branchId == null || user.branchId!.isEmpty
                     ? 'Unassigned'
                     : (_branchNames[user.branchId] ?? user.branchId!)),
             _detail('Status', user.isActive ? 'Active' : 'Inactive'),
-            _detail('Approval', user.approvalStatus.value),
-            _detail('Sign-in', user.authProvider),
+            _detail('Employment', user.employmentStatus),
+            if (user.mustChangePassword)
+              _detail('First login', 'Pending password change'),
+            if (!user.isProfileCompleted)
+              _detail('Onboarding', 'Profile not completed'),
           ],
         ),
         actions: [

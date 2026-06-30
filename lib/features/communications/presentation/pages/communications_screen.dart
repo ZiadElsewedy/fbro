@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/core/routes/route_names.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_dialog.dart';
-import 'package:fbro/core/widgets/app_empty_state.dart';
-import 'package:fbro/core/widgets/app_motion.dart';
-import 'package:fbro/core/widgets/app_snackbar.dart';
-import 'package:fbro/core/widgets/list_skeleton.dart';
-import 'package:fbro/features/communications/domain/entities/broadcast_entity.dart';
-import 'package:fbro/features/communications/presentation/cubit/broadcast_cubit.dart';
-import 'package:fbro/features/communications/presentation/cubit/broadcast_state.dart';
-import 'package:fbro/features/communications/presentation/widgets/broadcast_card.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
+import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/app_dialog.dart';
+import 'package:drop/core/widgets/app_empty_state.dart';
+import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/core/widgets/list_skeleton.dart';
+import 'package:drop/features/communications/domain/entities/broadcast_entity.dart';
+import 'package:drop/features/communications/presentation/cubit/broadcast_cubit.dart';
+import 'package:drop/features/communications/presentation/cubit/broadcast_state.dart';
+import 'package:drop/features/communications/presentation/widgets/broadcast_card.dart';
 
 /// The "···" overflow destinations — everything secondary lives here so the home
 /// stays the feed + one primary action.
@@ -95,65 +97,75 @@ class _CommunicationsScreenState extends State<CommunicationsScreen> {
         await cubit.setArchived(b.id, true);
       case BroadcastCardAction.unarchive:
         await cubit.setArchived(b.id, false);
+      case BroadcastCardAction.delete:
+        final ok = await showConfirmDialog(
+          context,
+          title: 'Delete broadcast?',
+          message:
+              '"${b.title}" will be permanently removed from the feed. This can\'t be undone.',
+          confirmLabel: 'Delete',
+          destructive: true,
+        );
+        if (!ok || !mounted) return;
+        await cubit.deleteBroadcast(b.id);
+        if (mounted) AppSnackbar.success(context, 'Broadcast deleted');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        titleSpacing: AppSpacing.pagePadding,
-        leading: _showArchived
-            ? IconButton(
-                tooltip: 'Back to feed',
-                icon: const Icon(Icons.arrow_back_rounded,
-                    color: AppColors.textPrimary),
-                onPressed: () => setState(() => _showArchived = false),
-              )
-            : null,
-        title: Text(_showArchived ? 'Archived' : 'Communications Center',
-            style: AppTypography.h3),
-        actions: [
-          PopupMenuButton<_NavMenu>(
-            tooltip: 'More',
-            icon: const Icon(Icons.more_vert_rounded,
-                color: AppColors.textSecondary),
-            color: AppColors.darkSurfaceElevated,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14)),
-            onSelected: _onMenu,
-            itemBuilder: (context) => [
-              _menuItem(_NavMenu.scheduled, Icons.schedule_rounded, 'Scheduled'),
-              _menuItem(_NavMenu.templates, Icons.dashboard_customize_outlined,
-                  'Templates'),
-              _menuItem(
-                  _NavMenu.toggleArchived,
-                  _showArchived ? Icons.inbox_rounded : Icons.archive_outlined,
-                  _showArchived ? 'Active feed' : 'Archived'),
-            ],
-          ),
-        ],
-      ),
+    return AdaptiveScaffold(
+      title: _showArchived ? 'Archived' : 'Communications Center',
+      leading: _showArchived
+          ? IconButton(
+              tooltip: 'Back to feed',
+              icon: const Icon(Icons.arrow_back_rounded,
+                  color: AppColors.textPrimary),
+              onPressed: () => setState(() => _showArchived = false),
+            )
+          : null,
+      actions: [
+        PopupMenuButton<_NavMenu>(
+          tooltip: 'More',
+          icon: const Icon(Icons.more_vert_rounded,
+              color: AppColors.textSecondary),
+          color: AppColors.darkSurfaceElevated,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          onSelected: _onMenu,
+          itemBuilder: (context) => [
+            _menuItem(_NavMenu.scheduled, Icons.schedule_rounded, 'Scheduled'),
+            _menuItem(_NavMenu.templates, Icons.dashboard_customize_outlined,
+                'Templates'),
+            _menuItem(
+                _NavMenu.toggleArchived,
+                _showArchived ? Icons.inbox_rounded : Icons.archive_outlined,
+                _showArchived ? 'Active feed' : 'Archived'),
+          ],
+        ),
+      ],
       floatingActionButton: _showArchived
           ? null
           : FloatingActionButton.extended(
               onPressed: () => context.push(RouteNames.communicationsCompose),
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
+              backgroundColor: AppColors.accent,
+              foregroundColor: AppColors.onAccent,
               icon: const Icon(Icons.add_rounded),
               label: Text('New Broadcast',
                   style:
-                      AppTypography.label.copyWith(color: AppColors.onPrimary)),
+                      AppTypography.label.copyWith(color: AppColors.onAccent)),
             ),
       body: BlocConsumer<BroadcastCubit, BroadcastState>(
         listener: (context, state) =>
             state.whenOrNull(error: (m) => AppSnackbar.error(context, m)),
         builder: (context, state) => state.maybeWhen(
           loading: () => const ListSkeleton(),
-          loaded: (broadcasts, _) => _feed(broadcasts.where(_matches).toList()),
+          loaded: (broadcasts, _) {
+            final feed = broadcasts.where(_matches).toList();
+            return context.isDesktop
+                ? _desktopLayout(feed, broadcasts)
+                : _feed(feed);
+          },
           error: (_) => _errorState(),
           orElse: () => const SizedBox.shrink(),
         ),
@@ -237,4 +249,154 @@ class _CommunicationsScreenState extends State<CommunicationsScreen> {
               style: AppTypography.label.copyWith(color: AppColors.primary)),
         ),
       );
+
+  // ── Desktop: command-center (history feed + delivery/command panel) ──
+  Widget _desktopLayout(
+      List<BroadcastEntity> feed, List<BroadcastEntity> all) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: _feed(feed)),
+        const VerticalDivider(width: 1, color: AppColors.darkBorder),
+        SizedBox(width: 320, child: _commandPanel(all)),
+      ],
+    );
+  }
+
+  Widget _commandPanel(List<BroadcastEntity> all) {
+    final active = all.where((b) => b.isActive).toList();
+    final sent = active.length;
+    final recipients =
+        active.fold<int>(0, (s, b) => s + (b.recipientCount ?? 0));
+    final delivered =
+        active.fold<int>(0, (s, b) => s + (b.deliveredCount ?? 0));
+    final rate = recipients == 0 ? 0.0 : delivered / recipients;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 24, 40, 48),
+      children: [
+        _panelHeader('DELIVERY'),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            Expanded(child: _statTile('Broadcasts', '$sent')),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(child: _statTile('Recipients', '$recipients')),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: [
+            Expanded(child: _statTile('Delivered', '$delivered')),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _statTile('Delivery rate',
+                  recipients == 0 ? '—' : '${(rate * 100).round()}%',
+                  accent: true),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        _panelHeader('MANAGE'),
+        const SizedBox(height: AppSpacing.md),
+        _panelAction(
+          icon: Icons.add_rounded,
+          label: 'New Broadcast',
+          accent: true,
+          onTap: () => context.push(RouteNames.communicationsCompose),
+        ),
+        _panelAction(
+          icon: Icons.dashboard_customize_outlined,
+          label: 'Templates',
+          onTap: () => context.push(RouteNames.communicationsTemplates),
+        ),
+        _panelAction(
+          icon: Icons.schedule_rounded,
+          label: 'Scheduled',
+          onTap: () => context.push(RouteNames.communicationsSchedules),
+        ),
+        _panelAction(
+          icon: _showArchived ? Icons.inbox_rounded : Icons.archive_outlined,
+          label: _showArchived ? 'Active feed' : 'Archived',
+          onTap: () => setState(() => _showArchived = !_showArchived),
+        ),
+      ],
+    );
+  }
+
+  Widget _panelHeader(String label) => Text(
+        label,
+        style: AppTypography.caption.copyWith(
+          color: AppColors.textTertiary,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+        ),
+      );
+
+  Widget _statTile(String label, String value, {bool accent = false}) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: accent ? AppColors.accentBorder : AppColors.darkBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value,
+              style: AppTypography.h2.copyWith(
+                  color: accent ? AppColors.accent : AppColors.textPrimary)),
+          const SizedBox(height: 2),
+          Text(label, style: AppTypography.caption),
+        ],
+      ),
+    );
+  }
+
+  Widget _panelAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool accent = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Material(
+        color: accent ? AppColors.accentSurface : AppColors.darkSurface,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md, vertical: 13),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color:
+                      accent ? AppColors.accentBorder : AppColors.darkBorder),
+            ),
+            child: Row(
+              children: [
+                Icon(icon,
+                    size: 18,
+                    color: accent ? AppColors.accent : AppColors.textSecondary),
+                const SizedBox(width: AppSpacing.md),
+                Text(label,
+                    style: AppTypography.label.copyWith(
+                        color: accent
+                            ? AppColors.accent
+                            : AppColors.textPrimary)),
+                const Spacer(),
+                Icon(Icons.chevron_right_rounded,
+                    size: 16, color: AppColors.textTertiary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

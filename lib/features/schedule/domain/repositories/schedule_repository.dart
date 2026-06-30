@@ -1,8 +1,8 @@
-import 'package:fbro/core/enums/schedule_day.dart';
-import 'package:fbro/core/enums/schedule_shift.dart';
-import 'package:fbro/core/enums/swap_status.dart';
-import 'package:fbro/features/schedule/domain/entities/shift_swap_entity.dart';
-import 'package:fbro/features/schedule/domain/entities/weekly_schedule_entity.dart';
+import 'package:drop/core/enums/schedule_day.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/core/enums/swap_status.dart';
+import 'package:drop/features/schedule/domain/entities/shift_swap_entity.dart';
+import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
 
 /// Contract for weekly-schedule + shift-swap data access (Phase 7). Branch/role
 /// access is enforced server-side by `firestore.rules` (admin: all branches;
@@ -52,6 +52,13 @@ abstract class ScheduleRepository {
   /// Every branch's swap requests — admin only (powers the Admin Home overview).
   Future<List<ShiftSwapEntity>> getAllSwaps();
 
+  /// Realtime swap streams (newest first) — the live source behind employee /
+  /// manager / admin pending-swap surfaces, so an accept/reject/approve reflects
+  /// instantly without a manual refresh.
+  Stream<List<ShiftSwapEntity>> watchEmployeeSwaps(String uid);
+  Stream<List<ShiftSwapEntity>> watchBranchSwaps(String branchId);
+  Stream<List<ShiftSwapEntity>> watchAllSwaps();
+
   /// Creates a swap request (status pending).
   Future<ShiftSwapEntity> createSwap(ShiftSwapEntity swap);
 
@@ -63,7 +70,11 @@ abstract class ScheduleRepository {
     required SwapStatus status,
   });
 
-  /// Manager approval: marks the swap [SwapStatus.managerApproved] **and**
-  /// applies it to the schedule (requester removed, target added on the slot).
+  /// Manager approval: finalizes the swap via the server-authoritative
+  /// `approveSwap` Cloud Function, which re-validates against the freshest
+  /// schedule and **atomically exchanges the two slots** — the requester and the
+  /// target trade shifts on the same day (Ziad's Night ⇄ Ahmed's Morning), then
+  /// the swap is marked [SwapStatus.managerApproved]. Either both move or nothing
+  /// changes; a partial roster mutation is impossible.
   Future<void> managerApproveSwap(ShiftSwapEntity swap);
 }

@@ -23,6 +23,14 @@ mixin _$UserEntity {
   String? get displayName => throw _privateConstructorUsedError;
   String? get photoUrl => throw _privateConstructorUsedError;
   String? get phoneNumber => throw _privateConstructorUsedError;
+
+  /// Home / mailing address. Optional contact detail an admin can fill in or
+  /// edit at any time (also collected during profile onboarding).
+  String? get address => throw _privateConstructorUsedError;
+
+  /// Emergency contact (name/phone). Optional contact detail an admin can fill
+  /// in or edit at any time (also collected during profile onboarding).
+  String? get emergencyContact => throw _privateConstructorUsedError;
   bool get isEmailVerified => throw _privateConstructorUsedError;
   DateTime? get createdAt =>
       throw _privateConstructorUsedError; // ─── Roles & foundation (Phase 1) ───────────────────────────
@@ -32,16 +40,35 @@ mixin _$UserEntity {
   /// Store branch the user belongs to. Assigned by an admin; null until then.
   String? get branchId => throw _privateConstructorUsedError;
 
-  /// Soft-disable flag: a user can be deactivated without deletion.
+  /// Soft-disable flag: an admin can deactivate a user without deletion. This is
+  /// the SINGLE access gate — a deactivated account is blocked at login.
   bool get isActive => throw _privateConstructorUsedError;
 
-  /// Shift assigned to the user (used from Phase 2 onward); null until then.
-  String? get assignedShift =>
-      throw _privateConstructorUsedError; // ─── Approval (account activation) ──────────────────────────
-  /// Where the account sits in the approval lifecycle. New self-registrations
-  /// start [ApprovalStatus.pending]; a manager/admin approves them. Defaults to
-  /// [ApprovalStatus.approved] so legacy documents are never locked out.
-  ApprovalStatus get approvalStatus => throw _privateConstructorUsedError;
+  /// Shift assigned to the user; null until an admin sets it.
+  String? get assignedShift => throw _privateConstructorUsedError;
+
+  /// Job position / role title within the branch (e.g. "Cashier",
+  /// "Supervisor"). Optional — null means unspecified. Drives shift-swap role
+  /// compatibility when a branch enables `SwapPolicy.restrictToSamePosition`
+  /// (an unset position stays compatible with everyone).
+  String? get position =>
+      throw _privateConstructorUsedError; // ─── Account provisioning (admin-created, no self-registration) ─────
+  /// True until the user changes the admin-issued temporary password. While
+  /// set, the router confines them to the Force Password Change screen.
+  bool get mustChangePassword => throw _privateConstructorUsedError;
+
+  /// True once the user has filled their onboarding profile. While false, the
+  /// router confines them to the Profile Completion screen. Defaults true so
+  /// legacy / pre-migration documents are never trapped in onboarding.
+  bool get isProfileCompleted => throw _privateConstructorUsedError;
+
+  /// HR employment label (`active` / `suspended` / `terminated`). A record
+  /// field shown/edited in admin — it does NOT gate access (that's [isActive]).
+  String get employmentStatus => throw _privateConstructorUsedError;
+
+  /// The admin uid that provisioned this account (audit). Null for accounts
+  /// created out of band (e.g. the bootstrapped first admin).
+  String? get createdBy => throw _privateConstructorUsedError;
 
   /// Create a copy of UserEntity
   /// with the given fields replaced by the non-null parameter values.
@@ -64,13 +91,19 @@ abstract class $UserEntityCopyWith<$Res> {
     String? displayName,
     String? photoUrl,
     String? phoneNumber,
+    String? address,
+    String? emergencyContact,
     bool isEmailVerified,
     DateTime? createdAt,
     UserRole role,
     String? branchId,
     bool isActive,
     String? assignedShift,
-    ApprovalStatus approvalStatus,
+    String? position,
+    bool mustChangePassword,
+    bool isProfileCompleted,
+    String employmentStatus,
+    String? createdBy,
   });
 }
 
@@ -95,13 +128,19 @@ class _$UserEntityCopyWithImpl<$Res, $Val extends UserEntity>
     Object? displayName = freezed,
     Object? photoUrl = freezed,
     Object? phoneNumber = freezed,
+    Object? address = freezed,
+    Object? emergencyContact = freezed,
     Object? isEmailVerified = null,
     Object? createdAt = freezed,
     Object? role = null,
     Object? branchId = freezed,
     Object? isActive = null,
     Object? assignedShift = freezed,
-    Object? approvalStatus = null,
+    Object? position = freezed,
+    Object? mustChangePassword = null,
+    Object? isProfileCompleted = null,
+    Object? employmentStatus = null,
+    Object? createdBy = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -129,6 +168,14 @@ class _$UserEntityCopyWithImpl<$Res, $Val extends UserEntity>
                 ? _value.phoneNumber
                 : phoneNumber // ignore: cast_nullable_to_non_nullable
                       as String?,
+            address: freezed == address
+                ? _value.address
+                : address // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            emergencyContact: freezed == emergencyContact
+                ? _value.emergencyContact
+                : emergencyContact // ignore: cast_nullable_to_non_nullable
+                      as String?,
             isEmailVerified: null == isEmailVerified
                 ? _value.isEmailVerified
                 : isEmailVerified // ignore: cast_nullable_to_non_nullable
@@ -153,10 +200,26 @@ class _$UserEntityCopyWithImpl<$Res, $Val extends UserEntity>
                 ? _value.assignedShift
                 : assignedShift // ignore: cast_nullable_to_non_nullable
                       as String?,
-            approvalStatus: null == approvalStatus
-                ? _value.approvalStatus
-                : approvalStatus // ignore: cast_nullable_to_non_nullable
-                      as ApprovalStatus,
+            position: freezed == position
+                ? _value.position
+                : position // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            mustChangePassword: null == mustChangePassword
+                ? _value.mustChangePassword
+                : mustChangePassword // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            isProfileCompleted: null == isProfileCompleted
+                ? _value.isProfileCompleted
+                : isProfileCompleted // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            employmentStatus: null == employmentStatus
+                ? _value.employmentStatus
+                : employmentStatus // ignore: cast_nullable_to_non_nullable
+                      as String,
+            createdBy: freezed == createdBy
+                ? _value.createdBy
+                : createdBy // ignore: cast_nullable_to_non_nullable
+                      as String?,
           )
           as $Val,
     );
@@ -179,13 +242,19 @@ abstract class _$$UserEntityImplCopyWith<$Res>
     String? displayName,
     String? photoUrl,
     String? phoneNumber,
+    String? address,
+    String? emergencyContact,
     bool isEmailVerified,
     DateTime? createdAt,
     UserRole role,
     String? branchId,
     bool isActive,
     String? assignedShift,
-    ApprovalStatus approvalStatus,
+    String? position,
+    bool mustChangePassword,
+    bool isProfileCompleted,
+    String employmentStatus,
+    String? createdBy,
   });
 }
 
@@ -209,13 +278,19 @@ class __$$UserEntityImplCopyWithImpl<$Res>
     Object? displayName = freezed,
     Object? photoUrl = freezed,
     Object? phoneNumber = freezed,
+    Object? address = freezed,
+    Object? emergencyContact = freezed,
     Object? isEmailVerified = null,
     Object? createdAt = freezed,
     Object? role = null,
     Object? branchId = freezed,
     Object? isActive = null,
     Object? assignedShift = freezed,
-    Object? approvalStatus = null,
+    Object? position = freezed,
+    Object? mustChangePassword = null,
+    Object? isProfileCompleted = null,
+    Object? employmentStatus = null,
+    Object? createdBy = freezed,
   }) {
     return _then(
       _$UserEntityImpl(
@@ -243,6 +318,14 @@ class __$$UserEntityImplCopyWithImpl<$Res>
             ? _value.phoneNumber
             : phoneNumber // ignore: cast_nullable_to_non_nullable
                   as String?,
+        address: freezed == address
+            ? _value.address
+            : address // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        emergencyContact: freezed == emergencyContact
+            ? _value.emergencyContact
+            : emergencyContact // ignore: cast_nullable_to_non_nullable
+                  as String?,
         isEmailVerified: null == isEmailVerified
             ? _value.isEmailVerified
             : isEmailVerified // ignore: cast_nullable_to_non_nullable
@@ -267,10 +350,26 @@ class __$$UserEntityImplCopyWithImpl<$Res>
             ? _value.assignedShift
             : assignedShift // ignore: cast_nullable_to_non_nullable
                   as String?,
-        approvalStatus: null == approvalStatus
-            ? _value.approvalStatus
-            : approvalStatus // ignore: cast_nullable_to_non_nullable
-                  as ApprovalStatus,
+        position: freezed == position
+            ? _value.position
+            : position // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        mustChangePassword: null == mustChangePassword
+            ? _value.mustChangePassword
+            : mustChangePassword // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        isProfileCompleted: null == isProfileCompleted
+            ? _value.isProfileCompleted
+            : isProfileCompleted // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        employmentStatus: null == employmentStatus
+            ? _value.employmentStatus
+            : employmentStatus // ignore: cast_nullable_to_non_nullable
+                  as String,
+        createdBy: freezed == createdBy
+            ? _value.createdBy
+            : createdBy // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -286,13 +385,19 @@ class _$UserEntityImpl extends _UserEntity {
     this.displayName,
     this.photoUrl,
     this.phoneNumber,
+    this.address,
+    this.emergencyContact,
     this.isEmailVerified = false,
     this.createdAt,
     this.role = UserRole.employee,
     this.branchId,
     this.isActive = true,
     this.assignedShift,
-    this.approvalStatus = ApprovalStatus.approved,
+    this.position,
+    this.mustChangePassword = false,
+    this.isProfileCompleted = true,
+    this.employmentStatus = 'active',
+    this.createdBy,
   }) : super._();
 
   @override
@@ -307,6 +412,16 @@ class _$UserEntityImpl extends _UserEntity {
   final String? photoUrl;
   @override
   final String? phoneNumber;
+
+  /// Home / mailing address. Optional contact detail an admin can fill in or
+  /// edit at any time (also collected during profile onboarding).
+  @override
+  final String? address;
+
+  /// Emergency contact (name/phone). Optional contact detail an admin can fill
+  /// in or edit at any time (also collected during profile onboarding).
+  @override
+  final String? emergencyContact;
   @override
   @JsonKey()
   final bool isEmailVerified;
@@ -322,25 +437,50 @@ class _$UserEntityImpl extends _UserEntity {
   @override
   final String? branchId;
 
-  /// Soft-disable flag: a user can be deactivated without deletion.
+  /// Soft-disable flag: an admin can deactivate a user without deletion. This is
+  /// the SINGLE access gate — a deactivated account is blocked at login.
   @override
   @JsonKey()
   final bool isActive;
 
-  /// Shift assigned to the user (used from Phase 2 onward); null until then.
+  /// Shift assigned to the user; null until an admin sets it.
   @override
   final String? assignedShift;
-  // ─── Approval (account activation) ──────────────────────────
-  /// Where the account sits in the approval lifecycle. New self-registrations
-  /// start [ApprovalStatus.pending]; a manager/admin approves them. Defaults to
-  /// [ApprovalStatus.approved] so legacy documents are never locked out.
+
+  /// Job position / role title within the branch (e.g. "Cashier",
+  /// "Supervisor"). Optional — null means unspecified. Drives shift-swap role
+  /// compatibility when a branch enables `SwapPolicy.restrictToSamePosition`
+  /// (an unset position stays compatible with everyone).
+  @override
+  final String? position;
+  // ─── Account provisioning (admin-created, no self-registration) ─────
+  /// True until the user changes the admin-issued temporary password. While
+  /// set, the router confines them to the Force Password Change screen.
   @override
   @JsonKey()
-  final ApprovalStatus approvalStatus;
+  final bool mustChangePassword;
+
+  /// True once the user has filled their onboarding profile. While false, the
+  /// router confines them to the Profile Completion screen. Defaults true so
+  /// legacy / pre-migration documents are never trapped in onboarding.
+  @override
+  @JsonKey()
+  final bool isProfileCompleted;
+
+  /// HR employment label (`active` / `suspended` / `terminated`). A record
+  /// field shown/edited in admin — it does NOT gate access (that's [isActive]).
+  @override
+  @JsonKey()
+  final String employmentStatus;
+
+  /// The admin uid that provisioned this account (audit). Null for accounts
+  /// created out of band (e.g. the bootstrapped first admin).
+  @override
+  final String? createdBy;
 
   @override
   String toString() {
-    return 'UserEntity(uid: $uid, email: $email, authProvider: $authProvider, displayName: $displayName, photoUrl: $photoUrl, phoneNumber: $phoneNumber, isEmailVerified: $isEmailVerified, createdAt: $createdAt, role: $role, branchId: $branchId, isActive: $isActive, assignedShift: $assignedShift, approvalStatus: $approvalStatus)';
+    return 'UserEntity(uid: $uid, email: $email, authProvider: $authProvider, displayName: $displayName, photoUrl: $photoUrl, phoneNumber: $phoneNumber, address: $address, emergencyContact: $emergencyContact, isEmailVerified: $isEmailVerified, createdAt: $createdAt, role: $role, branchId: $branchId, isActive: $isActive, assignedShift: $assignedShift, position: $position, mustChangePassword: $mustChangePassword, isProfileCompleted: $isProfileCompleted, employmentStatus: $employmentStatus, createdBy: $createdBy)';
   }
 
   @override
@@ -358,6 +498,9 @@ class _$UserEntityImpl extends _UserEntity {
                 other.photoUrl == photoUrl) &&
             (identical(other.phoneNumber, phoneNumber) ||
                 other.phoneNumber == phoneNumber) &&
+            (identical(other.address, address) || other.address == address) &&
+            (identical(other.emergencyContact, emergencyContact) ||
+                other.emergencyContact == emergencyContact) &&
             (identical(other.isEmailVerified, isEmailVerified) ||
                 other.isEmailVerified == isEmailVerified) &&
             (identical(other.createdAt, createdAt) ||
@@ -369,12 +512,20 @@ class _$UserEntityImpl extends _UserEntity {
                 other.isActive == isActive) &&
             (identical(other.assignedShift, assignedShift) ||
                 other.assignedShift == assignedShift) &&
-            (identical(other.approvalStatus, approvalStatus) ||
-                other.approvalStatus == approvalStatus));
+            (identical(other.position, position) ||
+                other.position == position) &&
+            (identical(other.mustChangePassword, mustChangePassword) ||
+                other.mustChangePassword == mustChangePassword) &&
+            (identical(other.isProfileCompleted, isProfileCompleted) ||
+                other.isProfileCompleted == isProfileCompleted) &&
+            (identical(other.employmentStatus, employmentStatus) ||
+                other.employmentStatus == employmentStatus) &&
+            (identical(other.createdBy, createdBy) ||
+                other.createdBy == createdBy));
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     runtimeType,
     uid,
     email,
@@ -382,14 +533,20 @@ class _$UserEntityImpl extends _UserEntity {
     displayName,
     photoUrl,
     phoneNumber,
+    address,
+    emergencyContact,
     isEmailVerified,
     createdAt,
     role,
     branchId,
     isActive,
     assignedShift,
-    approvalStatus,
-  );
+    position,
+    mustChangePassword,
+    isProfileCompleted,
+    employmentStatus,
+    createdBy,
+  ]);
 
   /// Create a copy of UserEntity
   /// with the given fields replaced by the non-null parameter values.
@@ -408,13 +565,19 @@ abstract class _UserEntity extends UserEntity {
     final String? displayName,
     final String? photoUrl,
     final String? phoneNumber,
+    final String? address,
+    final String? emergencyContact,
     final bool isEmailVerified,
     final DateTime? createdAt,
     final UserRole role,
     final String? branchId,
     final bool isActive,
     final String? assignedShift,
-    final ApprovalStatus approvalStatus,
+    final String? position,
+    final bool mustChangePassword,
+    final bool isProfileCompleted,
+    final String employmentStatus,
+    final String? createdBy,
   }) = _$UserEntityImpl;
   const _UserEntity._() : super._();
 
@@ -430,6 +593,16 @@ abstract class _UserEntity extends UserEntity {
   String? get photoUrl;
   @override
   String? get phoneNumber;
+
+  /// Home / mailing address. Optional contact detail an admin can fill in or
+  /// edit at any time (also collected during profile onboarding).
+  @override
+  String? get address;
+
+  /// Emergency contact (name/phone). Optional contact detail an admin can fill
+  /// in or edit at any time (also collected during profile onboarding).
+  @override
+  String? get emergencyContact;
   @override
   bool get isEmailVerified;
   @override
@@ -442,18 +615,41 @@ abstract class _UserEntity extends UserEntity {
   @override
   String? get branchId;
 
-  /// Soft-disable flag: a user can be deactivated without deletion.
+  /// Soft-disable flag: an admin can deactivate a user without deletion. This is
+  /// the SINGLE access gate — a deactivated account is blocked at login.
   @override
   bool get isActive;
 
-  /// Shift assigned to the user (used from Phase 2 onward); null until then.
+  /// Shift assigned to the user; null until an admin sets it.
   @override
-  String? get assignedShift; // ─── Approval (account activation) ──────────────────────────
-  /// Where the account sits in the approval lifecycle. New self-registrations
-  /// start [ApprovalStatus.pending]; a manager/admin approves them. Defaults to
-  /// [ApprovalStatus.approved] so legacy documents are never locked out.
+  String? get assignedShift;
+
+  /// Job position / role title within the branch (e.g. "Cashier",
+  /// "Supervisor"). Optional — null means unspecified. Drives shift-swap role
+  /// compatibility when a branch enables `SwapPolicy.restrictToSamePosition`
+  /// (an unset position stays compatible with everyone).
   @override
-  ApprovalStatus get approvalStatus;
+  String? get position; // ─── Account provisioning (admin-created, no self-registration) ─────
+  /// True until the user changes the admin-issued temporary password. While
+  /// set, the router confines them to the Force Password Change screen.
+  @override
+  bool get mustChangePassword;
+
+  /// True once the user has filled their onboarding profile. While false, the
+  /// router confines them to the Profile Completion screen. Defaults true so
+  /// legacy / pre-migration documents are never trapped in onboarding.
+  @override
+  bool get isProfileCompleted;
+
+  /// HR employment label (`active` / `suspended` / `terminated`). A record
+  /// field shown/edited in admin — it does NOT gate access (that's [isActive]).
+  @override
+  String get employmentStatus;
+
+  /// The admin uid that provisioned this account (audit). Null for accounts
+  /// created out of band (e.g. the bootstrapped first admin).
+  @override
+  String? get createdBy;
 
   /// Create a copy of UserEntity
   /// with the given fields replaced by the non-null parameter values.

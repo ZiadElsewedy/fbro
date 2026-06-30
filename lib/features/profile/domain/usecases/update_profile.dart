@@ -1,5 +1,5 @@
-import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
-import 'package:fbro/features/profile/domain/repositories/profile_repository.dart';
+import 'package:drop/features/profile/domain/entities/profile_entity.dart';
+import 'package:drop/features/profile/domain/repositories/profile_repository.dart';
 
 class UpdateProfile {
   final ProfileRepository _repository;
@@ -18,6 +18,8 @@ class UpdateProfile {
     DateTime? birthDate,
     String? profileImage,
     String? coverImage,
+    String? emergencyContact,
+    String? address,
   }) =>
       _repository.updateProfile(
         uid: uid,
@@ -32,5 +34,7 @@ class UpdateProfile {
         birthDate: birthDate,
         profileImage: profileImage,
         coverImage: coverImage,
+        emergencyContact: emergencyContact,
+        address: address,
       );
 }

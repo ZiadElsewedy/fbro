@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fbro/core/errors/failures.dart';
-import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
-import 'package:fbro/features/profile/domain/usecases/check_username.dart';
-import 'package:fbro/features/profile/domain/usecases/get_profile.dart';
-import 'package:fbro/features/profile/domain/usecases/update_profile.dart';
-import 'package:fbro/features/profile/domain/usecases/upload_cover_image.dart';
-import 'package:fbro/features/profile/domain/usecases/upload_profile_image.dart';
+import 'package:drop/core/errors/failures.dart';
+import 'package:drop/features/profile/domain/entities/profile_entity.dart';
+import 'package:drop/features/profile/domain/usecases/check_username.dart';
+import 'package:drop/features/profile/domain/usecases/get_profile.dart';
+import 'package:drop/features/profile/domain/usecases/update_profile.dart';
+import 'package:drop/features/profile/domain/usecases/upload_cover_image.dart';
+import 'package:drop/features/profile/domain/usecases/upload_profile_image.dart';
 import 'profile_state.dart';
 
 class ProfileCubit extends Cubit<ProfileState> {
@@ -82,6 +82,8 @@ class ProfileCubit extends Cubit<ProfileState> {
     DateTime? birthDate,
     File? avatarFile,
     File? coverFile,
+    String? emergencyContact,
+    String? address,
   }) async {
     final current = _current;
     if (current == null) return;
@@ -136,6 +138,8 @@ class ProfileCubit extends Cubit<ProfileState> {
         birthDate: birthDate,
         profileImage: avatarUrl,
         coverImage: coverUrl,
+        emergencyContact: emergencyContact,
+        address: address,
       );
       _loadedUid = uid;
       emit(ProfileState.saved(updated));

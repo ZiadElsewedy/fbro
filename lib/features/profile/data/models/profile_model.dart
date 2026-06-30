@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:fbro/core/extensions/firestore_extensions.dart';
-import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
+import 'package:drop/core/extensions/firestore_extensions.dart';
+import 'package:drop/features/profile/domain/entities/profile_entity.dart';
 
 /// Firestore serialization for [ProfileEntity], stored in `users/{uid}`.
 ///
@@ -66,6 +66,8 @@ class ProfileModel {
     DateTime? birthDate,
     String? profileImage,
     String? coverImage,
+    String? emergencyContact,
+    String? address,
   }) {
     final map = <String, dynamic>{'updatedAt': FieldValue.serverTimestamp()};
     if (fullName != null) {
@@ -85,6 +87,9 @@ class ProfileModel {
       map['photoUrl'] = profileImage; // legacy sync
     }
     if (coverImage != null) map['coverImage'] = coverImage;
+    // Onboarding fields (Profile Completion). Stored on users/{uid}.
+    if (emergencyContact != null) map['emergencyContact'] = emergencyContact;
+    if (address != null) map['address'] = address;
     return map;
   }
 }

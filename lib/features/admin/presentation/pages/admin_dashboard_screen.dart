@@ -1,36 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:fbro/core/enums/task_status.dart';
-import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/core/routes/route_names.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/action_card.dart';
-import 'package:fbro/core/widgets/admin_section_header.dart';
-import 'package:fbro/core/widgets/app_motion.dart';
-import 'package:fbro/core/widgets/dashboard_metric_card.dart';
-import 'package:fbro/core/widgets/brand_watermark.dart';
-import 'package:fbro/core/widgets/glass_container.dart';
-import 'package:fbro/core/widgets/status_badge.dart';
-import 'package:fbro/core/widgets/user_avatar.dart';
-import 'package:fbro/features/admin/presentation/cubit/admin_users_cubit.dart';
-import 'package:fbro/features/admin/presentation/widgets/pending_actions.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
-import 'package:fbro/features/schedule/domain/entities/shift_swap_entity.dart';
-import 'package:fbro/features/schedule/presentation/cubit/shift_swap_cubit.dart';
-import 'package:fbro/features/statistics/domain/entities/statistics_entity.dart';
-import 'package:fbro/features/statistics/presentation/cubit/statistics_cubit.dart';
-import 'package:fbro/features/statistics/presentation/cubit/statistics_state.dart';
-import 'package:fbro/features/task/domain/entities/task_entity.dart';
-import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
-import 'package:fbro/features/task/presentation/cubit/task_state.dart';
+import 'package:drop/core/enums/task_status.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/action_card.dart';
+import 'package:drop/core/widgets/admin_section_header.dart';
+import 'package:drop/core/widgets/animated_count.dart';
+import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/dashboard_metric_card.dart';
+import 'package:drop/core/widgets/brand_watermark.dart';
+import 'package:drop/core/widgets/glass_container.dart';
+import 'package:drop/features/admin/presentation/widgets/pending_actions.dart';
+import 'package:drop/features/auth/presentation/widgets/app_button.dart';
+import 'package:drop/features/schedule/presentation/cubit/shift_swap_cubit.dart';
+import 'package:drop/features/schedule/presentation/cubit/shift_swap_state.dart';
+import 'package:drop/features/statistics/domain/entities/statistics_entity.dart';
+import 'package:drop/features/statistics/presentation/cubit/statistics_cubit.dart';
+import 'package:drop/features/statistics/presentation/cubit/statistics_state.dart';
+import 'package:drop/features/task/domain/entities/task_entity.dart';
+import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
+import 'package:drop/features/task/presentation/cubit/task_state.dart';
 
-/// Admin Home — an operations **command center**. Pulls from three live sources
-/// (statistics · the task stream · pending users) so an admin instantly sees
-/// branch health, workforce, pending approvals, active tasks and operational
+/// Admin Home — an operations **command center**. Pulls from live sources
+/// (statistics · the task stream · shift swaps) so an admin instantly sees
+/// branch health, workforce, tasks waiting review, overdue work and operational
 /// issues, then reaches any critical action in one tap.
 ///
 /// Composition over a monolith: every visual is a shared component
@@ -44,9 +41,6 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  List<UserEntity> _pending = const [];
-  List<ShiftSwapEntity> _pendingSwaps = const [];
-
   @override
   void initState() {
     super.initState();
@@ -61,17 +55,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // TaskCubit.load is now self-guarding (no-op if already streaming this user
     // unless forced), so a revisit doesn't re-subscribe.
     context.read<TaskCubit>().load(user, forceRefresh: force);
-    // Capture cubits before awaiting so we don't touch context across the gap.
-    final usersCubit = context.read<AdminUsersCubit>();
-    final swapCubit = context.read<ShiftSwapCubit>();
-    final pending = await usersCubit.pendingUsers();
-    final swaps = await swapCubit.pendingSwaps();
-    if (mounted) {
-      setState(() {
-        _pending = pending;
-        _pendingSwaps = swaps;
-      });
-    }
+    // Pending swaps now stream live (scope = all branches), so the Pending
+    // Actions swap count updates the instant a swap settles — no refresh.
+    context.read<ShiftSwapCubit>().loadAll(force: force);
   }
 
   @override
@@ -79,7 +65,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // No top-level cubit subscription: the ListView scaffold + static sections
     // build once. Each data-driven section subscribes to only what it needs via
     // a scoped builder below, so a task-stream emit no longer rebuilds the whole
-    // screen. `_pending`/`_pendingSwaps` are local (setState on load only).
+    // screen. `_pending` is local (setState on load); swaps stream live.
     final name = context.currentUser?.displayName;
 
     // Stable keys + a fixed per-section stagger so the entrance plays once and
@@ -107,15 +93,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           sec(
               'hero',
               _DynamicSection(
-                  builder: (s, overdue) => _Hero(stats: s, overdue: overdue))),
+                  builder: (s, overdue, reviews) =>
+                      _Hero(stats: s, overdue: overdue, reviews: reviews))),
           const SizedBox(height: AppSpacing.xl),
           // Always rendered — shows an all-clear state when empty, so the panel
           // never silently disappears.
-          sec('pa-header', _DynamicSection(builder: (s, overdue) {
-            final pending = _pending.length +
-                _pendingSwaps.length +
-                (s?.waitingReviews ?? 0) +
-                overdue;
+          sec('pa-header', _PendingSection(builder: (s, overdue, reviews, swaps) {
+            final pending = swaps + reviews + overdue;
             return AdminSectionHeader(
               title: 'Pending Actions',
               subtitle:
@@ -124,15 +108,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           })),
           sec(
               'pa',
-              _DynamicSection(
-                  builder: (s, overdue) => PendingActions(
-                        swaps: _pendingSwaps.length,
-                        approvals: _pending.length,
-                        reviews: s?.waitingReviews ?? 0,
+              _PendingSection(
+                  builder: (s, overdue, reviews, swaps) => PendingActions(
+                        swaps: swaps,
+                        reviews: reviews,
                         overdue: overdue,
                         onSwaps: () => context.push(RouteNames.adminSchedule),
-                        onApprovals: () =>
-                            context.push(RouteNames.adminApprovals),
                         onReviews: () => context.push(RouteNames.adminReview),
                         onOverdue: () => context.push(RouteNames.adminTasks),
                       ))),
@@ -143,18 +124,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(height: AppSpacing.xl),
           sec('qa-h', const AdminSectionHeader(title: 'Quick actions')),
           sec('qa', _quickActions()),
-          if (_pending.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xl),
-            sec(
-                'pending-h',
-                AdminSectionHeader(
-                  title: 'Pending approvals',
-                  subtitle: '${_pending.length} awaiting review',
-                  actionLabel: 'Review all',
-                  onAction: () => context.push(RouteNames.adminApprovals),
-                )),
-            sec('pending-list', _PendingList(users: _pending)),
-          ],
           const SizedBox(height: AppSpacing.xl),
           sec('manage-h', const AdminSectionHeader(title: 'Manage')),
           sec('manage', _manage()),
@@ -215,8 +184,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
       ActionCard(
         icon: Icons.person_add_alt_1_outlined,
-        title: 'Add Manager',
-        onTap: () => context.push(RouteNames.adminManagers),
+        title: 'Create Account',
+        onTap: () => context.push(RouteNames.adminCreateAccount),
       ),
       ActionCard(
         icon: Icons.assignment_add,
@@ -224,9 +193,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         onTap: () => context.push(RouteNames.adminTasks),
       ),
       ActionCard(
-        icon: Icons.how_to_reg_outlined,
-        title: 'Approve Employee',
-        onTap: () => context.push(RouteNames.adminApprovals),
+        icon: Icons.supervisor_account_outlined,
+        title: 'Add Manager',
+        onTap: () => context.push(RouteNames.adminManagers),
       ),
     ]);
   }
@@ -309,7 +278,8 @@ class _StatsSection extends StatelessWidget {
 /// whole task list, so a task emit that doesn't move the number rebuilds nothing.
 class _DynamicSection extends StatelessWidget {
   const _DynamicSection({required this.builder});
-  final Widget Function(StatisticsEntity? stats, int overdue) builder;
+  final Widget Function(StatisticsEntity? stats, int overdue, int reviews)
+      builder;
 
   @override
   Widget build(BuildContext context) {
@@ -317,13 +287,45 @@ class _DynamicSection extends StatelessWidget {
       builder: (context, statsState) {
         final stats =
             statsState.maybeWhen(loaded: (s) => s, orElse: () => null);
-        return BlocSelector<TaskCubit, TaskState, int>(
-          selector: (state) => _overdueCount(state.maybeWhen(
-              loaded: (t, _, _, _, _) => t,
-              orElse: () => const <TaskEntity>[])),
-          builder: (context, overdue) => builder(stats, overdue),
+        // Both counts come from the LIVE task stream (not the TTL-cached stats),
+        // so reviewing/finishing a task updates Pending Actions + the hero
+        // immediately. The record selector still rebuilds only when one of the
+        // two numbers actually moves.
+        return BlocSelector<TaskCubit, TaskState, ({int overdue, int reviews})>(
+          selector: (state) {
+            final tasks = state.maybeWhen(
+                loaded: (t, _, _, _, _) => t,
+                orElse: () => const <TaskEntity>[]);
+            return (overdue: _overdueCount(tasks), reviews: _reviewCount(tasks));
+          },
+          builder: (context, c) => builder(stats, c.overdue, c.reviews),
         );
       },
+    );
+  }
+}
+
+/// Like [_DynamicSection] but also threads the **live unresolved swap count**
+/// from `ShiftSwapCubit` (scope = all branches) — so Pending Actions' swap row
+/// updates the instant a swap is approved/rejected, with no refresh. Rebuilds
+/// only when the swap count, overdue or review numbers actually move.
+class _PendingSection extends StatelessWidget {
+  const _PendingSection({required this.builder});
+  final Widget Function(
+      StatisticsEntity? stats, int overdue, int reviews, int swaps) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocSelector<ShiftSwapCubit, ShiftSwapState, int>(
+      selector: (state) => state.maybeWhen(
+        loaded: (swaps, _) =>
+            swaps.where((s) => !s.status.isResolved).length,
+        orElse: () => 0,
+      ),
+      builder: (context, swaps) => _DynamicSection(
+        builder: (stats, overdue, reviews) =>
+            builder(stats, overdue, reviews, swaps),
+      ),
     );
   }
 }
@@ -393,15 +395,16 @@ class _Greeting extends StatelessWidget {
 // ─── Hero card ──────────────────────────────────────────────────────
 
 class _Hero extends StatelessWidget {
-  const _Hero({required this.stats, required this.overdue});
+  const _Hero({required this.stats, required this.overdue, required this.reviews});
   final StatisticsEntity? stats;
   final int overdue;
+
+  /// Live count of tasks awaiting review (from the task stream, not stats).
+  final int reviews;
 
   @override
   Widget build(BuildContext context) {
     final s = stats;
-    final pending = s?.pendingApprovals ?? 0;
-    final reviews = s?.waitingReviews ?? 0;
     final active = s?.activeTasks ?? 0;
     final doneToday = s?.completedTasksToday ?? 0;
     final totalToday = doneToday + active;
@@ -412,17 +415,7 @@ class _Hero extends StatelessWidget {
     final bool highlight;
     final IconData icon;
 
-    if (pending > 0) {
-      title = 'Pending approvals';
-      value = '$pending';
-      summary =
-          '$pending ${pending == 1 ? 'person is' : 'people are'} waiting for account approval.';
-      cta = 'Review approvals';
-      route = RouteNames.adminApprovals;
-      accent = AppColors.warning;
-      highlight = true;
-      icon = Icons.how_to_reg_rounded;
-    } else if (reviews > 0) {
+    if (reviews > 0) {
       title = 'Tasks awaiting review';
       value = '$reviews';
       summary =
@@ -446,7 +439,7 @@ class _Hero extends StatelessWidget {
       title = 'All clear';
       value = '$active';
       summary =
-          'No approvals or reviews waiting. $active active ${active == 1 ? 'task' : 'tasks'} in progress.';
+          'No reviews or overdue tasks waiting. $active active ${active == 1 ? 'task' : 'tasks'} in progress.';
       cta = 'View tasks';
       route = RouteNames.adminTasks;
       accent = AppColors.success;
@@ -495,7 +488,9 @@ class _Hero extends StatelessWidget {
           // Big metric beside its title + summary — one tight block, no dead space.
           Row(
             children: [
-              Text(value, style: AppTypography.displayMedium),
+              AnimatedCount(
+                  value: int.tryParse(value) ?? 0,
+                  style: AppTypography.displayMedium),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
@@ -541,71 +536,6 @@ class _Hero extends StatelessWidget {
   }
 }
 
-// ─── Pending approvals list ─────────────────────────────────────────
-
-class _PendingList extends StatelessWidget {
-  const _PendingList({required this.users});
-  final List<UserEntity> users;
-
-  @override
-  Widget build(BuildContext context) {
-    final shown = users.take(3).toList();
-    return GlassContainer(
-      onTap: () => context.push(RouteNames.adminApprovals),
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-      child: Column(
-        children: [
-          for (var i = 0; i < shown.length; i++) ...[
-            if (i > 0)
-              const Divider(color: AppColors.darkBorder, height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-              child: Row(
-                children: [
-                  UserAvatar.fromUser(shown[i], size: 38),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          (shown[i].displayName?.isNotEmpty ?? false)
-                              ? shown[i].displayName!
-                              : shown[i].email,
-                          style: AppTypography.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(shown[i].email,
-                            style: AppTypography.caption,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  StatusBadge(label: 'Pending', color: AppColors.warning),
-                ],
-              ),
-            ),
-          ],
-          if (users.length > shown.length)
-            Padding(
-              padding: const EdgeInsets.only(
-                  top: AppSpacing.xs, bottom: AppSpacing.sm),
-              child: Text(
-                '+${users.length - shown.length} more awaiting approval',
-                style: AppTypography.caption,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 // ─── Overdue helper ─────────────────────────────────────────────────
 
 /// Count of open tasks (pending/started/rejected) that are past their deadline —
@@ -621,4 +551,10 @@ int _overdueCount(List<TaskEntity> tasks) {
     return open && d.isBefore(now);
   }).length;
 }
+
+/// Count of tasks awaiting review — derived from the **live** task stream, not
+/// the TTL-cached `StatisticsCubit` (which isn't invalidated on a mutation), so
+/// the Pending Actions queue + hero drop the instant a review completes.
+int _reviewCount(List<TaskEntity> tasks) =>
+    tasks.where((t) => t.status == TaskStatus.waitingReview).length;
 

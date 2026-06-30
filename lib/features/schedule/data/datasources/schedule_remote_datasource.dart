@@ -1,12 +1,16 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:fbro/core/constants/app_constants.dart';
-import 'package:fbro/core/enums/schedule_day.dart';
-import 'package:fbro/core/enums/schedule_shift.dart';
-import 'package:fbro/core/enums/swap_status.dart';
-import 'package:fbro/core/errors/exceptions.dart';
-import 'package:fbro/features/schedule/data/models/shift_swap_model.dart';
-import 'package:fbro/features/schedule/data/models/weekly_schedule_model.dart';
-import 'package:fbro/features/schedule/domain/schedule_week.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:drop/core/constants/app_constants.dart';
+import 'package:drop/core/enums/schedule_day.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/core/enums/swap_status.dart';
+import 'package:drop/core/errors/exceptions.dart';
+import 'package:drop/features/schedule/data/models/shift_swap_model.dart';
+import 'package:drop/features/schedule/data/models/weekly_schedule_model.dart';
+import 'package:drop/features/schedule/domain/schedule_week.dart';
 
 /// Firestore access for the weekly schedule + shift swaps (Phase 7). Schedules
 /// live at `weekly_schedules/{branchId_yyyy-MM-dd}` (deterministic id → one doc
@@ -35,17 +39,36 @@ abstract class ScheduleRemoteDataSource {
   Future<List<ShiftSwapModel>> getBranchSwaps(String branchId);
   Future<List<ShiftSwapModel>> getEmployeeSwaps(String uid);
   Future<List<ShiftSwapModel>> getAllSwaps();
+
+  /// Realtime swap streams (newest first). [watchEmployeeSwaps] merges the
+  /// requester + target queries (Firestore has no cross-field OR); the branch /
+  /// all streams are a single snapshot query.
+  Stream<List<ShiftSwapModel>> watchEmployeeSwaps(String uid);
+  Stream<List<ShiftSwapModel>> watchBranchSwaps(String branchId);
+  Stream<List<ShiftSwapModel>> watchAllSwaps();
+
   Future<ShiftSwapModel> createSwap(ShiftSwapModel swap);
   Future<void> updateSwapStatus({
     required String swapId,
     required SwapStatus status,
   });
+
+  /// Finalizes a coworker-approved swap through the **callable `approveSwap`
+  /// Cloud Function** (the authority): it re-validates against the freshest
+  /// schedule and applies the exchange atomically. [scheduleId] is computed
+  /// client-side from the local week start (the function can't reproduce that id
+  /// in UTC) and is re-checked server-side against the swap's branch.
+  Future<void> approveSwap({
+    required String swapId,
+    required String scheduleId,
+  });
 }
 
 class ScheduleRemoteDataSourceImpl implements ScheduleRemoteDataSource {
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
 
-  ScheduleRemoteDataSourceImpl(this._firestore);
+  ScheduleRemoteDataSourceImpl(this._firestore, this._functions);
 
   CollectionReference<Map<String, dynamic>> get _schedules =>
       _firestore.collection(AppConstants.weeklySchedulesCollection);
@@ -185,6 +208,68 @@ class ScheduleRemoteDataSourceImpl implements ScheduleRemoteDataSource {
   }
 
   @override
+  Stream<List<ShiftSwapModel>> watchBranchSwaps(String branchId) {
+    return _swaps
+        .where('branchId', isEqualTo: branchId)
+        .snapshots()
+        .map((snap) => _sortSwaps(
+            snap.docs.map((d) => ShiftSwapModel.fromMap(d.data(), id: d.id))));
+  }
+
+  @override
+  Stream<List<ShiftSwapModel>> watchAllSwaps() {
+    return _swaps.snapshots().map((snap) => _sortSwaps(
+        snap.docs.map((d) => ShiftSwapModel.fromMap(d.data(), id: d.id))));
+  }
+
+  @override
+  Stream<List<ShiftSwapModel>> watchEmployeeSwaps(String uid) {
+    // Firestore has no cross-field OR on snapshots, so we run the requester +
+    // target queries and merge their latest results by id. A single broadcast
+    // controller fans the union out; both inner subscriptions are cancelled when
+    // the consumer cancels (the cubit, on close / re-subscribe).
+    final reqStream = _swaps.where('requesterId', isEqualTo: uid).snapshots();
+    final tgtStream = _swaps.where('targetId', isEqualTo: uid).snapshots();
+
+    late final StreamController<List<ShiftSwapModel>> controller;
+    StreamSubscription? reqSub;
+    StreamSubscription? tgtSub;
+    var reqMap = <String, ShiftSwapModel>{};
+    var tgtMap = <String, ShiftSwapModel>{};
+    var reqReady = false;
+    var tgtReady = false;
+
+    void emitUnion() {
+      if (!reqReady && !tgtReady) return;
+      final byId = <String, ShiftSwapModel>{...reqMap, ...tgtMap};
+      controller.add(_sortSwaps(byId.values));
+    }
+
+    Map<String, ShiftSwapModel> toMap(QuerySnapshot<Map<String, dynamic>> s) =>
+        {for (final d in s.docs) d.id: ShiftSwapModel.fromMap(d.data(), id: d.id)};
+
+    controller = StreamController<List<ShiftSwapModel>>(
+      onListen: () {
+        reqSub = reqStream.listen((s) {
+          reqMap = toMap(s);
+          reqReady = true;
+          emitUnion();
+        }, onError: controller.addError);
+        tgtSub = tgtStream.listen((s) {
+          tgtMap = toMap(s);
+          tgtReady = true;
+          emitUnion();
+        }, onError: controller.addError);
+      },
+      onCancel: () async {
+        await reqSub?.cancel();
+        await tgtSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  @override
   Future<ShiftSwapModel> createSwap(ShiftSwapModel swap) async {
     try {
       final docRef = _swaps.doc();
@@ -212,6 +297,50 @@ class ScheduleRemoteDataSourceImpl implements ScheduleRemoteDataSource {
       }, SetOptions(merge: true));
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to update the swap request.');
+    }
+  }
+
+  @override
+  Future<void> approveSwap({
+    required String swapId,
+    required String scheduleId,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('approveSwap');
+      await callable.call<Map<String, dynamic>>({
+        'swapId': swapId,
+        'scheduleId': scheduleId,
+      });
+    } on FirebaseFunctionsException catch (e, st) {
+      developer.log(
+        'approveSwap callable failed: code=${e.code} message=${e.message}',
+        name: 'schedule',
+        error: e,
+        stackTrace: st,
+      );
+      throw ServerException(_friendlyFunctionsError(e));
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to approve the swap.');
+    }
+  }
+
+  /// Maps a callable failure to a user-facing message. The function raises
+  /// full-sentence `HttpsError` messages for validation problems (surfaced
+  /// verbatim); transport-level failures raise bare upper-case codes, replaced
+  /// with guidance (mirrors `BroadcastRemoteDataSourceImpl`).
+  String _friendlyFunctionsError(FirebaseFunctionsException e) {
+    final msg = (e.message ?? '').trim();
+    if (msg.contains(' ')) return msg; // a real sentence vs. a raw code token
+    switch (e.code) {
+      case 'unauthenticated':
+      case 'permission-denied':
+        return 'Couldn’t reach the swap service. Please try again in a moment.';
+      case 'unavailable':
+        return 'Network problem — check your connection and try again.';
+      case 'not-found':
+        return 'The swap service isn’t available yet. Please try again later.';
+      default:
+        return 'Couldn’t approve the swap right now. Please try again.';
     }
   }
 

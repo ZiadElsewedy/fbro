@@ -1,23 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:fbro/core/enums/user_role.dart';
-import 'package:fbro/core/routes/route_names.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_bottom_nav.dart';
-import 'package:fbro/core/widgets/user_avatar.dart';
-import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/features/notifications/presentation/cubit/notification_cubit.dart';
-import 'package:fbro/features/notifications/presentation/cubit/notification_state.dart';
+import 'package:drop/core/enums/user_role.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
+import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/app_bottom_nav.dart';
+import 'package:drop/core/widgets/user_avatar.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/features/notifications/presentation/cubit/notification_cubit.dart';
+import 'package:drop/features/notifications/presentation/cubit/notification_state.dart';
 
-/// Shared chrome for every role shell (admin / manager / employee).
+/// Shared chrome for every role's home dashboard (admin / manager / employee).
 ///
-/// Hosts the role's dashboard as [child] under a clean header (notification bell
-/// + tappable avatar → profile) and the DROP bottom navigation bar
-/// (Home · Tasks · Schedule · Profile). The cross-role destinations
-/// (tasks / schedule / profile, which carry settings + sign-out) are reached
-/// from the bottom nav; each pushes its dedicated role-scoped screen.
+/// * **Desktop / macOS** → the persistent navigation lives in [AppShell]'s
+///   sidebar, so here we only render the dashboard under a clean
+///   [AdaptiveScaffold] page header. No app bar, no bottom nav.
+/// * **Mobile / tablet** → the original chrome: a compact app bar
+///   (notification bell + tappable avatar → profile) and the DROP bottom
+///   navigation bar (Home · Tasks · Schedule · Profile).
 class RoleScaffold extends StatelessWidget {
   const RoleScaffold({super.key, required this.title, required this.child});
 
@@ -64,9 +67,16 @@ class RoleScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.currentUser;
-    final role = context.currentRole ?? UserRole.employee;
+    // Desktop: the AppShell sidebar is the navigation; just lay the dashboard
+    // out under a premium page header.
+    if (context.isDesktop) {
+      return AdaptiveScaffold(title: title, body: child);
+    }
+    return _buildMobile(context, context.currentRole ?? UserRole.employee);
+  }
 
+  Widget _buildMobile(BuildContext context, UserRole role) {
+    final user = context.currentUser;
     return Scaffold(
       backgroundColor: AppColors.darkBg,
       appBar: AppBar(
@@ -91,9 +101,11 @@ class RoleScaffold extends StatelessWidget {
             child: GestureDetector(
               onTap: () => context.push(RouteNames.profile),
               child: user != null
-                  ? UserAvatar.fromUser(user, size: 36, ringColor: role.isGlobal
-                      ? AppColors.primary
-                      : AppColors.darkBorder)
+                  ? UserAvatar.fromUser(user,
+                      size: 36,
+                      ringColor: role.isGlobal
+                          ? AppColors.primary
+                          : AppColors.darkBorder)
                   : const UserAvatar(size: 36),
             ),
           ),

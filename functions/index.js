@@ -36,6 +36,7 @@ admin.initializeApp();
 
 const db = admin.firestore();
 const messaging = admin.messaging();
+const auth = admin.auth();
 
 const USERS = "users";
 const BROADCASTS = "broadcasts";
@@ -44,6 +45,9 @@ const BROADCAST_SCHEDULES = "broadcastSchedules";
 const TASKS = "tasks";
 const TASK_REMINDERS = "taskReminders";
 const REMINDER_CONFIG = "reminderConfig";
+const BRANCHES = "branches";
+const WEEKLY_SCHEDULES = "weekly_schedules";
+const SHIFT_SWAPS = "shift_swaps";
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -244,47 +248,82 @@ async function dispatchBroadcast(params) {
 
   // ── Push the notification (chunked; prune dead tokens) — push channels only ──
   let deliveredCount = 0;
+  // Diagnostics: how many times the SAME device token was found on two different
+  // recipients in one send — an ownership-drift signal (defense-in-depth #3).
+  let tokenDriftCount = 0;
   if (categorySendsPush(category)) {
-    // Gather FCM tokens (de-duplicated; remember each token's owner).
+    // Gather FCM tokens (de-duplicated; remember each token's EXCLUSIVE owner).
+    // If a token is already claimed by another recipient in this send, that's
+    // drift: keep the first owner (no double-send) and log it. claimFcmToken is
+    // the authoritative reconciliation; this just surfaces the race for ops.
     const tokens = [];
     const tokenOwner = new Map();
+    const claimToken = (t, uid) => {
+      if (!t) return;
+      const existing = tokenOwner.get(t);
+      if (existing === undefined) {
+        tokenOwner.set(t, uid);
+        tokens.push(t);
+      } else if (existing !== uid) {
+        tokenDriftCount++;
+        logger.warn("token ownership drift during dispatch", {
+          broadcastId: broadcastRef.id,
+          tokenSuffix: String(t).slice(-8),
+          owners: [existing, uid],
+        });
+      }
+    };
     for (const doc of recipientDocs) {
       const u = doc.data() || {};
       const arr = Array.isArray(u.fcmTokens) ? u.fcmTokens : [];
-      for (const t of arr) {
-        if (t && !tokenOwner.has(t)) {
-          tokenOwner.set(t, doc.id);
-          tokens.push(t);
-        }
-      }
+      for (const t of arr) claimToken(t, doc.id);
       // Legacy single-token field (pre-Phase-2 docs).
-      if (u.fcmToken && !tokenOwner.has(u.fcmToken)) {
-        tokenOwner.set(u.fcmToken, doc.id);
-        tokens.push(u.fcmToken);
-      }
+      claimToken(u.fcmToken, doc.id);
     }
 
-    const message = {
-      notification: { title, body },
-      // High-priority broadcasts ride at high priority on both platforms.
-      android: { priority: isHigh ? "high" : "normal" },
-      apns: { headers: { "apns-priority": isHigh ? "10" : "5" } },
-      // Data values must be strings — they ride along to the tap handler.
-      data: {
-        type: notifType,
-        category,
-        priority: isHigh ? "high" : "normal",
-        senderId,
-        broadcastId: broadcastRef.id,
-        route: "broadcast_detail",
-        title,
-        body,
-      },
+    // Data values must be strings — they ride along to the tap handler. Each
+    // push is stamped per-token with its intended `recipientUid` below, so the
+    // client can DROP any notification whose recipient != the signed-in user
+    // (defense-in-depth #3 — the last guard against a drifted/stale token).
+    const baseData = {
+      type: notifType,
+      category,
+      priority: isHigh ? "high" : "normal",
+      senderId,
+      broadcastId: broadcastRef.id,
+      route: "broadcast_detail",
+      title,
+      body,
     };
+    const androidPriority = isHigh ? "high" : "normal";
+    const apnsPriority = isHigh ? "10" : "5";
 
+    if (tokens.length === 0) {
+      // Recipients exist but none has a registered device token — they still get
+      // the in-app inbox entry, just no push. Logged so a "didn't reach all"
+      // report can be diagnosed (token persistence vs. the send itself).
+      logger.info("broadcast push: recipients have no registered device tokens", {
+        broadcastId: broadcastRef.id,
+        recipientCount,
+      });
+    }
+    // A push / messaging-API failure must NOT fail a send whose broadcast doc +
+    // inbox notifications already succeeded (recipients still got the in-app
+    // entry). Isolate it: log it and keep the partial delivered count.
+    try {
     for (let i = 0; i < tokens.length; i += MULTICAST_CHUNK) {
       const batch = tokens.slice(i, i + MULTICAST_CHUNK);
-      const response = await messaging.sendEachForMulticast({ ...message, tokens: batch });
+      // One message per token so `data.recipientUid` can differ per recipient (a
+      // multicast shares one data block). `sendEach` preserves response order, so
+      // the dead-token pruning below still indexes `batch[idx]`.
+      const messages = batch.map((token) => ({
+        token,
+        notification: { title, body },
+        android: { priority: androidPriority },
+        apns: { headers: { "apns-priority": apnsPriority } },
+        data: { ...baseData, recipientUid: tokenOwner.get(token) || "" },
+      }));
+      const response = await messaging.sendEach(messages);
       deliveredCount += response.successCount;
 
       // Remove tokens FCM reports as permanently invalid, per owner.
@@ -292,6 +331,16 @@ async function dispatchBroadcast(params) {
       response.responses.forEach((r, idx) => {
         if (r.success) return;
         const code = r.error && r.error.code;
+        // DIAGNOSTIC: surface the EXACT per-token failure reason (FCM discards it
+        // otherwise) — e.g. `messaging/third-party-auth-error` = iOS APNs key not
+        // configured; `messaging/registration-token-not-registered` = stale token.
+        logger.warn("broadcast token send failed", {
+          broadcastId: broadcastRef.id,
+          owner: tokenOwner.get(batch[idx]),
+          tokenSuffix: String(batch[idx]).slice(-10),
+          code,
+          message: r.error && r.error.message,
+        });
         if (isDeadTokenError(code)) {
           const badToken = batch[idx];
           const owner = tokenOwner.get(badToken);
@@ -311,6 +360,14 @@ async function dispatchBroadcast(params) {
         ),
       );
     }
+    } catch (err) {
+      logger.error("broadcast push failed (inbox delivery already succeeded)", {
+        broadcastId: broadcastRef.id,
+        tokenCount: tokens.length,
+        deliveredCount,
+        error: String(err),
+      });
+    }
   }
 
   // Persist the delivery result on the doc so the Communications Center feed /
@@ -322,6 +379,7 @@ async function dispatchBroadcast(params) {
     audience,
     recipientCount,
     deliveredCount,
+    tokenDriftCount,
   });
 
   return { broadcastId: broadcastRef.id, recipientCount, deliveredCount };
@@ -415,6 +473,414 @@ exports.sendBroadcast = onCall(async (request) => {
   });
 
   return { success: true, ...result };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// createUserAccount — the secure account-provisioning path (admin-only).
+//
+// DROP no longer allows public registration: only an admin creates accounts.
+// This callable creates the Firebase Auth user with the Admin SDK (which does
+// NOT sign the calling admin out, unlike the client createUserWithEmailAndPassword)
+// and seeds the `users/{uid}` document with the role/branch/shift/position plus
+// the first-login flags (mustChangePassword + isProfileCompleted:false). Firestore
+// rules deny ALL client creates of user docs, so this is the only creation path.
+const VALID_ROLES = ["admin", "manager", "employee"];
+
+exports.createUserAccount = onCall(async (request) => {
+  const callerAuth = request.auth;
+  if (!callerAuth) {
+    throw new HttpsError("unauthenticated", "Please sign in.");
+  }
+
+  // ── Only an admin may provision accounts ──
+  const callerSnap = await db.collection(USERS).doc(callerAuth.uid).get();
+  const caller = callerSnap.exists ? callerSnap.data() || {} : {};
+  if ((caller.role || "employee") !== "admin") {
+    throw new HttpsError("permission-denied", "Only an admin can create accounts.");
+  }
+
+  const data = request.data || {};
+  const name = String(data.name || "").trim();
+  const email = String(data.email || "").trim().toLowerCase();
+  const password = String(data.password || "");
+  const role = String(data.role || "").trim();
+  const branchId = String(data.branchId || "").trim();
+  const assignedShift = String(data.assignedShift || "").trim();
+  const position = String(data.position || "").trim();
+
+  // ── Validation ──
+  if (!name) throw new HttpsError("invalid-argument", "A full name is required.");
+  if (!email || !email.includes("@")) {
+    throw new HttpsError("invalid-argument", "A valid email is required.");
+  }
+  if (password.length < 6) {
+    throw new HttpsError("invalid-argument", "The temporary password must be at least 6 characters.");
+  }
+  if (!VALID_ROLES.includes(role)) {
+    throw new HttpsError("invalid-argument", "Pick a valid role.");
+  }
+  // A manager / employee must belong to a branch; an admin may be global.
+  if ((role === "manager" || role === "employee") && !branchId) {
+    throw new HttpsError("invalid-argument", "Pick a branch for this account.");
+  }
+
+  // ── Create the Auth user (does NOT affect the admin's own session) ──
+  let userRecord;
+  try {
+    userRecord = await auth.createUser({
+      email,
+      password,
+      displayName: name,
+    });
+  } catch (err) {
+    if (err && err.code === "auth/email-already-exists") {
+      throw new HttpsError("already-exists", "An account already exists with this email.");
+    }
+    if (err && err.code === "auth/invalid-email") {
+      throw new HttpsError("invalid-argument", "The email address is not valid.");
+    }
+    if (err && err.code === "auth/invalid-password") {
+      throw new HttpsError("invalid-argument", "The temporary password is too weak.");
+    }
+    logger.error("createUserAccount: auth.createUser failed", { error: String(err) });
+    throw new HttpsError("internal", "Could not create the account. Please try again.");
+  }
+
+  // ── Seed the Firestore user document ──
+  try {
+    await db.collection(USERS).doc(userRecord.uid).set({
+      uid: userRecord.uid,
+      email,
+      // `name` maps to displayName (canonical) mirrored to the profile fullName.
+      displayName: name,
+      fullName: name,
+      authProvider: "admin-created",
+      role,
+      branchId: branchId || null,
+      assignedShift: assignedShift || null,
+      position: position || null,
+      isActive: true,
+      employmentStatus: "active",
+      mustChangePassword: true,
+      isProfileCompleted: false,
+      isEmailVerified: false,
+      // Empty profile-schema seeds (filled during Profile Completion).
+      username: "",
+      bio: "",
+      profileImage: "",
+      coverImage: "",
+      createdBy: callerAuth.uid,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    // Roll back the orphaned Auth user so a retry with the same email works.
+    await auth.deleteUser(userRecord.uid).catch(() => {});
+    logger.error("createUserAccount: firestore seed failed", { error: String(err) });
+    throw new HttpsError("internal", "Could not finish creating the account. Please try again.");
+  }
+
+  logger.info("account created", { uid: userRecord.uid, role, by: callerAuth.uid });
+  return { success: true, uid: userRecord.uid };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// adminResetPassword — admin-only account reset: set a new temporary password
+// (Admin SDK) and re-force a password change on next login. Satisfies the spec's
+// "reset employee accounts" without exposing Auth credentials to the client.
+exports.adminResetPassword = onCall(async (request) => {
+  const callerAuth = request.auth;
+  if (!callerAuth) {
+    throw new HttpsError("unauthenticated", "Please sign in.");
+  }
+  const callerSnap = await db.collection(USERS).doc(callerAuth.uid).get();
+  const caller = callerSnap.exists ? callerSnap.data() || {} : {};
+  if ((caller.role || "employee") !== "admin") {
+    throw new HttpsError("permission-denied", "Only an admin can reset accounts.");
+  }
+
+  const data = request.data || {};
+  const uid = String(data.uid || "").trim();
+  const tempPassword = String(data.tempPassword || "");
+  if (!uid) throw new HttpsError("invalid-argument", "Missing the account to reset.");
+  if (tempPassword.length < 6) {
+    throw new HttpsError("invalid-argument", "The temporary password must be at least 6 characters.");
+  }
+
+  try {
+    await auth.updateUser(uid, { password: tempPassword });
+  } catch (err) {
+    if (err && err.code === "auth/user-not-found") {
+      throw new HttpsError("not-found", "That account no longer exists.");
+    }
+    logger.error("adminResetPassword: updateUser failed", { error: String(err) });
+    throw new HttpsError("internal", "Could not reset the account. Please try again.");
+  }
+
+  await db.collection(USERS).doc(uid).set(
+    {
+      mustChangePassword: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  logger.info("account reset", { uid, by: callerAuth.uid });
+  return { success: true };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// approveSwap — the server-authoritative shift-swap exchange (2026-06-25
+// hardening). A coworker-approved swap is finalized HERE, never by a direct
+// client write (firestore.rules deny a client setting status==managerApproved).
+//
+// The function re-validates against the FRESHEST schedule (TOCTOU backstop) and
+// applies the exchange ATOMICALLY in a single transaction — the requester and the
+// target trade shifts on the same day (only two shifts exist, so the target's
+// slot is the opposite of the requester's). Either both move or nothing changes.
+//
+// Validation mirrors `SwapValidation` (lib/features/schedule/domain/
+// swap_validation.dart) — keep the two in sync. Notifications stay client-side
+// (`NotifySwapEvent` fires after this resolves), reusing the existing pipeline.
+const SWAP_DAY_INDEX = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+};
+const SWAP_SHIFTS = ["morning", "night"];
+
+function swapOppositeShift(s) {
+  return s === "night" ? "morning" : "night";
+}
+// Minutes past midnight: morning 08:30–16:30, night 16:30–23:00 (mirrors
+// ScheduleShift.timeRange / SwapEligibility / SwapValidation).
+function swapShiftMinutes(s) {
+  return s === "night"
+    ? { start: 16 * 60 + 30, end: 23 * 60 }
+    : { start: 8 * 60 + 30, end: 16 * 60 + 30 };
+}
+function swapAssignedUids(assignments, day, shift) {
+  const d = assignments && assignments[day];
+  const arr = d && d[shift];
+  return Array.isArray(arr) ? arr : [];
+}
+// Smallest gap (minutes) between any two of the employee's shifts in the week.
+// < 2 shifts → unconstrained. Week-bounded (the adjacent week isn't loaded) —
+// mirrors SwapValidation._minGapMinutes.
+function swapMinGapMinutes(assignments, uid) {
+  const intervals = [];
+  for (const day of Object.keys(SWAP_DAY_INDEX)) {
+    const di = SWAP_DAY_INDEX[day];
+    for (const sh of SWAP_SHIFTS) {
+      if (swapAssignedUids(assignments, day, sh).includes(uid)) {
+        const m = swapShiftMinutes(sh);
+        intervals.push([di * 1440 + m.start, di * 1440 + m.end]);
+      }
+    }
+  }
+  if (intervals.length < 2) return Number.MAX_SAFE_INTEGER;
+  intervals.sort((a, b) => a[0] - b[0]);
+  let minGap = Number.MAX_SAFE_INTEGER;
+  for (let i = 1; i < intervals.length; i++) {
+    const gap = intervals[i][0] - intervals[i - 1][1];
+    if (gap < minGap) minGap = gap;
+  }
+  return minGap;
+}
+
+exports.approveSwap = onCall(async (request) => {
+  const auth = request.auth;
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Please sign in to approve a swap.");
+  }
+  const data = request.data || {};
+  const swapId = String(data.swapId || "").trim();
+  // The client computes the schedule doc id from the LOCAL week start (the way it
+  // was created); the function would mis-format it in UTC, so it's passed in and
+  // re-validated against the swap's branch + slot contents below.
+  const scheduleId = String(data.scheduleId || "").trim();
+  if (!swapId || !scheduleId) {
+    throw new HttpsError("invalid-argument", "Missing swap or schedule reference.");
+  }
+
+  // ── Load the swap (the source of truth for branch / day / shift / parties) ──
+  const swapRef = db.collection(SHIFT_SWAPS).doc(swapId);
+  const swapSnap = await swapRef.get();
+  if (!swapSnap.exists) {
+    throw new HttpsError("not-found", "This swap request no longer exists.");
+  }
+  const swap = swapSnap.data() || {};
+  const branchId = String(swap.branchId || "");
+  const day = String(swap.day || "");
+  const shift = String(swap.shift || "");
+  const opp = swapOppositeShift(shift);
+  const requesterId = String(swap.requesterId || "");
+  const targetId = String(swap.targetId || "");
+
+  // ── Permission: admin, or the manager of THIS branch ──
+  const callerSnap = await db.collection(USERS).doc(auth.uid).get();
+  if (!callerSnap.exists) {
+    throw new HttpsError("permission-denied", "Your account profile was not found.");
+  }
+  const caller = callerSnap.data() || {};
+  const callerRole = caller.role || "employee";
+  const callerBranch = caller.branchId || "";
+  const canApprove =
+    callerRole === "admin" ||
+    (callerRole === "manager" && callerBranch === branchId);
+  if (!canApprove) {
+    throw new HttpsError(
+      "permission-denied",
+      "Only the branch manager or an admin can approve a swap.",
+    );
+  }
+
+  // The passed scheduleId must belong to this swap's branch (forged-id defense).
+  if (!scheduleId.startsWith(`${branchId}_`)) {
+    throw new HttpsError("invalid-argument", "Schedule reference does not match this branch.");
+  }
+
+  if (swap.status !== "employeeApproved") {
+    throw new HttpsError("failed-precondition", "This swap isn’t awaiting manager approval.");
+  }
+
+  // ── Slow-changing config (employees + branch policy), read outside the tx ──
+  const [reqSnap, tgtSnap, branchSnap] = await Promise.all([
+    db.collection(USERS).doc(requesterId).get(),
+    db.collection(USERS).doc(targetId).get(),
+    db.collection(BRANCHES).doc(branchId).get(),
+  ]);
+  const reqUser = reqSnap.exists ? reqSnap.data() || {} : null;
+  const tgtUser = tgtSnap.exists ? tgtSnap.data() || {} : null;
+  if (!reqUser || !tgtUser) {
+    throw new HttpsError("failed-precondition", "One of the employees no longer exists.");
+  }
+  if (reqUser.isActive === false || tgtUser.isActive === false) {
+    throw new HttpsError("failed-precondition", "One of the employees is no longer active.");
+  }
+  const policy = (branchSnap.exists && (branchSnap.data() || {}).swapPolicy) || {};
+  const restrictSamePosition = policy.restrictToSamePosition === true;
+  const minRestHours =
+    Number(policy.minRestHours) > 0 ? Number(policy.minRestHours) : null;
+
+  // Role compatibility (mirror SwapPolicy.positionsCompatible — unset = ok).
+  if (restrictSamePosition) {
+    const pa = String(reqUser.position || "").trim().toLowerCase();
+    const pb = String(tgtUser.position || "").trim().toLowerCase();
+    if (pa && pb && pa !== pb) {
+      throw new HttpsError(
+        "failed-precondition",
+        "You can only swap with a coworker in a compatible role.",
+      );
+    }
+  }
+
+  // Future check (mirror swapSlotInFuture). weekStart is an absolute instant
+  // (local-midnight Sunday); adding the day offset + shift start gives the slot's
+  // start instant, compared against now — timezone-safe (both absolute).
+  const weekStartMs =
+    swap.weekStart && typeof swap.weekStart.toMillis === "function"
+      ? swap.weekStart.toMillis()
+      : null;
+  if (weekStartMs == null) {
+    throw new HttpsError("failed-precondition", "This swap is malformed.");
+  }
+  const slotStartMs =
+    weekStartMs +
+    (SWAP_DAY_INDEX[day] || 0) * 24 * 60 * 60 * 1000 +
+    swapShiftMinutes(shift).start * 60 * 1000;
+  if (slotStartMs <= Date.now()) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This shift has already started — it can no longer be swapped.",
+    );
+  }
+
+  const schedRef = db.collection(WEEKLY_SCHEDULES).doc(scheduleId);
+
+  // ── Atomic re-validate + exchange ──
+  await db.runTransaction(async (tx) => {
+    const sSnap = await tx.get(swapRef);
+    const schSnap = await tx.get(schedRef);
+    if (!sSnap.exists) {
+      throw new HttpsError("not-found", "This swap request no longer exists.");
+    }
+    if ((sSnap.data() || {}).status !== "employeeApproved") {
+      throw new HttpsError("failed-precondition", "This swap isn’t awaiting manager approval.");
+    }
+    if (!schSnap.exists) {
+      throw new HttpsError("failed-precondition", "The schedule for this week no longer exists.");
+    }
+    const sched = schSnap.data() || {};
+    if (String(sched.branchId || "") !== branchId) {
+      throw new HttpsError("invalid-argument", "Schedule reference does not match this branch.");
+    }
+    const assignments = sched.assignments || {};
+    const shiftArr = swapAssignedUids(assignments, day, shift);
+    const oppArr = swapAssignedUids(assignments, day, opp);
+
+    // Slot integrity (TOCTOU): both parties must still hold their slots.
+    if (!shiftArr.includes(requesterId)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "The schedule changed — the requester is no longer on that shift.",
+      );
+    }
+    if (!oppArr.includes(targetId)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "The schedule changed — your coworker is no longer on the opposite shift.",
+      );
+    }
+
+    // Post-exchange arrays (deterministic — no array-transform collisions).
+    const newShiftArr = shiftArr.filter((u) => u !== requesterId);
+    if (!newShiftArr.includes(targetId)) newShiftArr.push(targetId);
+    const newOppArr = oppArr.filter((u) => u !== targetId);
+    if (!newOppArr.includes(requesterId)) newOppArr.push(requesterId);
+
+    // Double-booking guard: neither party ends on both shifts that day.
+    for (const uid of [requesterId, targetId]) {
+      if (newShiftArr.includes(uid) && newOppArr.includes(uid)) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This swap would double-book someone on the same day.",
+        );
+      }
+    }
+
+    // Rest-hours guard (post-exchange, week-bounded) — only if the branch sets it.
+    if (minRestHours != null) {
+      const after = {};
+      for (const d of Object.keys(SWAP_DAY_INDEX)) {
+        const dd = assignments[d] || {};
+        after[d] = {};
+        for (const sh of SWAP_SHIFTS) {
+          after[d][sh] = Array.isArray(dd[sh]) ? dd[sh].slice() : [];
+        }
+      }
+      after[day][shift] = newShiftArr;
+      after[day][opp] = newOppArr;
+      for (const uid of [requesterId, targetId]) {
+        if (swapMinGapMinutes(after, uid) < minRestHours * 60) {
+          throw new HttpsError(
+            "failed-precondition",
+            `This swap would leave less than ${minRestHours} hours of rest between shifts.`,
+          );
+        }
+      }
+    }
+
+    tx.update(swapRef, {
+      status: "managerApproved",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    tx.update(schedRef, {
+      [`assignments.${day}.${shift}`]: newShiftArr,
+      [`assignments.${day}.${opp}`]: newOppArr,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { success: true };
 });
 
 /**
@@ -527,6 +993,9 @@ exports.onNotificationCreated = onDocumentCreated(
       notification: { title, body },
       data: {
         type: String(n.type || ""),
+        // Intended recipient — the client drops a push whose recipientUid != the
+        // signed-in user (defense-in-depth #3). This path is already per-recipient.
+        recipientUid: String(recipientUid),
         taskId: String(payload.taskId || ""),
         broadcastId: String(payload.broadcastId || ""),
         category: String(payload.category || ""),
@@ -538,12 +1007,24 @@ exports.onNotificationCreated = onDocumentCreated(
 
     // Push (chunked) + prune dead tokens.
     const removals = [];
+    let successCount = 0;
+    let failureCount = 0;
     for (let i = 0; i < tokens.length; i += MULTICAST_CHUNK) {
       const batch = tokens.slice(i, i + MULTICAST_CHUNK);
       const response = await messaging.sendEachForMulticast({ ...message, tokens: batch });
+      successCount += response.successCount;
+      failureCount += response.failureCount;
       response.responses.forEach((r, idx) => {
         if (r.success) return;
         const code = r.error && r.error.code;
+        // DIAGNOSTIC: the EXACT per-token failure reason (FCM discards it). See
+        // the broadcast path for the common codes (APNs / stale-token).
+        logger.warn("task notification token send failed", {
+          recipientUid,
+          tokenSuffix: String(batch[idx]).slice(-10),
+          code,
+          message: r.error && r.error.message,
+        });
         if (isDeadTokenError(code)) removals.push(batch[idx]);
       });
     }
@@ -555,10 +1036,14 @@ exports.onNotificationCreated = onDocumentCreated(
         .catch(() => {});
     }
 
+    // Log REAL delivery, not just the attempt count. `tokenCount` alone (the old
+    // log) made a 0-delivered push look healthy.
     logger.info("notification pushed", {
       type: n.type,
       recipientUid,
       tokenCount: tokens.length,
+      successCount,
+      failureCount,
     });
   },
 );

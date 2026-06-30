@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:fbro/core/errors/exceptions.dart';
-import 'package:fbro/core/errors/failures.dart';
-import 'package:fbro/features/auth/data/datasources/auth_remote_datasource.dart';
-import 'package:fbro/features/profile/data/datasources/profile_remote_datasource.dart';
-import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
-import 'package:fbro/features/profile/domain/repositories/profile_repository.dart';
+import 'package:drop/core/errors/exceptions.dart';
+import 'package:drop/core/errors/failures.dart';
+import 'package:drop/features/auth/data/datasources/auth_remote_datasource.dart';
+import 'package:drop/features/profile/data/datasources/profile_remote_datasource.dart';
+import 'package:drop/features/profile/domain/entities/profile_entity.dart';
+import 'package:drop/features/profile/domain/repositories/profile_repository.dart';
 
 class ProfileRepositoryImpl implements ProfileRepository {
   final ProfileRemoteDataSource _profileRemote;
@@ -37,6 +37,8 @@ class ProfileRepositoryImpl implements ProfileRepository {
     DateTime? birthDate,
     String? profileImage,
     String? coverImage,
+    String? emergencyContact,
+    String? address,
   }) async {
     try {
       await _profileRemote.updateProfile(
@@ -52,6 +54,8 @@ class ProfileRepositoryImpl implements ProfileRepository {
         birthDate: birthDate,
         profileImage: profileImage,
         coverImage: coverImage,
+        emergencyContact: emergencyContact,
+        address: address,
       );
 
       // Keep the Firebase Auth profile in sync so the auth session / Home

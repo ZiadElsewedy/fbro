@@ -4,15 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_snackbar.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
-import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
-import 'package:fbro/features/profile/presentation/cubit/profile_cubit.dart';
-import 'package:fbro/features/profile/presentation/cubit/profile_state.dart';
-import 'package:fbro/features/profile/presentation/widgets/profile_avatar.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/features/auth/presentation/widgets/app_button.dart';
+import 'package:drop/features/profile/domain/entities/profile_entity.dart';
+import 'package:drop/features/profile/presentation/cubit/profile_cubit.dart';
+import 'package:drop/features/profile/presentation/cubit/profile_state.dart';
+import 'package:drop/features/profile/presentation/widgets/profile_avatar.dart';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
@@ -124,18 +125,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        surfaceTintColor: AppColors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded,
-              color: AppColors.textPrimary, size: 22),
-          onPressed: () => context.pop(),
-        ),
-        title: Text('Edit Profile', style: AppTypography.h3),
-      ),
+    return AdaptiveScaffold(
+      title: 'Edit Profile',
       body: BlocConsumer<ProfileCubit, ProfileState>(
         listenWhen: (prev, curr) => curr.isSavedOrError,
         listener: (context, state) {

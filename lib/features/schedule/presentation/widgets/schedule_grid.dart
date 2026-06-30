@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:fbro/core/enums/schedule_day.dart';
-import 'package:fbro/core/enums/schedule_shift.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
-import 'package:fbro/features/schedule/domain/entities/weekly_schedule_entity.dart';
-import 'package:fbro/features/schedule/presentation/widgets/schedule_helpers.dart';
-import 'package:fbro/features/schedule/presentation/widgets/shift_cell.dart';
+import 'package:drop/core/enums/schedule_day.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
+import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
+import 'package:drop/features/schedule/presentation/widgets/shift_cell.dart';
 
 /// The weekly assignment grid (Phase 7 redesign) — replaces the vertical day
 /// cards. Days are columns (Sun→Sat), shifts are two rows (Morning / Night).
@@ -50,37 +50,54 @@ class ScheduleGrid extends StatelessWidget {
     final shifts = filter == null ? ScheduleShift.values : [filter!];
     return SizedBox(
       height: height,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Pinned left rail: corner spacer + shift labels.
-          Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Desktop: when the seven days fit, stretch the cells to fill the
+          // width so the week reads as one wide, scan-friendly grid (no
+          // horizontal scroll). Mobile: keep fixed cells that scroll sideways.
+          final avail = constraints.maxWidth;
+          final natural = _railWidth + _cellWidth * 7;
+          final fits = avail.isFinite && avail >= natural;
+          final cellW =
+              fits ? ((avail - _railWidth) / 7).floorToDouble() : _cellWidth;
+
+          final body = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(width: _railWidth, height: _headerHeight),
-              for (final s in shifts) _rail(s),
+              Row(children: [
+                for (final d in ScheduleDay.values)
+                  _dayHeader(d, d == today, cellW),
+              ]),
+              for (final s in shifts)
+                Row(children: [
+                  for (final d in ScheduleDay.values)
+                    _cell(d, s, d == today, cellW),
+                ]),
             ],
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.only(right: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          );
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Pinned left rail: corner spacer + shift labels.
+              Column(
                 children: [
-                  Row(children: [
-                    for (final d in ScheduleDay.values)
-                      _dayHeader(d, d == today),
-                  ]),
-                  for (final s in shifts)
-                    Row(children: [
-                      for (final d in ScheduleDay.values)
-                        _cell(d, s, d == today),
-                    ]),
+                  const SizedBox(width: _railWidth, height: _headerHeight),
+                  for (final s in shifts) _rail(s),
                 ],
               ),
-            ),
-          ),
-        ],
+              Expanded(
+                child: fits
+                    ? body
+                    : SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.only(right: 4),
+                        child: body,
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -130,10 +147,10 @@ class ScheduleGrid extends StatelessWidget {
     );
   }
 
-  Widget _dayHeader(ScheduleDay day, bool isToday) {
+  Widget _dayHeader(ScheduleDay day, bool isToday, double cellWidth) {
     final date = schedule.weekStart.add(Duration(days: day.index));
     return SizedBox(
-      width: _cellWidth,
+      width: cellWidth,
       height: _headerHeight,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -169,7 +186,8 @@ class ScheduleGrid extends StatelessWidget {
     );
   }
 
-  Widget _cell(ScheduleDay day, ScheduleShift shift, bool isToday) {
+  Widget _cell(
+      ScheduleDay day, ScheduleShift shift, bool isToday, double cellWidth) {
     final uids = schedule.employeesFor(day, shift);
     final valid = validAssignments(uids, members);
     final orphans = orphanAssignments(uids, members);
@@ -178,7 +196,7 @@ class ScheduleGrid extends StatelessWidget {
       users: users,
       isToday: isToday,
       hasOrphan: orphans.isNotEmpty,
-      width: _cellWidth,
+      width: cellWidth,
       height: _cellHeight,
       onTap: () => onCellTap(day, shift),
     );

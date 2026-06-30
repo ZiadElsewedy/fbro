@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:drop/features/schedule/domain/swap_policy.dart';
 
 part 'branch_entity.freezed.dart';
 
@@ -25,7 +26,14 @@ class BranchEntity with _$BranchEntity {
     DateTime? updatedAt,
     /// Soft-delete marker; null while the branch is live.
     DateTime? deletedAt,
+    /// Optional branch-level shift-swap rules (role compatibility, rest hours).
+    /// Null = [SwapPolicy.permissive] (any role can swap, no rest rule). Stored
+    /// as a nested map under `swapPolicy`.
+    SwapPolicy? swapPolicy,
   }) = _BranchEntity;
 
   bool get isDeleted => deletedAt != null;
+
+  /// The branch's swap rules, or the permissive default when none is set.
+  SwapPolicy get effectiveSwapPolicy => swapPolicy ?? SwapPolicy.permissive;
 }

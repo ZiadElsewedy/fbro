@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:fbro/core/enums/broadcast_category.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/glass_container.dart';
-import 'package:fbro/features/communications/domain/entities/broadcast_entity.dart';
-import 'package:fbro/features/communications/presentation/communications_format.dart';
+import 'package:drop/core/enums/broadcast_category.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/glass_container.dart';
+import 'package:drop/features/communications/domain/entities/broadcast_entity.dart';
+import 'package:drop/features/communications/presentation/communications_format.dart';
 
 /// The per-item action menu on a broadcast feed card.
-enum BroadcastCardAction { open, repeatNow, archive, unarchive }
+enum BroadcastCardAction { open, repeatNow, archive, unarchive, delete }
 
 /// A single broadcast in the Communications Center history feed (Phase 2) —
 /// title, category, message preview, sender, time, delivery summary
@@ -137,6 +137,8 @@ class BroadcastCard extends StatelessWidget {
               'Unarchive')
         else
           _item(BroadcastCardAction.archive, Icons.archive_outlined, 'Archive'),
+        _item(BroadcastCardAction.delete, Icons.delete_outline_rounded, 'Delete',
+            destructive: true),
       ],
     );
   }

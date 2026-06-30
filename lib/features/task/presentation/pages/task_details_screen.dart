@@ -1,34 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fbro/core/enums/task_priority.dart';
-import 'package:fbro/core/enums/task_status.dart';
-import 'package:fbro/core/enums/user_role.dart';
-import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_dialog.dart';
-import 'package:fbro/core/widgets/app_motion.dart';
-import 'package:fbro/core/widgets/app_snackbar.dart';
-import 'package:fbro/core/widgets/user_avatar.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_text_field.dart';
-import 'package:fbro/features/task/domain/entities/activity_entry.dart';
-import 'package:fbro/features/task/domain/entities/checklist_item.dart';
-import 'package:fbro/features/task/domain/entities/task_entity.dart';
-import 'package:fbro/features/task/presentation/activity_format.dart';
-import 'package:fbro/features/task/presentation/attachment_format.dart';
-import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
-import 'package:fbro/features/task/presentation/cubit/task_state.dart';
-import 'package:fbro/features/task/presentation/submission_progress.dart';
-import 'package:fbro/features/task/presentation/widgets/attachment_gallery.dart';
-import 'package:fbro/features/task/presentation/widgets/attachment_picker.dart';
-import 'package:fbro/features/task/presentation/widgets/submission_details_sheet.dart';
-import 'package:fbro/features/task/presentation/widgets/submission_loading_overlay.dart';
-import 'package:fbro/features/task/presentation/widgets/task_action_sheets.dart';
-import 'package:fbro/features/task/presentation/widgets/task_card.dart';
+import 'package:drop/core/enums/task_priority.dart';
+import 'package:drop/core/enums/task_status.dart';
+import 'package:drop/core/enums/user_role.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/app_dialog.dart';
+import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/core/widgets/branch_avatar.dart';
+import 'package:drop/core/widgets/user_avatar.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/branch/domain/entities/branch_entity.dart';
+import 'package:drop/features/branch/presentation/cubit/branch_cubit.dart';
+import 'package:drop/features/auth/presentation/widgets/app_button.dart';
+import 'package:drop/features/auth/presentation/widgets/app_text_field.dart';
+import 'package:drop/features/task/domain/entities/activity_entry.dart';
+import 'package:drop/features/task/domain/entities/checklist_item.dart';
+import 'package:drop/features/task/domain/entities/task_entity.dart';
+import 'package:drop/features/task/presentation/activity_format.dart';
+import 'package:drop/features/task/presentation/attachment_format.dart';
+import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
+import 'package:drop/features/task/presentation/cubit/task_state.dart';
+import 'package:drop/features/task/presentation/submission_progress.dart';
+import 'package:drop/features/task/presentation/widgets/attachment_gallery.dart';
+import 'package:drop/features/task/presentation/widgets/attachment_picker.dart';
+import 'package:drop/features/task/presentation/widgets/submission_details_sheet.dart';
+import 'package:drop/features/task/presentation/widgets/submission_loading_overlay.dart';
+import 'package:drop/features/task/presentation/widgets/task_action_sheets.dart';
+import 'package:drop/features/task/presentation/widgets/task_card.dart';
+import 'package:drop/features/task/presentation/widgets/task_surface.dart';
 
 /// Full-screen task details for all roles. Employees work through their
 /// checklist and submit proof here. Managers see full context + review controls.
@@ -134,63 +140,59 @@ class _DetailsView extends StatelessWidget {
     final isAdmin = role?.isAdmin ?? false;
     // An approved task is a locked, reviewed record — no Assign / Edit.
     final isLocked = task.status == TaskStatus.approved;
+    // Branch identity from the app-wide directory (§8b) — drives the cover
+    // banner + logo. Watched so it fills in once the directory preloads.
+    final branch = context.watch<BranchCubit>().branchById(task.branchId);
 
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
-        title: Text(
-          task.title,
-          style: AppTypography.label.copyWith(fontSize: 17),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        actions: [
-          if (isManagerOrAdmin && !isLocked) ...[
-            IconButton(
-              icon: const Icon(Icons.person_add_alt_1_outlined,
-                  color: AppColors.textSecondary),
-              tooltip: 'Assign',
-              onPressed: () =>
-                  showAssignSheet(context: context, cubit: cubit, task: task),
-            ),
-            IconButton(
-              icon: const Icon(Icons.edit_outlined,
-                  color: AppColors.textSecondary),
-              tooltip: 'Edit',
-              onPressed: () {
-                final user = context.currentUser;
-                showTaskFormSheet(
-                  context: context,
-                  cubit: cubit,
-                  existing: task,
-                  isAdmin: isAdmin,
-                  defaultBranchId: user?.branchId ?? '',
-                );
-              },
-            ),
-          ],
-          // Approved & locked: an admin keeps a Reopen escape hatch; a manager
-          // sees only a non-interactive lock glyph.
-          if (isManagerOrAdmin && isLocked)
-            if (isAdmin)
-              IconButton(
-                icon: const Icon(Icons.lock_open_rounded,
-                    color: AppColors.textSecondary),
-                tooltip: 'Reopen',
-                onPressed: () => _confirmReopen(context),
-              )
-            else
-              const Padding(
-                padding: EdgeInsets.only(right: AppSpacing.md),
-                child: Icon(Icons.lock_outline_rounded,
-                    size: 20, color: AppColors.textTertiary),
-              ),
+    return AdaptiveScaffold(
+      title: task.title,
+      constrainContent: false,
+      actions: [
+        if (isManagerOrAdmin && !isLocked) ...[
+          IconButton(
+            icon: const Icon(Icons.person_add_alt_1_outlined,
+                color: AppColors.textSecondary),
+            tooltip: 'Assign',
+            onPressed: () =>
+                showAssignSheet(context: context, cubit: cubit, task: task),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined,
+                color: AppColors.textSecondary),
+            tooltip: 'Edit',
+            onPressed: () {
+              final user = context.currentUser;
+              showTaskFormSheet(
+                context: context,
+                cubit: cubit,
+                existing: task,
+                isAdmin: isAdmin,
+                defaultBranchId: user?.branchId ?? '',
+              );
+            },
+          ),
         ],
-      ),
-      body: ListView(
+        // Approved & locked: an admin keeps a Reopen escape hatch; a manager
+        // sees only a non-interactive lock glyph.
+        if (isManagerOrAdmin && isLocked)
+          if (isAdmin)
+            IconButton(
+              icon: const Icon(Icons.lock_open_rounded,
+                  color: AppColors.textSecondary),
+              tooltip: 'Reopen',
+              onPressed: () => _confirmReopen(context),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.only(right: AppSpacing.md),
+              child: Icon(Icons.lock_outline_rounded,
+                  size: 20, color: AppColors.textTertiary),
+            ),
+      ],
+      body: context.isDesktop
+          ? _desktopBody(
+              context, isEmployee, isManagerOrAdmin, isAdmin, isLocked)
+          : ListView(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.pagePadding,
           AppSpacing.sm,
@@ -198,6 +200,15 @@ class _DetailsView extends StatelessWidget {
           AppSpacing.xxxl,
         ),
         children: [
+          // ── Branch cover banner (identity) ──────────────────────
+          // When the task's branch has an uploaded cover photo, lead with it so
+          // the task visibly belongs to its branch (reuses the §8 branch media +
+          // the §8b app-wide BranchCubit directory). Hidden when there's no cover.
+          if (branch?.coverUrl != null && branch!.coverUrl!.isNotEmpty) ...[
+            _BranchBanner(branch: branch),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+
           // ── Status + meta header ────────────────────────────────
           _StatusHeader(
             task: task,
@@ -228,6 +239,32 @@ class _DetailsView extends StatelessWidget {
                 task.description!,
                 style: AppTypography.body
                     .copyWith(color: AppColors.textSecondary, height: 1.6),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+          ],
+
+          // ── Reference images (manager-attached) ────────────────
+          if (task.hasReferences) ...[
+            _Section(
+              icon: Icons.image_outlined,
+              title: 'Reference',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'What good looks like — attached by the manager.',
+                    style: AppTypography.caption
+                        .copyWith(color: AppColors.textTertiary),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AttachmentGallery(
+                    attachments: task.referenceAttachments,
+                    columns: 2,
+                    showDuration: true,
+                    showCaption: false,
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
@@ -331,143 +368,311 @@ class _DetailsView extends StatelessWidget {
       ),
     );
   }
+
+  // ── Desktop: two-column ticket inspection (Linear/Jira style) ──────
+  // Left = the ticket record (status, description, proof, activity); right =
+  // a dedicated, sticky action panel (assignment + approve/rework/submit).
+  Widget _desktopBody(
+    BuildContext context,
+    bool isEmployee,
+    bool isManagerOrAdmin,
+    bool isAdmin,
+    bool isLocked,
+  ) {
+    final branch = context.watch<BranchCubit>().branchById(task.branchId);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Main record ────────────────────────────────────────────
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(40, 24, 28, 48),
+            children: [
+              if (branch?.coverUrl != null && branch!.coverUrl!.isNotEmpty) ...[
+                _BranchBanner(branch: branch),
+                const SizedBox(height: AppSpacing.lg),
+              ],
+              _StatusHeader(
+                task: task,
+                branchName: cubit.branchNames[task.branchId ?? ''],
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              if ((task.description ?? '').isNotEmpty) ...[
+                _Section(
+                  icon: Icons.notes_rounded,
+                  title: 'Description',
+                  child: Text(
+                    task.description!,
+                    style: AppTypography.body.copyWith(
+                        color: AppColors.textSecondary, height: 1.6),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if (task.hasReferences) ...[
+                _Section(
+                  icon: Icons.image_outlined,
+                  title: 'Reference',
+                  child: AttachmentGallery(
+                    attachments: task.referenceAttachments,
+                    columns: 3,
+                    showDuration: true,
+                    showCaption: false,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if (task.hasChecklist) ...[
+                _Section(
+                  icon: Icons.checklist_rounded,
+                  title: 'Checklist',
+                  trailing: _ChecklistBadge(task: task),
+                  child: _ChecklistBlock(
+                    task: task,
+                    interactive:
+                        isEmployee && task.status == TaskStatus.started,
+                    onToggle: (item) =>
+                        cubit.toggleChecklistItem(task, item.id),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if ((task.notes ?? '').isNotEmpty ||
+                  latestAttachments(task).isNotEmpty) ...[
+                _Section(
+                  icon: Icons.rate_review_outlined,
+                  title: 'Submitted work',
+                  child: _SubmittedBlock(task: task),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if ((task.reviewNotes ?? '').isNotEmpty) ...[
+                _Section(
+                  icon: Icons.feedback_outlined,
+                  title: 'Review note',
+                  child: Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: task.status == TaskStatus.rejected
+                          ? AppColors.errorSurface
+                          : AppColors.darkSurfaceElevated,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: task.status == TaskStatus.rejected
+                            ? AppColors.error.withAlpha(60)
+                            : AppColors.darkBorder,
+                      ),
+                    ),
+                    child: Text(
+                      task.reviewNotes!,
+                      style: AppTypography.body.copyWith(
+                          color: AppColors.textSecondary, height: 1.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if (task.activityLog.isNotEmpty)
+                _Section(
+                  icon: Icons.timeline_rounded,
+                  title: 'Activity',
+                  child: _ActivityTimeline(
+                    task: task,
+                    directory: directory,
+                    cubit: cubit,
+                    canReview: isManagerOrAdmin,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const VerticalDivider(width: 1, color: AppColors.darkBorder),
+        // ── Action / context panel ─────────────────────────────────
+        SizedBox(
+          width: 360,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 40, 48),
+            children: [
+              if (isLocked) ...[
+                _LockedBanner(canReopen: isAdmin),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              _Section(
+                icon: Icons.people_alt_outlined,
+                title: 'Assigned to',
+                child: _AssigneeBlock(task: task, directory: directory),
+              ),
+              if (task.recurrence != null &&
+                  task.recurrence!.frequency.value != 'none') ...[
+                const SizedBox(height: AppSpacing.xl),
+                _Section(
+                  icon: Icons.repeat_rounded,
+                  title: 'Recurrence',
+                  child: Text(
+                    task.recurrence!.frequency.label,
+                    style: AppTypography.body
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ),
+              ],
+              if (!isLocked &&
+                  (isEmployee ||
+                      (isManagerOrAdmin &&
+                          task.status == TaskStatus.waitingReview))) ...[
+                const SizedBox(height: AppSpacing.xl),
+                const Divider(color: AppColors.darkBorder),
+                const SizedBox(height: AppSpacing.lg),
+                if (isEmployee)
+                  _EmployeeActions(task: task, cubit: cubit)
+                else
+                  _ReviewBlock(task: task, cubit: cubit),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 // ─── Status header ─────────────────────────────────────────────────
 
-class _StatusHeader extends StatefulWidget {
+/// The task's status header — **de-flashed** (2026-06-25): a flat solid surface
+/// with a hairline border and a whisper of depth. No breathing pulse, no glow,
+/// no gradient (the status pill carries the state; it still cross-fades on a
+/// status change, which is a one-shot transition, not a pulse).
+/// A slim branch **cover** banner for the task details header — the branch's
+/// uploaded cover photo (dark scrim for legibility) with its logo + name
+/// overlaid. Reuses the §8 branch media + the Operations branch-hero pattern,
+/// scaled down to a header strip so the task reads as belonging to its branch.
+class _BranchBanner extends StatelessWidget {
+  const _BranchBanner({required this.branch});
+  final BranchEntity branch;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: AppRadius.cardAll,
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: AspectRatio(
+        aspectRatio: 16 / 6,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              branch.coverUrl!,
+              fit: BoxFit.cover,
+              cacheWidth: 1200,
+              errorBuilder: (_, _, _) =>
+                  const ColoredBox(color: AppColors.darkSurface),
+            ),
+            // Dark scrim (stronger at the bottom, where the label sits).
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x40000000), Color(0xCC000000)],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  BranchAvatar(
+                      logoUrl: branch.logoUrl,
+                      name: branch.name,
+                      size: 34,
+                      radius: 9),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          branch.name,
+                          style: AppTypography.label.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if ((branch.location ?? '').isNotEmpty)
+                          Text(
+                            branch.location!,
+                            style: AppTypography.caption
+                                .copyWith(color: AppColors.textSecondary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusHeader extends StatelessWidget {
   const _StatusHeader({required this.task, this.branchName});
   final TaskEntity task;
   final String? branchName;
 
   @override
-  State<_StatusHeader> createState() => _StatusHeaderState();
-}
-
-class _StatusHeaderState extends State<_StatusHeader>
-    with SingleTickerProviderStateMixin {
-  // A slow breathing controller — only In Review pulses; others use a static
-  // soft glow (read at t=0).
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1900),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    if (_pulsing) _pulse.repeat(reverse: true);
-  }
-
-  @override
-  void didUpdateWidget(_StatusHeader old) {
-    super.didUpdateWidget(old);
-    // Start/stop the pulse as the task moves in/out of "In Review".
-    if (_pulsing && !_pulse.isAnimating) {
-      _pulse.repeat(reverse: true);
-    } else if (!_pulsing && _pulse.isAnimating) {
-      _pulse.stop();
-      _pulse.value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  bool get _pulsing => widget.task.status == TaskStatus.waitingReview;
-
-  /// The status accent (null = no glow, plain surface). Monochrome base is kept;
-  /// the colour appears only as a soft glow + faint tint.
-  Color? get _aura => switch (widget.task.status) {
-        TaskStatus.waitingReview => AppColors.warning,
-        TaskStatus.approved => AppColors.success,
-        TaskStatus.rejected => AppColors.error,
-        _ => null,
-      };
-
-  double _lerp(double a, double b, double t) => a + (b - a) * t;
-
-  @override
   Widget build(BuildContext context) {
-    final aura = _aura;
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, child) {
-        final t = _pulsing ? _pulse.value : 0.0;
-        BoxDecoration decoration;
-        if (aura == null) {
-          decoration = BoxDecoration(
-            color: AppColors.darkSurface,
-            borderRadius: AppRadius.cardAll,
-            border: Border.all(color: AppColors.darkBorder),
-          );
-        } else {
-          final glow = _pulsing ? _lerp(28, 64, t) : 46;
-          final blur = _pulsing ? _lerp(16, 30, t) : 24.0;
-          final tint = _pulsing ? _lerp(8, 16, t) : 12;
-          final borderA = _pulsing ? _lerp(55, 120, t) : 85;
-          decoration = BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [AppColors.darkSurface, aura.withAlpha(tint.round())],
-            ),
-            borderRadius: AppRadius.cardAll,
-            border: Border.all(color: aura.withAlpha(borderA.round())),
-            boxShadow: [
-              BoxShadow(
-                color: aura.withAlpha(glow.round()),
-                blurRadius: blur,
-                spreadRadius: 0,
-              ),
-            ],
-          );
-        }
-        return Container(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          decoration: decoration,
-          child: child,
-        );
-      },
+    // Reuses the shared de-flashed [TaskSurface] (same flat surface + whisper
+    // shadow as the task card) so the treatment is defined in one place.
+    return TaskSurface(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      borderRadius: AppRadius.cardAll,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Status pill
-          _StatusPill(widget.task.status),
+          _StatusPill(task.status),
           const SizedBox(height: AppSpacing.md),
           // Meta row
           Wrap(
             spacing: AppSpacing.xl,
             runSpacing: AppSpacing.sm,
             children: [
-              if ((widget.branchName ?? '').isNotEmpty)
+              if ((branchName ?? '').isNotEmpty)
                 _MetaPill(
                   icon: Icons.store_mall_directory_outlined,
-                  label: widget.branchName!,
+                  label: branchName!,
                 ),
               _MetaPill(
                 icon: Icons.flag_outlined,
-                label: _priorityLabel(widget.task.priority),
+                label: _priorityLabel(task.priority),
               ),
               _MetaPill(
                 icon: Icons.label_outline_rounded,
-                label: widget.task.type.value,
+                label: task.type.value,
               ),
-              if (widget.task.deadline != null) ...[
+              if (task.deadline != null) ...[
                 _MetaPill(
                   icon: Icons.schedule_outlined,
-                  label: _dateLabel(widget.task.deadline!),
-                  highlight: _isOverdue(widget.task),
+                  label: _dateLabel(task.deadline!),
+                  highlight: _isOverdue(task),
                 ),
               ],
-              if (widget.task.recurrence != null &&
-                  widget.task.recurrence!.frequency.value != 'none')
+              if (task.recurrence != null &&
+                  task.recurrence!.frequency.value != 'none')
                 _MetaPill(
                   icon: Icons.repeat_rounded,
-                  label: widget.task.recurrence!.frequency.label,
+                  label: task.recurrence!.frequency.label,
                 ),
             ],
           ),
@@ -930,6 +1135,9 @@ class _ActivityTimeline extends StatelessWidget {
           actor: directory[entry.actorId],
           attachmentSummary: media.isEmpty ? null : attachmentSummary(media),
           isLast: i == 0,
+          // The newest entry (rendered first) is the task's CURRENT state — the
+          // V2 timeline gives it prominent emphasis.
+          isHead: i == log.length - 1,
           onTap: _isSubmission(entry.status)
               ? () => showSubmissionDetailsSheet(
                     context: context,
@@ -956,6 +1164,7 @@ class _EventCard extends StatelessWidget {
     required this.actor,
     required this.attachmentSummary,
     required this.isLast,
+    required this.isHead,
     required this.onTap,
   });
 
@@ -963,6 +1172,10 @@ class _EventCard extends StatelessWidget {
   final UserEntity? actor;
   final String? attachmentSummary;
   final bool isLast;
+
+  /// The most recent event — the task's current state. Drives the prominent
+  /// "current step" treatment (larger node, accent ring + glow, CURRENT pill).
+  final bool isHead;
   final VoidCallback? onTap;
 
   String get _actorName =>
@@ -984,23 +1197,57 @@ class _EventCard extends StatelessWidget {
     final card = Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: AppColors.darkSurfaceElevated,
+        // The current step reads as an accent-tinted, glowing surface; older
+        // steps recede onto the flat elevated surface (premium hierarchy).
+        color: isHead ? color.withAlpha(20) : AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.darkBorder),
+        border: Border.all(
+          color: isHead ? color.withAlpha(110) : AppColors.darkBorder,
+          width: isHead ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isHead ? color.withAlpha(34) : Colors.black.withAlpha(46),
+            blurRadius: isHead ? 18 : 7,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title + timestamp (+ chevron when the card opens a detail surface)
+          // Title + (CURRENT pill on the head) + timestamp + chevron.
           Row(
             children: [
               Expanded(
                 child: Text(
                   activityTitle(entry.status),
-                  style: AppTypography.label.copyWith(color: color, fontSize: 13),
+                  style: AppTypography.label.copyWith(
+                    color: color,
+                    fontSize: isHead ? 14 : 13,
+                    fontWeight: isHead ? FontWeight.w700 : FontWeight.w600,
+                  ),
                 ),
               ),
-              const SizedBox(width: AppSpacing.sm),
+              if (isHead) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(38),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: color.withAlpha(120)),
+                  ),
+                  child: Text('CURRENT',
+                      style: AppTypography.caption.copyWith(
+                        color: color,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 9,
+                        letterSpacing: 0.5,
+                      )),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+              ],
               Text(relativeTime(entry.at), style: AppTypography.caption),
               if (onTap != null) ...[
                 const SizedBox(width: 2),
@@ -1041,44 +1288,71 @@ class _EventCard extends StatelessWidget {
               ],
             ),
           ],
-          // Truncated note preview
+          // Note preview — in a subtle callout surface.
           if (note.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),
-            Text(
-              '“$note”',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.caption
-                  .copyWith(color: AppColors.textSecondary, height: 1.4),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm, vertical: 7),
+              decoration: BoxDecoration(
+                color: AppColors.darkSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.darkBorder),
+              ),
+              child: Text(
+                '“$note”',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.caption
+                    .copyWith(color: AppColors.textSecondary, height: 1.4),
+              ),
             ),
           ],
         ],
       ),
     );
 
+    // The connecting spine below the head is accent-tinted at the top, fading to
+    // the neutral border — a clear "you are here, this is the history below" read.
+    final lineTop = isHead ? color.withAlpha(130) : AppColors.darkBorder;
+
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Spine ──────────────────────────────────────────────
+          // ── Spine: prominent node for the current step ─────────
           Column(
             children: [
               Container(
-                width: 28,
-                height: 28,
+                width: isHead ? 34 : 26,
+                height: isHead ? 34 : 26,
                 decoration: BoxDecoration(
-                  color: color.withAlpha(28),
+                  color: color.withAlpha(isHead ? 45 : 26),
                   shape: BoxShape.circle,
-                  border: Border.all(color: color.withAlpha(90)),
+                  border: Border.all(
+                    color: color.withAlpha(isHead ? 165 : 85),
+                    width: isHead ? 2 : 1,
+                  ),
+                  boxShadow: isHead
+                      ? [BoxShadow(color: color.withAlpha(70), blurRadius: 12)]
+                      : null,
                 ),
-                child: Icon(activityIcon(entry.status), size: 15, color: color),
+                child: Icon(activityIcon(entry.status),
+                    size: isHead ? 18 : 14, color: color),
               ),
               if (!isLast)
                 Expanded(
                   child: Container(
-                    width: 1.5,
+                    width: 2,
                     margin: const EdgeInsets.symmetric(vertical: 4),
-                    color: AppColors.darkBorder,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [lineTop, AppColors.darkBorder],
+                      ),
+                    ),
                   ),
                 ),
             ],

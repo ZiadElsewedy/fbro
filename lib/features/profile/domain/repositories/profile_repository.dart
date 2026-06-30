@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
+import 'package:drop/features/profile/domain/entities/profile_entity.dart';
 
 abstract class ProfileRepository {
   Future<ProfileEntity?> getProfile(String uid);
@@ -21,6 +21,8 @@ abstract class ProfileRepository {
     DateTime? birthDate,
     String? profileImage,
     String? coverImage,
+    String? emergencyContact,
+    String? address,
   });
 
   Future<String> uploadProfileImage(String uid, File file,

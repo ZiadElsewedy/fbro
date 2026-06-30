@@ -29,33 +29,31 @@ service cloud.firestore {
     }
 
     // ── Users ──────────────────────────────────────────────────────
-    // Self: read own doc + limited self-update (cannot touch privileged fields,
-    //   but may write non-privileged fields like the FCM token).
-    // Branch members: read users in their OWN branch — their team. Managers see
-    //   their team; employees (Phase 7) see the coworkers on their shift + their
-    //   manager (the weekly schedule stores uids, resolved to names here). Read
-    //   only — only an admin writes user accounts.
-    // Admin: read/write everything — approvals, promotions, branch moves,
-    //   (de)activation. **Account approval is admin-only (Phase 6).**
+    // DROP is ADMIN-PROVISIONED — there is no public registration. Accounts are
+    // created server-side by the `createUserAccount` Cloud Function (Admin SDK,
+    // which bypasses these rules), so clients can NEVER create a user document.
+    // Self: read own doc + limited self-update (profile fields + the first-login
+    //   flags; all privileged fields stay frozen).
+    // Branch members: read users in their OWN branch — their team (managers their
+    //   team; employees their shift coworkers + manager, resolved from the weekly
+    //   schedule's uids). Read-only — only an admin writes accounts.
+    // Admin: read/write everything — role, branch, (de)activation, position,
+    //   employment status, password-reset flag.
     match /users/{uid} {
       allow read: if isOwner(uid)
         || isAdmin()
         || (selfBranch() != ''
             && resource.data.get('branchId', '') == selfBranch());
 
-      // Self-registration only — always as a PENDING, INACTIVE employee. A new
-      // account cannot use the app until an ADMIN approves it (update below).
-      // Promotion to manager/admin, branch assignment and activation are never
-      // self-service.
-      allow create: if isOwner(uid)
-        && request.resource.data.get('role', 'employee') == 'employee'
-        && request.resource.data.get('isActive', false) == false
-        && request.resource.data.get('approvalStatus', 'pending') == 'pending';
+      // No client may create a user document — the only creation path is the
+      // admin-only `createUserAccount` Cloud Function (Admin SDK).
+      allow create: if false;
 
-      // Admin: full control — approve/reject, promote, move branch, (de)activate.
-      // Self: profile-only updates — all privileged fields stay frozen (role,
-      //   isActive, branchId, assignedShift, approvalStatus). Non-privileged
-      //   fields (profile data, fcmToken) are free to change.
+      // Admin: full control.
+      // Self: profile fields + the first-login flags (mustChangePassword,
+      //   isProfileCompleted) + non-privileged fields (fcmToken). All PRIVILEGED
+      //   fields stay frozen: role, isActive, branchId, assignedShift, position,
+      //   employmentStatus, createdBy.
       // Managers do NOT write user docs (they manage branch operations only).
       allow update: if isAdmin()
         || (isOwner(uid)
@@ -67,8 +65,12 @@ service cloud.firestore {
                  == resource.data.get('branchId', '')
             && request.resource.data.get('assignedShift', '')
                  == resource.data.get('assignedShift', '')
-            && request.resource.data.get('approvalStatus', 'approved')
-                 == resource.data.get('approvalStatus', 'approved'));
+            && request.resource.data.get('position', '')
+                 == resource.data.get('position', '')
+            && request.resource.data.get('employmentStatus', 'active')
+                 == resource.data.get('employmentStatus', 'active')
+            && request.resource.data.get('createdBy', '')
+                 == resource.data.get('createdBy', ''));
 
       // Deactivate via isActive (an admin update), never a hard delete; document
       // cleanup on account removal belongs to a Cloud Function.
@@ -184,9 +186,12 @@ service cloud.firestore {
     //            an UPCOMING shift (past/in-progress shifts can't be swapped —
     //            spec §2; the precise rule also lives client-side in
     //            SwapEligibility, this is the server backstop).
-    //   update — admin/own-branch manager (approve/reject), OR either involved
-    //            employee (coworker approve / requester cancel / decline). The
-    //            exact status flow is validated client-side (ShiftSwapCubit).
+    //   update — admin/own-branch manager (reject), OR either involved employee
+    //            (coworker approve / requester cancel / decline). The exact status
+    //            flow is validated client-side (ShiftSwapCubit). The FINAL
+    //            approval (status → managerApproved) is **denied to all clients**
+    //            and applied only by the `approveSwap` Cloud Function (Admin SDK),
+    //            which re-validates and rewrites the schedule atomically.
     //   delete — admin/own-branch manager only.
 
     // Day offset within the week (Sunday=0 … Saturday=6), matching ScheduleDay.
@@ -220,9 +225,14 @@ service cloud.firestore {
         && request.resource.data.get('requesterId', '') == request.auth.uid
         && request.resource.data.get('branchId', '') == selfBranch()
         && swapSlotInFuture(request.resource.data);
-      allow update: if canReachBranch(resource.data.get('branchId', ''))
-        || resource.data.get('requesterId', '') == request.auth.uid
-        || resource.data.get('targetId', '') == request.auth.uid;
+      allow update: if (canReachBranch(resource.data.get('branchId', ''))
+          || resource.data.get('requesterId', '') == request.auth.uid
+          || resource.data.get('targetId', '') == request.auth.uid)
+        // Finalizing the swap (→ managerApproved, which rewrites the schedule) is
+        // OWNED BY the approveSwap Cloud Function (Admin SDK, bypasses rules).
+        // Deny any direct client write that sets it, so a swap can never be
+        // applied without the server-side re-validation + atomic exchange.
+        && request.resource.data.get('status', '') != 'managerApproved';
       allow delete: if canReachBranch(resource.data.get('branchId', ''));
     }
 
@@ -262,7 +272,14 @@ service cloud.firestore {
             || resource.data.get('senderId', '') == request.auth.uid
             || canReachBranch(resource.data.get('branchId', '')));
 
-      allow create, delete: if false;
+      allow create: if false;
+
+      // Delete (permanent) — the original sender, an admin, or the owning-branch
+      // manager may remove a broadcast from the feed. (Content/stats are still
+      // function-owned; this just removes the whole doc, it can't forge fields.)
+      allow delete: if isAdmin()
+        || resource.data.get('senderId', '') == request.auth.uid
+        || canReachBranch(resource.data.get('branchId', ''));
     }
 
     // ── Broadcast templates (Communications Center — Phase 2 Commit 2) ──

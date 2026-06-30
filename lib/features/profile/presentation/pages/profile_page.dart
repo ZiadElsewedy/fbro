@@ -1,22 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:fbro/core/routes/route_names.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_glass_card.dart';
-import 'package:fbro/core/widgets/branch_avatar.dart';
-import 'package:fbro/core/widgets/skeleton.dart';
-import 'package:fbro/features/auth/presentation/cubit/auth_cubit.dart';
-import 'package:fbro/features/branch/presentation/cubit/branch_cubit.dart';
-import 'package:fbro/features/branch/presentation/cubit/branch_state.dart';
-import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/features/profile/domain/entities/profile_entity.dart';
-import 'package:fbro/features/profile/presentation/cubit/profile_cubit.dart';
-import 'package:fbro/features/profile/presentation/cubit/profile_state.dart';
-import 'package:fbro/features/profile/presentation/widgets/profile_avatar.dart';
+import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/app_glass_card.dart';
+import 'package:drop/core/widgets/branch_avatar.dart';
+import 'package:drop/core/widgets/skeleton.dart';
+import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
+import 'package:drop/features/branch/presentation/cubit/branch_cubit.dart';
+import 'package:drop/features/branch/presentation/cubit/branch_state.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/features/profile/domain/entities/profile_entity.dart';
+import 'package:drop/features/profile/presentation/cubit/profile_cubit.dart';
+import 'package:drop/features/profile/presentation/cubit/profile_state.dart';
+import 'package:drop/features/profile/presentation/widgets/profile_avatar.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -41,18 +42,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        surfaceTintColor: AppColors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textPrimary, size: 20),
-          onPressed: () => context.pop(),
-        ),
-        title: Text('Profile', style: AppTypography.h3),
-      ),
+    return AdaptiveScaffold(
+      title: 'Profile',
       body: BlocBuilder<ProfileCubit, ProfileState>(
         builder: (context, state) {
           return state.maybeWhen(

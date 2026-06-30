@@ -1,24 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:fbro/core/enums/recurrence_frequency.dart';
-import 'package:fbro/core/enums/task_priority.dart';
-import 'package:fbro/core/enums/task_type.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_dropdown_field.dart';
-import 'package:fbro/core/widgets/user_avatar.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_button.dart';
-import 'package:fbro/features/auth/presentation/widgets/app_text_field.dart';
-import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
-import 'package:fbro/features/task/domain/entities/checklist_item.dart';
-import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
-import 'package:fbro/features/task/domain/entities/task_entity.dart';
-import 'package:fbro/features/task/domain/entities/task_template_entity.dart';
-import 'package:fbro/features/task/presentation/attachment_format.dart';
-import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
-import 'package:fbro/features/task/presentation/widgets/attachment_gallery.dart';
+import 'package:drop/core/enums/recurrence_frequency.dart';
+import 'package:drop/core/enums/task_priority.dart';
+import 'package:drop/core/enums/task_type.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/features/auth/presentation/widgets/app_dropdown_field.dart';
+import 'package:drop/core/widgets/user_avatar.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/auth/presentation/widgets/app_button.dart';
+import 'package:drop/features/auth/presentation/widgets/app_text_field.dart';
+import 'package:drop/features/branch/domain/entities/branch_entity.dart';
+import 'package:drop/features/task/domain/entities/checklist_item.dart';
+import 'package:drop/features/task/domain/entities/recurrence_config.dart';
+import 'package:drop/features/task/domain/entities/task_attachment.dart';
+import 'package:drop/features/task/domain/entities/task_entity.dart';
+import 'package:drop/features/task/domain/entities/task_template_entity.dart';
+import 'package:drop/features/task/presentation/attachment_format.dart';
+import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
+import 'package:drop/features/task/presentation/widgets/attachment_gallery.dart';
+import 'package:drop/features/task/presentation/widgets/attachment_picker.dart';
 
 /// Create or edit a task (manager/admin). For a manager the branch is fixed to
 /// [defaultBranchId]; an admin **picks** an existing branch from a dropdown
@@ -153,6 +155,13 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   final List<bool> _itemRequired = [];
   final List<String> _itemIds = [];
   final List<ChecklistItem?> _itemOriginals = [];
+
+  /// Reference images: the already-uploaded ones kept on this task (removable in
+  /// edit mode) + the newly-picked ones to upload on save.
+  late final List<TaskAttachment> _existingRefs = [
+    ...?widget.existing?.referenceAttachments,
+  ];
+  List<PickedAttachment> _newRefs = [];
 
   /// Admin-only branch selection (managers use their own fixed branch).
   late String? _branchId = _initialBranch();
@@ -299,17 +308,24 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
         recurrence: _recurrence == RecurrenceFrequency.none
             ? null
             : RecurrenceConfig(frequency: _recurrence),
+        referenceAttachments: _newRefs,
       );
     } else {
-      widget.cubit.editTask(existing.copyWith(
-        title: title,
-        description: description,
-        priority: _priority,
-        branchId: branchId,
-        deadline: _deadline,
-        assigneeIds: _assignees.toList(),
-        checklist: checklist,
-      ));
+      widget.cubit.editTask(
+        existing.copyWith(
+          title: title,
+          description: description,
+          priority: _priority,
+          branchId: branchId,
+          deadline: _deadline,
+          assigneeIds: _assignees.toList(),
+          checklist: checklist,
+          // Persist the kept references (removed ones drop off here); newly
+          // picked ones upload via newReferenceAttachments below.
+          referenceAttachments: _existingRefs,
+        ),
+        newReferenceAttachments: _newRefs,
+      );
     }
     Navigator.of(context).pop();
   }
@@ -344,6 +360,21 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
             controller: _desc,
             label: 'Description (optional)',
             prefixIcon: Icons.notes_rounded,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // Reference images — "what good looks like" the employee sees before
+          // starting (images only; distinct from their proof on submission).
+          AttachmentPickerField(
+            attachments: _newRefs,
+            allowVideo: false,
+            title: 'Reference images',
+            hint:
+                'Attach photos showing how this should look — the employee sees '
+                'them before starting. Photos are compressed before upload.',
+            existing: _existingRefs,
+            onRemoveExisting: (a) =>
+                setState(() => _existingRefs.remove(a)),
+            onChanged: (list) => setState(() => _newRefs = list),
           ),
           const SizedBox(height: AppSpacing.md),
           _InlineChecklistEditor(

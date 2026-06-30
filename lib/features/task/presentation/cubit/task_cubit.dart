@@ -3,30 +3,30 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fbro/core/enums/notification_type.dart';
-import 'package:fbro/core/enums/task_priority.dart';
-import 'package:fbro/core/enums/task_status.dart';
-import 'package:fbro/core/enums/task_type.dart';
-import 'package:fbro/core/errors/failures.dart';
-import 'package:fbro/features/notifications/domain/usecases/notify_task_event.dart';
-import 'package:fbro/features/auth/domain/entities/user_entity.dart';
-import 'package:fbro/features/auth/domain/usecases/get_users_by_branch.dart';
-import 'package:fbro/features/branch/domain/entities/branch_entity.dart';
-import 'package:fbro/features/branch/domain/repositories/branch_repository.dart';
-import 'package:fbro/core/enums/attachment_type.dart';
-import 'package:fbro/features/task/domain/entities/activity_entry.dart';
-import 'package:fbro/features/task/domain/entities/checklist_item.dart';
-import 'package:fbro/features/task/domain/entities/recurrence_config.dart';
-import 'package:fbro/features/task/domain/entities/task_attachment.dart';
-import 'package:fbro/features/task/domain/entities/task_entity.dart';
-import 'package:fbro/features/task/domain/entities/task_template_entity.dart';
-import 'package:fbro/features/task/domain/repositories/task_repository.dart';
-import 'package:fbro/features/task/domain/usecases/assign_task.dart';
-import 'package:fbro/features/task/domain/usecases/create_task.dart';
-import 'package:fbro/features/task/domain/usecases/delete_task.dart';
-import 'package:fbro/features/task/domain/usecases/update_task.dart';
-import 'package:fbro/features/task/domain/usecases/upload_task_attachment.dart';
-import 'package:fbro/features/task/presentation/submission_progress.dart';
+import 'package:drop/core/enums/notification_type.dart';
+import 'package:drop/core/enums/task_priority.dart';
+import 'package:drop/core/enums/task_status.dart';
+import 'package:drop/core/enums/task_type.dart';
+import 'package:drop/core/errors/failures.dart';
+import 'package:drop/features/notifications/domain/usecases/notify_task_event.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/auth/domain/usecases/get_users_by_branch.dart';
+import 'package:drop/features/branch/domain/entities/branch_entity.dart';
+import 'package:drop/features/branch/domain/repositories/branch_repository.dart';
+import 'package:drop/core/enums/attachment_type.dart';
+import 'package:drop/features/task/domain/entities/activity_entry.dart';
+import 'package:drop/features/task/domain/entities/checklist_item.dart';
+import 'package:drop/features/task/domain/entities/recurrence_config.dart';
+import 'package:drop/features/task/domain/entities/task_attachment.dart';
+import 'package:drop/features/task/domain/entities/task_entity.dart';
+import 'package:drop/features/task/domain/entities/task_template_entity.dart';
+import 'package:drop/features/task/domain/repositories/task_repository.dart';
+import 'package:drop/features/task/domain/usecases/assign_task.dart';
+import 'package:drop/features/task/domain/usecases/create_task.dart';
+import 'package:drop/features/task/domain/usecases/delete_task.dart';
+import 'package:drop/features/task/domain/usecases/update_task.dart';
+import 'package:drop/features/task/domain/usecases/upload_task_attachment.dart';
+import 'package:drop/features/task/presentation/submission_progress.dart';
 import 'task_state.dart';
 
 /// A media file the employee has picked but not yet uploaded — the input to
@@ -221,6 +221,7 @@ class TaskCubit extends Cubit<TaskState> {
     List<String> assigneeIds = const [],
     List<ChecklistItem> checklist = const [],
     RecurrenceConfig? recurrence,
+    List<PickedAttachment> referenceAttachments = const [],
   }) async {
     TaskEntity? created;
     final ok = await _mutate(() async {
@@ -245,6 +246,16 @@ class TaskCubit extends Cubit<TaskState> {
           ),
         ],
       ));
+      // Reference images upload AFTER create (the Storage path needs the task
+      // id), then patch the task. Best-effort relative to the task itself: a
+      // failed upload throws inside _mutate, which rolls the list back so the
+      // manager can retry — the half-created task without images would be worse.
+      if (referenceAttachments.isNotEmpty && created != null) {
+        final uploaded =
+            await _uploadReferences(created!.id, referenceAttachments);
+        created = created!.copyWith(referenceAttachments: uploaded);
+        await _updateTask(created!);
+      }
     });
     // Notify the assignees of the brand-new task (best-effort).
     if (ok && created != null && _user != null && assigneeIds.isNotEmpty) {
@@ -257,7 +268,10 @@ class TaskCubit extends Cubit<TaskState> {
     }
   }
 
-  Future<void> editTask(TaskEntity task) async {
+  Future<void> editTask(
+    TaskEntity task, {
+    List<PickedAttachment> newReferenceAttachments = const [],
+  }) async {
     // An approved task is a locked, reviewed record — block edits/reassignment
     // (the UI hides the affordance; this is the cubit-level backstop). An admin
     // must reopen it first (reopenTask).
@@ -269,7 +283,19 @@ class TaskCubit extends Cubit<TaskState> {
     final before = _taskById(task.id)?.assigneeIds.toSet() ?? const {};
     final added =
         task.assigneeIds.where((id) => !before.contains(id)).toList();
-    final ok = await _mutate(() => _updateTask(task));
+    final ok = await _mutate(() async {
+      // [task] already carries the kept reference images (the form drops removed
+      // ones); upload any newly-picked ones and append before the write.
+      var next = task;
+      if (newReferenceAttachments.isNotEmpty) {
+        final uploaded =
+            await _uploadReferences(task.id, newReferenceAttachments);
+        next = task.copyWith(
+          referenceAttachments: [...task.referenceAttachments, ...uploaded],
+        );
+      }
+      await _updateTask(next);
+    });
     if (ok && added.isNotEmpty && _user != null) {
       await _notifyTaskEvent(
         task: task,
@@ -751,6 +777,25 @@ class TaskCubit extends Cubit<TaskState> {
       _repository.deleteTemplate(templateId);
 
   // ─── Internals ─────────────────────────────────────────────────
+  /// Uploads the manager/admin's picked reference images for [taskId] (in
+  /// parallel) and returns the resolved [TaskAttachment]s. Used by create/edit;
+  /// a failure propagates so the caller's [_mutate] rolls back and surfaces it.
+  Future<List<TaskAttachment>> _uploadReferences(
+    String taskId,
+    List<PickedAttachment> picked,
+  ) =>
+      Future.wait([
+        for (final p in picked)
+          _uploadTaskAttachment(
+            taskId: taskId,
+            file: p.file,
+            type: p.type,
+            uploadedBy: _user?.uid ?? '',
+            uploadedByName: _user?.displayName,
+            durationMs: p.durationMs,
+          ),
+      ]);
+
   /// Creates the next instance of a recurring task immediately after [source]
   /// is approved. Resets checklist items to uncompleted; inherits everything
   /// else (title, description, type, priority, branchId, assignees, recurrence).

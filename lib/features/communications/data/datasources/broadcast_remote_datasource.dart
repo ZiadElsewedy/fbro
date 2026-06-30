@@ -2,9 +2,9 @@ import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:fbro/core/constants/app_constants.dart';
-import 'package:fbro/core/errors/exceptions.dart';
-import 'package:fbro/features/communications/data/models/broadcast_model.dart';
+import 'package:drop/core/constants/app_constants.dart';
+import 'package:drop/core/errors/exceptions.dart';
+import 'package:drop/features/communications/data/models/broadcast_model.dart';
 
 abstract class BroadcastRemoteDataSource {
   /// Sends a broadcast through the **callable `sendBroadcast` Cloud Function**
@@ -29,6 +29,10 @@ abstract class BroadcastRemoteDataSource {
   /// owning-branch manager to touch **only** the lifecycle fields, never content
   /// or delivery stats.
   Future<void> setArchived(String id, bool archived);
+
+  /// Permanently deletes the `broadcasts/{id}` doc. The `broadcasts` rule permits
+  /// this for an admin, the original sender, or the owning-branch manager.
+  Future<void> delete(String id);
 }
 
 class BroadcastRemoteDataSourceImpl implements BroadcastRemoteDataSource {
@@ -107,6 +111,15 @@ class BroadcastRemoteDataSourceImpl implements BroadcastRemoteDataSource {
       );
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to update the broadcast.');
+    }
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    try {
+      await _broadcasts.doc(id).delete();
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to delete the broadcast.');
     }
   }
 

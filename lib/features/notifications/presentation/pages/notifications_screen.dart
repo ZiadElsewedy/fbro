@@ -2,21 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:fbro/core/extensions/context_extensions.dart';
-import 'package:fbro/core/routes/route_names.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_dialog.dart';
-import 'package:fbro/core/widgets/app_empty_state.dart';
-import 'package:fbro/core/widgets/drop_empty_state.dart';
-import 'package:fbro/core/widgets/app_motion.dart';
-import 'package:fbro/core/widgets/list_skeleton.dart';
-import 'package:fbro/features/notifications/domain/entities/notification_entity.dart';
-import 'package:fbro/features/notifications/presentation/cubit/notification_cubit.dart';
-import 'package:fbro/features/notifications/presentation/cubit/notification_state.dart';
-import 'package:fbro/features/notifications/presentation/notification_format.dart';
-import 'package:fbro/features/notifications/presentation/widgets/notification_tile.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/app_dialog.dart';
+import 'package:drop/core/widgets/app_empty_state.dart';
+import 'package:drop/core/widgets/drop_empty_state.dart';
+import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/list_skeleton.dart';
+import 'package:drop/features/notifications/domain/entities/notification_entity.dart';
+import 'package:drop/features/notifications/presentation/cubit/notification_cubit.dart';
+import 'package:drop/features/notifications/presentation/cubit/notification_state.dart';
+import 'package:drop/features/notifications/presentation/notification_format.dart';
+import 'package:drop/features/notifications/presentation/widgets/notification_tile.dart';
 
 /// The in-app Notification Center — an **operations workflow inbox** (§5). Not a
 /// flat feed: notifications are **grouped by time** (Today / Yesterday / Earlier),
@@ -138,47 +139,39 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        titleSpacing: AppSpacing.pagePadding,
-        title: Text(_showArchived ? 'Archived' : 'Notifications',
-            style: AppTypography.h3),
-        actions: [
-          if (_showArchived)
-            TextButton(
-              onPressed: _clearArchived,
-              child: Text('Clear',
-                  style:
-                      AppTypography.caption.copyWith(color: AppColors.error)),
-            )
-          else
-            BlocBuilder<NotificationCubit, NotificationState>(
-              builder: (context, _) {
-                final hasUnread =
-                    context.read<NotificationCubit>().unreadCount > 0;
-                if (!hasUnread) return const SizedBox.shrink();
-                return TextButton(
-                  onPressed: () =>
-                      context.read<NotificationCubit>().markAllRead(),
-                  child: Text('Mark all read',
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.primary)),
-                );
-              },
-            ),
-          IconButton(
-            tooltip: _showArchived ? 'Inbox' : 'Archived',
-            icon: Icon(
-              _showArchived ? Icons.inbox_outlined : Icons.archive_outlined,
-              color: AppColors.textSecondary,
-            ),
-            onPressed: () => setState(() => _showArchived = !_showArchived),
+    return AdaptiveScaffold(
+      title: _showArchived ? 'Archived' : 'Notifications',
+      actions: [
+        if (_showArchived)
+          TextButton(
+            onPressed: _clearArchived,
+            child: Text('Clear',
+                style: AppTypography.caption.copyWith(color: AppColors.error)),
+          )
+        else
+          BlocBuilder<NotificationCubit, NotificationState>(
+            builder: (context, _) {
+              final hasUnread =
+                  context.read<NotificationCubit>().unreadCount > 0;
+              if (!hasUnread) return const SizedBox.shrink();
+              return TextButton(
+                onPressed: () =>
+                    context.read<NotificationCubit>().markAllRead(),
+                child: Text('Mark all read',
+                    style: AppTypography.caption
+                        .copyWith(color: AppColors.accent)),
+              );
+            },
           ),
-        ],
-      ),
+        IconButton(
+          tooltip: _showArchived ? 'Inbox' : 'Archived',
+          icon: Icon(
+            _showArchived ? Icons.inbox_outlined : Icons.archive_outlined,
+            color: AppColors.textSecondary,
+          ),
+          onPressed: () => setState(() => _showArchived = !_showArchived),
+        ),
+      ],
       body: BlocBuilder<NotificationCubit, NotificationState>(
         builder: (context, state) => state.maybeWhen(
           loading: () => const ListSkeleton(),

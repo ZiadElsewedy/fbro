@@ -1,6 +1,6 @@
 # DROP — Current State
 
-> Product: **DROP — Operations Management System** (Dart package id stays `fbro`).
+> Product: **DROP — Operations Management System** (Dart package id is `drop`).
 >
 > **Live status snapshot of the project.** Read this after
 > [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) to know what's done, what's pending,
@@ -11,8 +11,285 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-25 (FCM routing audit — exclusive token ownership fix)
+**Last updated:** 2026-06-30 (Desktop-first UI architecture: ShellRoute + persistent sidebar + indigo accent; macOS login fix; full DROP rebrand)
 **Version:** 1.0.0+1 · **Branch:** `enhancement/ui-refactor` (DROP — monochrome premium UX)
+
+---
+
+## ⚙️ Desktop UI migration status (2026-06-30)
+
+The app is now desktop-first via a `ShellRoute` (`AppShell`) that renders a
+persistent, role-aware `AppSidebar` across **every** authenticated route on
+desktop/ultrawide widths; mobile/tablet keep the original app-bar + bottom-nav
+chrome. Indigo (`#5B5FEF`) is the single accent, used only for active nav, the
+primary CTA, key FABs, and links.
+
+**Premium desktop redesigns (beyond a chrome swap):**
+- **Schedule** (`manager_schedule_view` + `schedule_grid`): full-width weekly grid
+  (no horizontal scroll on desktop) + dense horizontal toolbar.
+- **Task Details** (`task_details_screen`): two-column ticket — record + dedicated
+  action panel.
+- **Communications** (`communications_screen`): history feed + command panel with
+  delivery analytics.
+
+**Migrated to `AdaptiveScaffold`** (no desktop app bar, premium desktop header):
+notifications · settings · change-password · profile · edit-profile · analytics ·
+schedule-management · branch-schedule · communications-center · admin-task-overview ·
+my-tasks (TabBar) · employee-management · create-account · branch-management ·
+task-details · plus the three role dashboards (`RoleScaffold`). Login has a bespoke
+desktop split.
+
+**Still on a raw `AppBar` (have the sidebar, need the mechanical `AdaptiveScaffold`
+swap — desktop punch-list):**
+- Tasks: `branch_task_list_screen` (leading+FAB), `pending_review_screen` (leading),
+  `task_detail_loader_screen` (leading)
+- Operations: `branch_operations_screen` (custom title widget + FAB — needs a
+  `titleWidget` param on `AdaptiveScaffold` first), `employee_detail_screen` (leading)
+- Schedule: `my_schedule_screen` (TabBar)
+- Admin: `admin_users_list_view` (widget, FAB)
+- Communications: `compose_broadcast_screen`, `broadcast_detail_screen`,
+  `broadcast_templates_screen` (FAB), `broadcast_schedules_screen`
+- Auth/onboarding (intentionally outside the shell, mobile-style is acceptable):
+  `forgot_password_page`, `force_password_change_page`, `profile_completion_page`
+
+**Conversion recipe:** replace `Scaffold(appBar: AppBar(title: Text(x), actions: […]))`
+with `AdaptiveScaffold(title: x, actions: […], body: …)`; for full-width data
+surfaces (tables/grids) pass `constrainContent: false`; for a custom leading/sub-view
+toggle pass `leading:`; for a TabBar pass it via `bottom:`. Custom-title screens
+(e.g. branch operations) need a `titleWidget` param added to `AdaptiveScaffold` first.
+
+> **Branch cover photo on the admin task overview (2026-06-28):** The branch cards in
+> `AdminTaskOverviewScreen` now lead with the branch **cover photo** (new `_CoverHeader`:
+> 16:7 image + scrim + logo/name/location + attention pill + chevron) **when the branch
+> has an uploaded `coverUrl`** — branches without media keep the plain text header.
+> Metrics stay below on the dark surface for legibility. `_BranchRow` carries
+> `coverUrl`/`logoUrl` from `TaskCubit.branches()`; reuses `BranchAvatar` + the §8b media
+> pipeline (extends the branch-identity-in-tasks work). No data layer, no deploy. **227
+> tests pass.**
+>
+> **User-detail input validation (2026-06-28):** New shared **`Validators`**
+> (`lib/core/utils/validators.dart`, pure + unicode-aware for Arabic) enforces the
+> right *kind* of value on user-detail fields — `phone` (digits + `+ - ( )`, rejects
+> letters/`@`), `name` (letters only), `address`, `emergencyContact` (must contain a
+> number), `email`; each takes `required` (mandatory onboarding vs. optional admin
+> clear-to-empty). `AppTextField` gained an **`inputFormatters`** hook; phone fields use
+> `Validators.phoneInput` so letters can't be typed. Applied to **ProfileCompletionPage**
+> (first-login required fields), the admin **Edit details** sheet (was un-validated) and
+> **Create account**. `validators_test.dart` → **227 tests pass**. Client-only, no deploy.
+>
+> **Account-switch push fix on a shared device (2026-06-28):** Fixed an L1 client gap
+> behind EXCLUSIVE token ownership. On a shared phone the device's FCM token is the
+> **same** across accounts; `registerToken` set `_uid` then hit `_rotateToken`'s dedup
+> guard (`_currentToken == token && _uid == uid`), so if the prior session's
+> `_currentToken` survived in memory (a switch path that bypassed `forgetUser`) the new
+> user's `fcmTokens` was **never** written → `claimFcmToken` had nothing to reclaim →
+> pushes to the switched-in account failed ("0 registered tokens"). Now `registerToken`
+> **clears `_currentToken` on a uid change**, forcing a fresh write the server reclaims
+> from the prior owner. Client-only, **no deploy**; `claimFcmToken` unchanged. `flutter
+> analyze` clean.
+>
+> **Delete sent broadcasts (2026-06-27):** Re-added an option to **permanently delete**
+> a broadcast from the Communications feed (archive-only since the 2026-06-24 trim).
+> Hard delete of `broadcasts/{id}` via `BroadcastRepository.delete` →
+> `BroadcastCubit.deleteBroadcast`; a destructive **Delete** item in the card + detail
+> overflow menus (confirm-gated). **Firestore rule** `broadcasts` `delete` now allows
+> admin / original sender / owning-branch manager (was `if false`). ⚠️ **Deploy
+> required:** `firebase deploy --only firestore:rules` (until then delete →
+> permission-denied). Per-recipient inbox notifications already delivered are left as-is.
+> `flutter analyze` clean; **217 tests pass**.
+>
+> **iOS template-sheet keyboard fix (2026-06-27):** the Communications template editor
+> (`_TemplateEditor`) keyboard could get stuck on iOS — added tap-outside-to-dismiss
+> (`FocusScope.unfocus`), drag-to-dismiss (`keyboardDismissBehavior: onDrag`), and an
+> explicit ✕ close button. Client-only, no deploy.
+
+> **Branch identity in tasks (2026-06-27):** Tasks now carry their **branch media**
+> so they feel cohesive with the rest of the app. **Task Details** leads with a slim
+> 16:6 **cover banner** (`_BranchBanner` — branch cover photo + dark scrim +
+> `BranchAvatar` logo + name/location) when the branch has a `coverUrl`; **task cards**
+> show the branch **logo** in the branch chip (`TaskCard.branchLogoUrl`, resolved by
+> `ManagerTaskCard` from the app-wide `BranchCubit` directory). Reuses §8 branch media
+> + the Operations branch-hero pattern; no schema/rules/DI change. **Only shows for
+> branches with uploaded media** (Admin → Branches → edit → Branch media) — others
+> render as before. `flutter analyze` clean; **217 tests pass**. No deploy needed.
+
+> **Admin contact details + notification diagnosis (2026-06-26):** **(1) Admin "Edit
+> Info":** admins can record/edit a person's contact info **anytime after creation** —
+> new `UserEntity`/`UserModel` `address` + `emergencyContact` (phoneNumber already
+> existed), `UserAdminRepository.updateUserDetails` + `AdminUsersCubit.updateDetails`,
+> a new `showEditDetailsSheet` (Full name · Phone · Address · Emergency), wired as an
+> **Edit Info** action on the Employees **and** Managers lists; the employee Details
+> dialog surfaces them. No rule change (admin already writes any `users/{uid}` field;
+> the fields are non-privileged). **(2) Notifications — server is HEALTHY**, the fault
+> is platform config: **iOS is the blocker**. ✅ **Bundle-id mismatch RESOLVED** —
+> the iOS bundle id was changed `com.ziadelsewedy.fbro` → **`com.example.fbro`** in
+> `ios/Runner.xcodeproj/project.pbxproj` (all 3 Runner configs), so the app now
+> matches the existing `GoogleService-Info.plist` + `firebase_options.dart` + Android
+> (one Firebase iOS app, no plist swap). **Still owner to-dos (Xcode/Apple, not
+> code):** **no `Runner.entitlements`/`aps-environment`** (iOS can't get a push token
+> until the Push capability is added) + **no APNs key uploaded**. **Android is
+> configured**; residual misses are the Android-13 runtime permission grant or a
+> recipient with no token. `flutter analyze` clean; **217 tests pass** (+5). **No
+> deploy needed.**
+>
+> **📋 iOS push action checklist (owner, in Xcode/Apple — bundle id already done):**
+> (a) ~~reconcile bundle id~~ ✅ done (now `com.example.fbro`). (b) Xcode → Runner
+> target → Signing & Capabilities → **+ Capability → Push Notifications** (creates
+> `Runner.entitlements` + `aps-environment`) and **+ Background Modes → Remote
+> notifications**. (c) Apple Developer → Keys → create an **APNs Auth Key (.p8)** →
+> Firebase Console → Project Settings → Cloud Messaging → upload it under the iOS app
+> (`com.example.fbro`). (d) Test on a **real device** (the iOS Simulator can't receive
+> push). After (b), `pod install` + a clean rebuild.
+
+> **Auth & account provisioning redesign — admin-only accounts (2026-06-26):**
+> **Core business change: no public registration — only an admin creates
+> accounts.** **Removed completely:** signup/registration, phone-OTP, Google
+> sign-in, email-verification gating, and the approval/pending-approval flow (+
+> their pages, use cases, the `approval_status` enum, and the `google_sign_in`
+> dependency). **Auth surface is now Splash · Login · Forgot Password · Force
+> Password Change · Profile Completion.** **Data model** (`users/{uid}`):
+> `UserEntity`/`UserModel` gained `mustChangePassword` / `isProfileCompleted` /
+> `employmentStatus` / `createdBy`; dropped `approvalStatus`; `hasAppAccess` is
+> now just `isActive`. **Backend:** two admin-only callables —
+> `createUserAccount` (Admin SDK: Auth user + Firestore doc, admin stays signed
+> in) and `adminResetPassword`. **Rules:** `users` `create: if false` (server-only
+> creation), self-update freezes role/branch/shift/position/employmentStatus/
+> createdBy. **Routing:** `unauthenticated → Login`, `mustChangePassword → Force
+> Password Change`, `!isProfileCompleted → Profile Completion`, else role home; a
+> deactivated account is **blocked at login + signed out**. **UI (premium, strictly
+> monochrome — no indigo, per the locked ruling):** Login redesigned (no signup/
+> Google/phone); new Force Password Change + Profile Completion (phone/emergency
+> contact/birth date/address required, photo optional); Admin → User Management →
+> **Create Account** screen + Reset Account. `node --check` valid; all changed Dart
+> parse-checked. ⚠️ This env's Flutter is **3.10.4 < `^3.12.1`** — run `build_runner`
+> (UserEntity + AuthState freezed hand-edited) + `analyze` + `test` on 3.12.2.
+> ⚠️ **Deploy required:** `firebase deploy --only functions,firestore:rules`
+> (`createUserAccount` + `adminResetPassword` + the user-create lockdown) — until
+> then account creation fails (callables missing) and self-registration isn't
+> closed. Sequence the client cutover with the deploy.
+
+> **FCM token ownership — defense-in-depth (2026-06-26):** Three layers ensure a
+> push can never reach the wrong account (crashes / interrupted logout /
+> multi-account device / token-refresh races). **L1 client pre-sign-out cleanup**
+> (`AuthCubit.signOut` awaits `forgetUser` before `_signOut`). **L2 server
+> `claimFcmToken`** (authoritative exclusive ownership). **L3 per-recipient
+> stamping + client drop-guard:** every push carries `data.recipientUid`
+> (broadcast via `messaging.sendEach` per-token; task push per-recipient); the
+> client (`NotificationService._isForCurrentUser`) **drops** any foreground/tap
+> push whose `recipientUid != _uid` and self-heals (re-register → `claimFcmToken`
+> reclaims). Plus dispatch **drift diagnostics** (`tokenDriftCount` + a `warn` when
+> one token is on two recipients in a send). **Residual (documented):** a
+> backgrounded/terminated app's OS-rendered banner for a drifted token can't be
+> suppressed client-side (rare/short-lived; tap is still guarded). `node --check`
+> valid; changed Dart parse-checked. ⚠️ **Deploy `functions`**; run `analyze`/`test`
+> on 3.12.2.
+
+> **Token-leak audit · realtime swaps · timeline V2 (2026-06-26):** **(1) FCM
+> cross-account leak fixed.** Multi-account device audit (A→logout→B same device)
+> found `forgetUser()` ran **after** Firebase sign-out, so its `fcmTokens` write was
+> **permission-denied** (silently) — the client never removed the token on logout,
+> leaving the server `claimFcmToken` as the only guard. Now `AuthCubit.signOut()`
+> runs a **pre-sign-out hook** (`onPreSignOut` → `NotificationService.forgetUser`,
+> wired in DI) that drops the token **while still authenticated**. Two-layer
+> guarantee: client removal on normal logout + `claimFcmToken` (re-audited, correct/
+> loop-safe) reclaiming on the next register for force-kill/offline. **No token
+> ownership drift.** **(2) `ShiftSwapCubit` is stream-based** — new
+> `watchEmployeeSwaps`/`watchBranchSwaps`/`watchAllSwaps` Firestore streams
+> (datasource+repo); the cubit subscribes per scope (idempotent, cancel-on-close),
+> mutations no longer refetch. Coworker swap requests appear on Home in realtime;
+> the **admin Home swap count is live** (`_PendingSection`). **(3) Activity timeline
+> V2** — `_EventCard` gives the current (newest) step a larger glowing accent node +
+> "CURRENT" pill + tinted card; spine fades accent→border; note callouts. `node
+> --check` valid; changed Dart parse-checked. ⚠️ Run `analyze`/`test` on 3.12.2;
+> ensure `claimFcmToken` + `approveSwap` are deployed (no new functions this pass).
+
+> **Audit pass (2026-06-26):** Four surgical fixes. **(1) Swaps on Home:** the
+> employee home now loads `ShiftSwapCubit.loadMine` + shows a prominent **Shift
+> swaps** section (incoming → Accept/Decline with a "you give ⇄ you get" strip;
+> outgoing → stage + Cancel), so a coworker sees & acts on a request without digging
+> into Schedule. **(2) Admin review reactivity:** the Pending Actions / hero review
+> count was sourced from the **TTL-cached `StatisticsCubit`** (stale after a
+> review); now derived from the **live task stream** (`_DynamicSection` selects
+> `(overdue, reviews)`), so completing a review updates the queue instantly.
+> **(3) Broadcast resilience:** `dispatchBroadcast`'s FCM push wasn't error-isolated
+> — a transient send error failed the callable **after** the doc + inbox writes;
+> now wrapped best-effort with diagnostic logging (no-token info log + push-failed
+> error log). End-to-end broadcast audit (targeting, token persistence, dead-token
+> cleanup, rules) otherwise clean. **(4) UI polish:** `TimelineTile` haloed dot +
+> note callout; premium Home swap cards. `node --check` valid; changed Dart
+> parse-checked. ⚠️ Run `flutter analyze`/`test` on 3.12.2; **deploy** `functions`
+> for the broadcast fix.
+
+> **Shift Swap hardening (2026-06-26):** The employee-to-employee exchange (built
+> 2026-06-25) is now **server-authoritative + atomic** and has a premium swap UX.
+> Manager approval moved off the 4-op non-atomic client write onto a new callable
+> **`approveSwap`** (functions/index.js) that re-validates against the freshest
+> schedule (TOCTOU) and applies the requester ⇄ target trade in **one Firestore
+> transaction**. New validation: **role compatibility** (new `UserEntity.position`
+> + per-branch **`SwapPolicy`** on `branches/{id}.swapPolicy` = `restrictToSamePosition`
+> + `minRestHours`; null = permissive) and **rest hours**, defined once in pure
+> **`SwapValidation`** (client request-time) and **mirrored in the function**
+> (authority). A weekly shift cap was deliberately omitted (invariant under an
+> exchange). Rules hardened: clients can't set `status==managerApproved` (function
+> only); self-update freezes `position`. UI: `swap_view` rebuilt (⇄ exchange visual,
+> status timeline, `DropEmptyState`, premium request sheet with avatar picker +
+> request-time validation); branch form gains a "Shift-swap rules" section; employee
+> management gains a **Position** action. New tests: `swap_policy_test`,
+> `swap_validation_test` (+`user_model` position). `node --check` valid; changed Dart
+> parse-checked (`dart format`). ⚠️ This session's Flutter is **3.10.4 < `^3.12.1`** —
+> run `build_runner` (two freezed files hand-edited) + `analyze` + `test` on 3.12.2.
+> ⚠️ **Deploy required:** `firebase deploy --only functions,firestore:rules`
+> (`approveSwap` + the swap-status/position rule hardening) — until then
+> manager-approve fails (callable missing); sequence the client cutover with the deploy.
+
+> **Realtime polish (2026-06-25):** Reconciled a "realtime admin home" ask against
+> the code — **realtime streams, newest-first, rebuild-scoping, and pull-to-refresh
+> already exist** (`TaskCubit.watchAllTasks`, scoped `BlocSelector`s); the admin
+> home is a **counters dashboard**, not a live task list. Per the owner's lean
+> scope, added two reusable primitives — **`AnimatedCount`** (single animated
+> counter; replaced the bespoke tween in the review header, reused by dashboard
+> metrics + hero + drill counts) and **`LiveListItem`** (keyed entrance-once +
+> optional new-arrival highlight; preserves scroll, no `AnimatedList`/diff) — then:
+> dashboard **metric grid + hero counters count up** (`DashboardMetricCard` numeric
+> values via `AnimatedCount`, back-compat for "—"); **`pending_review_screen`** rows
+> are keyed `LiveListItem`s so a stream emit never re-animates the list, a
+> genuinely-new submission **slides in + briefly highlights** (`_knownTaskIds`),
+> scroll is held (`PageStorageKey` per level), counts animate. **Deliberately did
+> NOT build** the buffer / "X new tasks arrived" banner / 2–5s batching — the stream
+> is sufficient and review is a separate route (no list-jump-during-review problem).
+> Presentation-only; no schema/logic/stream/dependency change. ⚠️ This session's
+> Flutter is **3.10.4 < `^3.12.1`** — run `flutter analyze`/`flutter test` on a
+> current SDK (parse-checked with `dart format`).
+
+> **Premium task UX slice (2026-06-25):** Acted on the task-management UX audit.
+> **#1 — Admin/Manager reference images:** new `TaskEntity.referenceAttachments`
+> (`List<TaskAttachment>`, freezed hand-regenerated; `TaskModel` (de)serializes
+> it; back-compat → empty when absent). Managers/admins attach reference photos in
+> the New/Edit Task sheet (the reused `AttachmentPickerField` in images-only mode,
+> with removable already-uploaded thumbnails); `TaskCubit.createTask`/`editTask`
+> upload them (new `_uploadReferences`) to `tasks/{id}/attachments/{attId}.<ext>`
+> (existing path → **no storage-rules change**); the employee sees a "Reference"
+> gallery on the details screen **before** starting. **#2 — Premium (de-flashed)
+> task card:** the shared `TaskCard` (manager/admin surfaces) was rebuilt from a
+> label→value spec sheet into status-pill + **High-only** priority + signal-chip
+> strip (branch · due/overdue · `N refs`) + a **single thin checklist bar** (only
+> when a checklist exists) + a **minimal one-line** assignee footer; inline
+> proof/notes/review removed (now details-only). **De-flash ruling (premium ≠
+> flashy, Linear/Notion/Stripe):** the flat surface (solid fill + hairline border +
+> *whisper* shadow — **no gradient/glow/pulse**) is defined **once** in a reusable
+> **`TaskSurface`** (shared by the card + `TaskDetailsScreen._StatusHeader` — no
+> duplicated decoration), **not** `AppGlassCard`; the card pill reuses the canonical
+> `taskStatusColor` (no forked colour map); the details header was flattened to
+> match (pulse + glow + gradient removed). **Scoped to task surfaces only — the
+> shared `GlassContainer`/`AppGlassCard` are deliberately untouched** (`TaskSurface`
+> is the one place to promote if we globalise later). Strictly monochrome; **no new
+> dependencies**. ⚠️ This session's Flutter is **3.10.4 < `^3.12.1`**, so
+> `build_runner`/`analyze`/`test` can't run here — the freezed file was hand-edited;
+> **run `dart run build_runner build --delete-conflicting-outputs`, `flutter
+> analyze`, `flutter test` on a current SDK (3.12.2)** before merge. New test
+> `task_model_reference_test`; `task_card_layout_test` updated. **Deferred** (audit
+> backlog): drag-and-drop upload, on-image annotation, `Blocked` status, double-tap
+> zoom, `cached_network_image`, swipe/haptics, employee minimal-card alignment.
 
 > **FCM routing audit (2026-06-25) — CRITICAL fix:** Proved the cross-user
 > notification-leak bug is real. **Root cause:** non-exclusive token ownership —

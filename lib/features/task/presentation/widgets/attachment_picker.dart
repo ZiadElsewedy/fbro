@@ -3,32 +3,62 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
-import 'package:fbro/core/enums/attachment_type.dart';
-import 'package:fbro/core/theme/app_colors.dart';
-import 'package:fbro/core/theme/app_radius.dart';
-import 'package:fbro/core/theme/app_spacing.dart';
-import 'package:fbro/core/theme/app_typography.dart';
-import 'package:fbro/core/widgets/app_snackbar.dart';
-import 'package:fbro/features/task/domain/entities/task_attachment.dart';
-import 'package:fbro/features/task/presentation/cubit/task_cubit.dart';
-import 'package:fbro/features/task/presentation/widgets/video_thumbnail_image.dart';
+import 'package:drop/core/enums/attachment_type.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/features/task/domain/entities/task_attachment.dart';
+import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
+import 'package:drop/features/task/presentation/widgets/video_thumbnail_image.dart';
 
-/// Submission media picker (Phase 10) — lets an employee attach multiple images
-/// and videos (gallery or camera) before submitting / re-submitting a task.
-/// Shows the selected media as removable thumbnails and enforces the count /
-/// size limits in [AttachmentLimits]. Parent owns the list; this calls
-/// [onChanged] with the new selection.
+/// Media picker (Phase 10) — attach multiple images (and, when [allowVideo],
+/// videos) from gallery or camera. Two roles share this one widget:
+/// - **employee submission** (default): photos + videos as task *proof*.
+/// - **manager/admin reference images** ([allowVideo] = false + [existing] +
+///   [onRemoveExisting]): images-only "what good looks like" attached on
+///   create/edit; already-uploaded [existing] refs render as removable tiles
+///   alongside the newly-picked ones.
+///
+/// Shows the selection as removable thumbnails and enforces the count / size
+/// limits in [AttachmentLimits]. Parent owns the [attachments] list (new picks)
+/// and calls [onChanged] with the new selection.
 class AttachmentPickerField extends StatelessWidget {
   const AttachmentPickerField({
     super.key,
     required this.attachments,
     required this.onChanged,
+    this.allowVideo = true,
+    this.title = 'Attachments',
+    this.hint,
+    this.existing = const [],
+    this.onRemoveExisting,
   });
 
   final List<PickedAttachment> attachments;
   final ValueChanged<List<PickedAttachment>> onChanged;
 
-  int get _images => attachments.where((a) => a.type.isImage).length;
+  /// When false, the picker is **images only** (no video menu rows / counter) —
+  /// used for manager reference images.
+  final bool allowVideo;
+
+  /// Section title (e.g. 'Attachments' vs 'Reference images').
+  final String title;
+
+  /// Optional hint override; null uses the default proof-media hint.
+  final String? hint;
+
+  /// Already-uploaded attachments to show as removable tiles (edit mode for
+  /// reference images). Removing one calls [onRemoveExisting].
+  final List<TaskAttachment> existing;
+  final ValueChanged<TaskAttachment>? onRemoveExisting;
+
+  /// Images already used = previously uploaded + newly picked, so the cap spans
+  /// both groups.
+  int get _existingImages => existing.where((a) => a.type.isImage).length;
+  int get _images =>
+      _existingImages + attachments.where((a) => a.type.isImage).length;
   int get _videos => attachments.where((a) => a.type.isVideo).length;
 
   @override
@@ -46,14 +76,16 @@ class AttachmentPickerField extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.attachment_rounded,
+              Icon(allowVideo ? Icons.attachment_rounded : Icons.image_outlined,
                   size: 16, color: AppColors.textTertiary),
               const SizedBox(width: AppSpacing.sm),
-              Text('Attachments', style: AppTypography.labelSmall),
+              Text(title, style: AppTypography.labelSmall),
               const Spacer(),
               Text(
-                'Photos $_images/${AttachmentLimits.maxImages} · '
-                'Videos $_videos/${AttachmentLimits.maxVideos}',
+                allowVideo
+                    ? 'Photos $_images/${AttachmentLimits.maxImages} · '
+                        'Videos $_videos/${AttachmentLimits.maxVideos}'
+                    : 'Photos $_images/${AttachmentLimits.maxImages}',
                 style: AppTypography.caption,
               ),
             ],
@@ -63,6 +95,13 @@ class AttachmentPickerField extends StatelessWidget {
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
             children: [
+              for (final a in existing)
+                _ExistingTile(
+                  attachment: a,
+                  onRemove: onRemoveExisting == null
+                      ? null
+                      : () => onRemoveExisting!(a),
+                ),
               for (var i = 0; i < attachments.length; i++)
                 _SelectedTile(
                   attachment: attachments[i],
@@ -73,9 +112,10 @@ class AttachmentPickerField extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Add photos (≤${AttachmentLimits.maxImageMb} MB) or videos '
-            '(≤${AttachmentLimits.maxVideoMb} MB) as proof. Photos are '
-            'compressed before upload.',
+            hint ??
+                'Add photos (≤${AttachmentLimits.maxImageMb} MB) or videos '
+                    '(≤${AttachmentLimits.maxVideoMb} MB) as proof. Photos are '
+                    'compressed before upload.',
             style: AppTypography.caption
                 .copyWith(color: AppColors.textTertiary),
           ),
@@ -119,14 +159,15 @@ class AttachmentPickerField extends StatelessWidget {
                 _pickPhotos(context);
               },
             ),
-            _MenuRow(
-              icon: Icons.video_library_outlined,
-              label: 'Choose a video',
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _pickVideo(context, ImageSource.gallery);
-              },
-            ),
+            if (allowVideo)
+              _MenuRow(
+                icon: Icons.video_library_outlined,
+                label: 'Choose a video',
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _pickVideo(context, ImageSource.gallery);
+                },
+              ),
             _MenuRow(
               icon: Icons.photo_camera_outlined,
               label: 'Take a photo',
@@ -135,14 +176,15 @@ class AttachmentPickerField extends StatelessWidget {
                 _takePhoto(context);
               },
             ),
-            _MenuRow(
-              icon: Icons.videocam_outlined,
-              label: 'Record a video',
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _pickVideo(context, ImageSource.camera);
-              },
-            ),
+            if (allowVideo)
+              _MenuRow(
+                icon: Icons.videocam_outlined,
+                label: 'Record a video',
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _pickVideo(context, ImageSource.camera);
+                },
+              ),
             const SizedBox(height: AppSpacing.md),
           ],
         ),
@@ -233,7 +275,9 @@ class AttachmentPickerField extends StatelessWidget {
   /// fine. Pure of [BuildContext] so it never crosses an async gap with the UI.
   Future<String?> _rejectReason(
       List<PickedAttachment> current, XFile file, AttachmentType type) async {
-    final images = current.where((a) => a.type.isImage).length;
+    // Count already-uploaded refs too so the cap spans both groups.
+    final images =
+        _existingImages + current.where((a) => a.type.isImage).length;
     final videos = current.where((a) => a.type.isVideo).length;
     if (type.isImage && images >= AttachmentLimits.maxImages) {
       return 'Up to ${AttachmentLimits.maxImages} photos.';
@@ -300,6 +344,75 @@ class _SelectedTile extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An already-uploaded attachment (network URL) shown in the picker — used for
+/// reference images in edit mode, with an optional remove affordance.
+class _ExistingTile extends StatelessWidget {
+  const _ExistingTile({required this.attachment, this.onRemove});
+  final TaskAttachment attachment;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 72.0;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ClipRRect(
+            borderRadius: AppRadius.mdAll,
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: attachment.type.isVideo
+                  ? VideoThumbnailImage(source: attachment.url)
+                  : Image.network(
+                      attachment.url,
+                      fit: BoxFit.cover,
+                      cacheWidth: 320,
+                      errorBuilder: (_, _, _) => Container(
+                        color: AppColors.darkBg,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.broken_image_outlined,
+                            size: 18, color: AppColors.textTertiary),
+                      ),
+                    ),
+            ),
+          ),
+          if (attachment.type.isVideo)
+            const Positioned.fill(
+              child: Center(
+                child: Icon(Icons.play_circle_fill_rounded,
+                    color: Colors.white70, size: 26),
+              ),
+            ),
+          if (onRemove != null)
+            Positioned(
+              top: -6,
+              right: -6,
+              child: GestureDetector(
+                onTap: onRemove,
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: AppColors.darkBg,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.darkBorder),
+                  ),
+                  child: const Icon(Icons.close_rounded,
+                      size: 13, color: AppColors.textSecondary),
+                ),
+              ),
+            ),
         ],
       ),
     );
