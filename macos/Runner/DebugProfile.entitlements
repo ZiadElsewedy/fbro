@@ -8,10 +8,18 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
-	<!-- Required for outgoing connections (Firebase Auth/Firestore/Storage/FCM).
-	     Without this a sandboxed macOS app cannot reach the network and the
-	     native Firebase SDK surfaces it as a generic "no internet" error. -->
+	<!-- Required for outgoing connections (Firebase Auth/Firestore/Storage/FCM). -->
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- REQUIRED for Firebase Auth session persistence. FirebaseAuth (11.x) stores
+	     the signed-in user in the keychain on macOS and fails with "An error
+	     occurred when accessing the keychain" without a declared access group.
+	     This MUST match Release.entitlements — the debug build (`flutter run`)
+	     uses THIS file, so omitting it here makes sign-in fail in debug even when
+	     Release is configured correctly. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.example.fbro</string>
+	</array>
 </dict>
 </plist>

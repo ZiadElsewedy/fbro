@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
@@ -50,38 +51,27 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        backgroundColor: AppColors.darkBg,
-        appBar: AppBar(
-          backgroundColor: AppColors.darkBg,
-          elevation: 0,
-          surfaceTintColor: Colors.transparent,
-          title: Text('My Schedule', style: AppTypography.h3),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh_rounded,
-                  color: AppColors.textSecondary),
-              tooltip: 'Refresh',
-              onPressed: _load,
-            ),
-            IconButton(
-              icon: const Icon(Icons.notifications_none_rounded,
-                  color: AppColors.textSecondary),
-              tooltip: 'Notifications',
-              onPressed: () {},
-            ),
-          ],
-          bottom: const TabBar(
-            labelColor: AppColors.textPrimary,
-            unselectedLabelColor: AppColors.textTertiary,
-            indicatorColor: AppColors.primary,
-            indicatorSize: TabBarIndicatorSize.label,
-            indicatorWeight: 2,
-            tabs: [
-              Tab(text: 'My Week'),
-              Tab(text: 'Swaps'),
-            ],
+      child: AdaptiveScaffold(
+        title: 'My Schedule',
+        subtitle: 'Your week and shift swaps',
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded,
+                color: AppColors.textSecondary),
+            tooltip: 'Refresh',
+            onPressed: _load,
           ),
+        ],
+        bottom: const TabBar(
+          labelColor: AppColors.textPrimary,
+          unselectedLabelColor: AppColors.textTertiary,
+          indicatorColor: AppColors.primary,
+          indicatorSize: TabBarIndicatorSize.label,
+          indicatorWeight: 2,
+          tabs: [
+            Tab(text: 'My Week'),
+            Tab(text: 'Swaps'),
+          ],
         ),
         body: TabBarView(
           children: [

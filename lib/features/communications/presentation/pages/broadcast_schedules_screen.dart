@@ -5,6 +5,7 @@ import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/core/widgets/app_empty_state.dart';
 import 'package:drop/core/widgets/app_motion.dart';
@@ -43,14 +44,9 @@ class _BroadcastSchedulesScreenState extends State<BroadcastSchedulesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        titleSpacing: AppSpacing.pagePadding,
-        title: Text('Scheduled broadcasts', style: AppTypography.h3),
-      ),
+    return AdaptiveScaffold(
+      title: 'Scheduled broadcasts',
+      subtitle: 'Recurring and one-time sends',
       body: BlocBuilder<BroadcastScheduleCubit, BroadcastScheduleState>(
         builder: (context, state) => state.maybeWhen(
           loading: () => const ListSkeleton(),

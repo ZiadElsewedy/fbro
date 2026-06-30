@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/enums/task_status.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
@@ -36,33 +38,28 @@ class EmployeeDetailScreen extends StatelessWidget {
     final name = (employee.displayName != null && employee.displayName!.isNotEmpty)
         ? employee.displayName!
         : employee.email;
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            UserAvatar.fromUser(employee, size: 34),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(name,
-                      style: AppTypography.h3,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  Text(_capitalize(employee.role.value),
-                      style: AppTypography.caption),
-                ],
-              ),
+    final isDesktop = context.isDesktop;
+    return AdaptiveScaffold(
+      title: name,
+      titleWidget: Row(
+        children: [
+          UserAvatar.fromUser(employee, size: isDesktop ? 46 : 34),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(name,
+                    style: isDesktop ? AppTypography.h1 : AppTypography.h3,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                Text(_capitalize(employee.role.value),
+                    style: AppTypography.caption),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
       body: BlocBuilder<TaskCubit, TaskState>(
         builder: (context, state) => state.maybeWhen(

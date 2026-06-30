@@ -31,7 +31,7 @@ class SidebarSection {
 /// Mounted once by [AppShell] and kept alive across route changes, so it never
 /// re-animates or flickers as the user moves between screens — the hallmark of a
 /// native desktop app vs. a stretched mobile one. Strictly monochrome, with the
-/// indigo [AppColors.accent] reserved for the single active destination.
+/// white [AppColors.accent] reserved for the single active destination.
 class AppSidebar extends StatelessWidget {
   const AppSidebar({
     super.key,

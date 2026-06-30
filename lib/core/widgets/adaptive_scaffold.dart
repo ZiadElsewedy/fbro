@@ -21,16 +21,23 @@ class AdaptiveScaffold extends StatelessWidget {
     required this.title,
     required this.body,
     this.subtitle,
+    this.titleWidget,
     this.actions = const [],
     this.leading,
     this.floatingActionButton,
     this.bottom,
+    this.bottomBar,
     this.constrainContent = true,
     this.scrollableHeaderActions = false,
   });
 
   final String title;
   final String? subtitle;
+
+  /// Optional custom title lockup (e.g. a branch avatar + name) that replaces
+  /// the plain [title]/[subtitle] text in both the mobile app bar and the
+  /// desktop page header. [title] is still used as the accessible/window label.
+  final Widget? titleWidget;
   final Widget body;
   final List<Widget> actions;
 
@@ -43,6 +50,10 @@ class AdaptiveScaffold extends StatelessWidget {
   /// Optional widget pinned under the header on desktop / under the app bar on
   /// mobile (e.g. a [TabBar] or a filter row).
   final PreferredSizeWidget? bottom;
+
+  /// Optional bar pinned to the very bottom of the screen (e.g. a send / submit
+  /// action bar). Maps to [Scaffold.bottomNavigationBar] on both tiers.
+  final Widget? bottomBar;
 
   /// Centre the body in a comfortable max-width column on wide windows.
   final bool constrainContent;
@@ -59,13 +70,14 @@ class AdaptiveScaffold extends StatelessWidget {
         appBar: AppBar(
           backgroundColor: AppColors.darkBg,
           elevation: 0,
-          title: Text(title, style: AppTypography.h3),
+          title: titleWidget ?? Text(title, style: AppTypography.h3),
           leading: leading,
           actions: actions,
           bottom: bottom,
         ),
         body: body,
         floatingActionButton: floatingActionButton,
+        bottomNavigationBar: bottomBar,
       );
     }
 
@@ -75,12 +87,14 @@ class AdaptiveScaffold extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.darkBg,
       floatingActionButton: floatingActionButton,
+      bottomNavigationBar: bottomBar,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _DesktopPageHeader(
             title: title,
             subtitle: subtitle,
+            titleWidget: titleWidget,
             actions: actions,
             leading: leading,
             scrollableActions: scrollableHeaderActions,
@@ -102,6 +116,7 @@ class _DesktopPageHeader extends StatelessWidget {
   const _DesktopPageHeader({
     required this.title,
     required this.subtitle,
+    required this.titleWidget,
     required this.actions,
     required this.leading,
     required this.scrollableActions,
@@ -110,6 +125,7 @@ class _DesktopPageHeader extends StatelessWidget {
 
   final String title;
   final String? subtitle;
+  final Widget? titleWidget;
   final List<Widget> actions;
   final Widget? leading;
   final bool scrollableActions;
@@ -136,17 +152,18 @@ class _DesktopPageHeader extends StatelessWidget {
             const SizedBox(width: 14),
           ],
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(title, style: AppTypography.h1),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 4),
-                  Text(subtitle!, style: AppTypography.body),
-                ],
-              ],
-            ),
+            child: titleWidget ??
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(title, style: AppTypography.h1),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(subtitle!, style: AppTypography.body),
+                    ],
+                  ],
+                ),
           ),
           const SizedBox(width: 16),
           if (scrollableActions)

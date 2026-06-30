@@ -11,8 +11,39 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-30 (Desktop-first UI architecture: ShellRoute + persistent sidebar + indigo accent; macOS login fix; full DROP rebrand)
-**Version:** 1.0.0+1 · **Branch:** `enhancement/ui-refactor` (DROP — monochrome premium UX)
+**Last updated:** 2026-07-01 (macOS keychain login fix · desktop window sizing · indigo reverted to strictly monochrome)
+**Version:** 1.0.0+1 · **Branch:** `feature/macos-desktop` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ macOS desktop hardening (2026-07-01)
+
+Three fixes on the `feature/macos-desktop` branch, all verified on a signed
+debug build + the live login screen:
+
+1. **Keychain login crash — SOLVED.** The error is a `FirebaseAuthException`
+   (`keychain-error`) from FirebaseAuth's native macOS session persistence — NOT
+   `flutter_secure_storage` (declared in pubspec but **unused** in `lib/`). Root
+   cause: **`DebugProfile.entitlements` was missing `keychain-access-groups`**
+   (Keychain Sharing had only been added to `Release.entitlements`, but
+   `flutter run` uses Debug). Fix: added the keychain group to
+   `DebugProfile.entitlements` + restored the sandbox to match Release. Signing
+   was already set (`DEVELOPMENT_TEAM = 7Q3PY75VGH`). **Verified** the debug
+   binary embeds `keychain-access-groups = 7Q3PY75VGH.com.example.fbro`. Temporary
+   `auth.keychain` debug logging added around sign-in. **Rule: keep Debug and
+   Release entitlements in sync.**
+2. **Desktop layout engages** — `MainFlutterWindow.swift` opens the window at
+   1440×900 (min 1024×720) so the >=1024pt premium split/sidebar UI renders
+   instead of the mobile fallback that appeared at the old ~800×600 default.
+3. **Strictly monochrome restored** — the indigo `#5B5FEF` this branch had
+   reintroduced is reverted; `AppColors.accent*` tokens now resolve to the
+   white-on-black accent (`app_colors.dart`). Active-nav / primary-CTA / link
+   emphasis is white or a faint white wash.
+
+> **NOTE for future work:** older sections below still describe an *indigo
+> accent* as the desktop direction (the 2026-06-30 migration section). That is
+> **superseded by the 2026-07-01 monochrome revert above** — indigo is no
+> longer used anywhere.
 
 ---
 
@@ -39,24 +70,30 @@ my-tasks (TabBar) · employee-management · create-account · branch-management 
 task-details · plus the three role dashboards (`RoleScaffold`). Login has a bespoke
 desktop split.
 
-**Still on a raw `AppBar` (have the sidebar, need the mechanical `AdaptiveScaffold`
-swap — desktop punch-list):**
-- Tasks: `branch_task_list_screen` (leading+FAB), `pending_review_screen` (leading),
-  `task_detail_loader_screen` (leading)
-- Operations: `branch_operations_screen` (custom title widget + FAB — needs a
-  `titleWidget` param on `AdaptiveScaffold` first), `employee_detail_screen` (leading)
-- Schedule: `my_schedule_screen` (TabBar)
-- Admin: `admin_users_list_view` (widget, FAB)
-- Communications: `compose_broadcast_screen`, `broadcast_detail_screen`,
-  `broadcast_templates_screen` (FAB), `broadcast_schedules_screen`
-- Auth/onboarding (intentionally outside the shell, mobile-style is acceptable):
-  `forgot_password_page`, `force_password_change_page`, `profile_completion_page`
+**✅ Desktop punch-list COMPLETE (2026-07-01).** Every screen that was still on a
+raw mobile `AppBar` now uses `AdaptiveScaffold`: Tasks (`branch_task_list_screen`,
+`pending_review_screen`, `task_detail_loader_screen`), Operations
+(`branch_operations_screen`, `employee_detail_screen`), Schedule
+(`my_schedule_screen`), Admin (`admin_users_list_view`), and Communications
+(`compose_broadcast_screen`, `broadcast_detail_screen`, `broadcast_templates_screen`,
+`broadcast_schedules_screen`). `AdaptiveScaffold` gained **`titleWidget`** (custom
+title lockup, e.g. branch/employee avatar+name — scaled up on desktop) and
+**`bottomBar`** (pinned bottom action bar, used by the broadcast send bar).
+`flutter analyze` clean (no new issues), **227 tests pass**, macOS build green.
 
-**Conversion recipe:** replace `Scaffold(appBar: AppBar(title: Text(x), actions: […]))`
-with `AdaptiveScaffold(title: x, actions: […], body: …)`; for full-width data
-surfaces (tables/grids) pass `constrainContent: false`; for a custom leading/sub-view
-toggle pass `leading:`; for a TabBar pass it via `bottom:`. Custom-title screens
-(e.g. branch operations) need a `titleWidget` param added to `AdaptiveScaffold` first.
+The **auth/onboarding pages are now responsive too** via a new reusable
+**`AuthScaffold`** — mobile keeps the app bar; desktop centres the content in a
+~440px column (matching the Login panel) with a top utility row (back / "Sign
+out"). Applied to `forgot_password_page`, `force_password_change_page`,
+`profile_completion_page`. So **no authenticated or auth screen renders as
+stretched-mobile on desktop anymore.**
+
+**Conversion recipe (for any future screen):** replace
+`Scaffold(appBar: AppBar(title: Text(x), actions: […]))` with
+`AdaptiveScaffold(title: x, actions: […], body: …)`; full-width data surfaces pass
+`constrainContent: false`; custom leading/sub-view toggle → `leading:`; TabBar →
+`bottom:`; custom title lockup → `titleWidget:`; pinned bottom action bar →
+`bottomBar:`.
 
 > **Branch cover photo on the admin task overview (2026-06-28):** The branch cards in
 > `AdminTaskOverviewScreen` now lead with the branch **cover photo** (new `_CoverHeader`:

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
@@ -46,14 +47,9 @@ class BranchTaskListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
-        title: Text('$branchName · All tasks', style: AppTypography.h3),
-      ),
+    return AdaptiveScaffold(
+      title: '$branchName · All tasks',
+      subtitle: 'Every task in this branch, including unassigned',
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _create(context),
         backgroundColor: AppColors.primary,

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/brand_watermark.dart';
@@ -98,47 +100,45 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: BlocBuilder<BranchCubit, BranchState>(
-          builder: (context, _) {
-            final branch = context.read<BranchCubit>().branchById(widget.branchId);
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                BranchAvatar(
-                  logoUrl: branch?.logoUrl,
-                  name: branch?.name ?? _branchLabel,
-                  size: 30,
-                  radius: 9,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Flexible(
-                  child: Text(branch?.name ?? _branchLabel,
-                      style: AppTypography.h3, overflow: TextOverflow.ellipsis),
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.checklist_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'All tasks',
-            onPressed: _openAllTasks,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'Refresh',
-            onPressed: () => context.read<BranchOperationsCubit>().refresh(),
-          ),
-        ],
+    final isDesktop = context.isDesktop;
+    return AdaptiveScaffold(
+      title: _branchLabel,
+      titleWidget: BlocBuilder<BranchCubit, BranchState>(
+        builder: (context, _) {
+          final branch = context.read<BranchCubit>().branchById(widget.branchId);
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              BranchAvatar(
+                logoUrl: branch?.logoUrl,
+                name: branch?.name ?? _branchLabel,
+                size: isDesktop ? 40 : 30,
+                radius: isDesktop ? 12 : 9,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Flexible(
+                child: Text(branch?.name ?? _branchLabel,
+                    style: isDesktop ? AppTypography.h1 : AppTypography.h3,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          );
+        },
       ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.checklist_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'All tasks',
+          onPressed: _openAllTasks,
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Refresh',
+          onPressed: () => context.read<BranchOperationsCubit>().refresh(),
+        ),
+      ],
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _newTask,
         backgroundColor: AppColors.primary,

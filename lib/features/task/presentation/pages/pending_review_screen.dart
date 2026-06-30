@@ -6,6 +6,7 @@ import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/animated_count.dart';
 import 'package:drop/core/widgets/app_empty_state.dart';
 import 'package:drop/core/widgets/app_motion.dart';
@@ -100,12 +101,16 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
         _knownTaskIds.addAll(reviewTasks.map((t) => t.id));
 
         final String levelTitle;
+        final String levelSubtitle;
         if (_employeeId != null) {
           levelTitle = cubit.directory[_employeeId]?.displayName ?? 'Employee';
+          levelSubtitle = 'Tasks awaiting your review';
         } else if (_branchId != null) {
           levelTitle = cubit.branchNames[_branchId] ?? 'Branch';
+          levelSubtitle = 'Choose an employee to review';
         } else {
           levelTitle = 'Pending review';
+          levelSubtitle = 'Review queue, grouped by branch then employee';
         }
 
         final Widget body;
@@ -128,18 +133,13 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) _back();
           },
-          child: Scaffold(
-            backgroundColor: AppColors.darkBg,
-            appBar: AppBar(
-              backgroundColor: AppColors.darkBg,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_rounded,
-                    color: AppColors.textPrimary),
-                onPressed: _back,
-              ),
-              title: Text(levelTitle,
-                  style: AppTypography.label.copyWith(fontSize: 17)),
+          child: AdaptiveScaffold(
+            title: levelTitle,
+            subtitle: levelSubtitle,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded,
+                  color: AppColors.textPrimary),
+              onPressed: _back,
             ),
             body: body,
           ),

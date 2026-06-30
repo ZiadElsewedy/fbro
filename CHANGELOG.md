@@ -12,6 +12,85 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-07-01 — desktop punch-list: 10 screens onto AdaptiveScaffold)
+
+Completed the desktop-header migration punch-list — every remaining screen on a
+raw mobile `AppBar` now uses `AdaptiveScaffold` (premium desktop page header
+beside the persistent sidebar; mobile keeps the app bar). All monochrome,
+`flutter analyze` clean (no new issues), macOS build green.
+
+- **AdaptiveScaffold gained two params:** `titleWidget` (a custom title lockup —
+  e.g. branch avatar + name — that replaces the plain title in both tiers) and
+  `bottomBar` (a pinned bottom action bar → `Scaffold.bottomNavigationBar` on
+  both tiers, for the broadcast send bar).
+- **Tasks:** `branch_task_list_screen` (+ subtitle), `pending_review_screen`
+  (custom drill-up `leading` preserved, contextual per-level subtitle),
+  `task_detail_loader_screen` (error state).
+- **Operations:** `branch_operations_screen` (reactive branch avatar+name via
+  `titleWidget`, scaled up on desktop), `employee_detail_screen` (avatar+name+role
+  lockup via `titleWidget`, scaled up on desktop).
+- **Schedule:** `my_schedule_screen` (TabBar via `bottom:`; removed a dead no-op
+  "Notifications" app-bar button).
+- **Admin:** `admin_users_list_view` (+ optional `subtitle` param).
+- **Communications:** `compose_broadcast_screen` (send bar via `bottomBar`),
+  `broadcast_detail_screen`, `broadcast_templates_screen`,
+  `broadcast_schedules_screen` — all with desktop subtitles where useful.
+- **Auth/onboarding pages now responsive too** (were the last stretched-mobile
+  screens). New reusable **`AuthScaffold`** (`features/auth/.../widgets`): mobile
+  keeps the transparent app bar; desktop centres the page content in a
+  comfortable ~440px column on the dark canvas (matching the Login panel) with a
+  slim top utility row (back button / "Sign out"). Applied to
+  `forgot_password_page` (back), `force_password_change_page` +
+  `profile_completion_page` (Sign out). Verified live on the Reset Password page.
+
+### Fixed (2026-07-01 — macOS keychain login, desktop window sizing, monochrome revert)
+
+Production-hardening pass on the `feature/macos-desktop` branch.
+
+- **macOS keychain login crash — SOLVED (root cause: Debug entitlements).**
+  Sign-in failed with *"An error occurred when accessing the keychain"*. **Audit
+  result:** the error is a `FirebaseAuthException` (code **`keychain-error`**)
+  from FirebaseAuth's **native** macOS session persistence — **not**
+  `flutter_secure_storage`, which is declared in `pubspec.yaml` but **unused
+  anywhere in `lib/`**. **Root cause:** `DebugProfile.entitlements` (used by
+  `flutter run -d macos`) was **missing `keychain-access-groups`**. Signing was
+  configured (`DEVELOPMENT_TEAM = 7Q3PY75VGH`, Apple Development cert) and the
+  Keychain Sharing capability had been added — but only to `Release.entitlements`,
+  so the **debug build** the owner was running had no declared keychain group and
+  FirebaseAuth's keychain write failed. **Fix:** added
+  `keychain-access-groups` = `$(AppIdentifierPrefix)com.example.fbro` to
+  `DebugProfile.entitlements` and restored the App Sandbox so Debug matches
+  Release. **Verified:** the debug binary now embeds
+  `keychain-access-groups = 7Q3PY75VGH.com.example.fbro`, signed by the Apple
+  Development cert. Also: added temporary debug-only diagnostics around the
+  sign-in call (`auth.keychain` log) and an explicit `keychain-error` →
+  actionable message in `auth_remote_datasource.dart`. **Keep both entitlement
+  files in sync going forward.**
+- **Desktop layout now actually engages.** The macOS window opened at the
+  storyboard default (~800×600), below the **1024pt** desktop breakpoint, so the
+  app fell back to the cramped *mobile* layout. `MainFlutterWindow.swift` now
+  opens at **1440×900** (clamped to the visible screen) with a **1024×720
+  minimum**, so the premium split/sidebar desktop UI always renders.
+- **Premium macOS window chrome.** `MainFlutterWindow.swift` hides the window
+  title text (`titleVisibility = .hidden`), makes the title bar transparent, and
+  sets the window background to the app near-black (`#0A0A0B`) — so the title bar
+  blends seamlessly into the app (Linear/Things style) instead of a grey bar
+  reading "DROP". Content is **not** pushed under the title bar, so the
+  traffic-light buttons never collide with the sidebar or page headers.
+- **Indigo reverted → strictly monochrome (locked owner ruling).** This branch
+  had reintroduced indigo `#5B5FEF` as the accent; per the standing decision the
+  product is monochrome. The `AppColors.accent*` tokens (32 call sites across 16
+  files) now resolve to the **white-on-black** accent — primary CTAs are white
+  with dark text, active nav / links / focus are white or a low-opacity white
+  wash. No call sites changed (every indigo fill was paired with `onAccent`);
+  stale "indigo" comments updated. `flutter analyze` clean (no new issues);
+  macOS debug build signs and runs; verified on the live login screen.
+- **Login brand panel uses the real DROP logo.** The desktop sign-in brand panel
+  rendered a typographic `DropWordmark` + accent dot; it now shows the actual
+  `assets/drop_logo.png` artwork (the DROP wordmark with the down-arrow), tinted
+  white via the existing `DropLogo` widget — matching the mobile `DropAuthMark`
+  lockup. Verified on the live login screen.
+
 ### Added (2026-06-30 — Premium desktop polish: schedule grid, task ticket, comms command-center)
 
 The final desktop-quality pass on the priority screens (beyond AppBar swaps).
