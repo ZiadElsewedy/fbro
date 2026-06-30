@@ -7,6 +7,7 @@ import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/core/widgets/app_empty_state.dart';
 import 'package:drop/core/widgets/drop_empty_state.dart';
@@ -138,47 +139,39 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        titleSpacing: AppSpacing.pagePadding,
-        title: Text(_showArchived ? 'Archived' : 'Notifications',
-            style: AppTypography.h3),
-        actions: [
-          if (_showArchived)
-            TextButton(
-              onPressed: _clearArchived,
-              child: Text('Clear',
-                  style:
-                      AppTypography.caption.copyWith(color: AppColors.error)),
-            )
-          else
-            BlocBuilder<NotificationCubit, NotificationState>(
-              builder: (context, _) {
-                final hasUnread =
-                    context.read<NotificationCubit>().unreadCount > 0;
-                if (!hasUnread) return const SizedBox.shrink();
-                return TextButton(
-                  onPressed: () =>
-                      context.read<NotificationCubit>().markAllRead(),
-                  child: Text('Mark all read',
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.primary)),
-                );
-              },
-            ),
-          IconButton(
-            tooltip: _showArchived ? 'Inbox' : 'Archived',
-            icon: Icon(
-              _showArchived ? Icons.inbox_outlined : Icons.archive_outlined,
-              color: AppColors.textSecondary,
-            ),
-            onPressed: () => setState(() => _showArchived = !_showArchived),
+    return AdaptiveScaffold(
+      title: _showArchived ? 'Archived' : 'Notifications',
+      actions: [
+        if (_showArchived)
+          TextButton(
+            onPressed: _clearArchived,
+            child: Text('Clear',
+                style: AppTypography.caption.copyWith(color: AppColors.error)),
+          )
+        else
+          BlocBuilder<NotificationCubit, NotificationState>(
+            builder: (context, _) {
+              final hasUnread =
+                  context.read<NotificationCubit>().unreadCount > 0;
+              if (!hasUnread) return const SizedBox.shrink();
+              return TextButton(
+                onPressed: () =>
+                    context.read<NotificationCubit>().markAllRead(),
+                child: Text('Mark all read',
+                    style: AppTypography.caption
+                        .copyWith(color: AppColors.accent)),
+              );
+            },
           ),
-        ],
-      ),
+        IconButton(
+          tooltip: _showArchived ? 'Inbox' : 'Archived',
+          icon: Icon(
+            _showArchived ? Icons.inbox_outlined : Icons.archive_outlined,
+            color: AppColors.textSecondary,
+          ),
+          onPressed: () => setState(() => _showArchived = !_showArchived),
+        ),
+      ],
       body: BlocBuilder<NotificationCubit, NotificationState>(
         builder: (context, state) => state.maybeWhen(
           loading: () => const ListSkeleton(),

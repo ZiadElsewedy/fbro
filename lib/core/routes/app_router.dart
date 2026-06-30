@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:drop/core/widgets/app_shell.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:drop/features/auth/presentation/pages/splash_page.dart';
 import 'package:drop/features/auth/presentation/pages/login_page.dart';
@@ -111,12 +112,47 @@ GoRouter createRouter(AuthCubit authCubit) {
       return null;
     },
     routes: [
+      // ─── Outside the app shell: splash + auth + first-login onboarding ──
+      // These must NOT show the persistent sidebar.
       GoRoute(
         path: RouteNames.splash,
         pageBuilder: (context, state) => const NoTransitionPage(
           child: SplashPage(),
         ),
       ),
+      GoRoute(
+        path: RouteNames.login,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const LoginPage(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.forgotPassword,
+        pageBuilder: (context, state) => _slideTransition(
+          state,
+          const ForgotPasswordPage(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.forcePasswordChange,
+        pageBuilder: (context, state) => _fadeTransition(
+          state,
+          const ForcePasswordChangePage(),
+        ),
+      ),
+      GoRoute(
+        path: RouteNames.profileCompletion,
+        pageBuilder: (context, state) => _fadeTransition(
+          state,
+          const ProfileCompletionPage(),
+        ),
+      ),
+      // ─── App shell: persistent desktop sidebar across every route below ──
+      ShellRoute(
+        builder: (context, state, child) =>
+            AppShell(location: state.matchedLocation, child: child),
+        routes: [
       GoRoute(
         path: RouteNames.home,
         pageBuilder: (context, state) => _fadeTransition(
@@ -289,35 +325,6 @@ GoRouter createRouter(AuthCubit authCubit) {
           ),
         ),
       ),
-      GoRoute(
-        path: RouteNames.login,
-        pageBuilder: (context, state) => _slideTransition(
-          state,
-          const LoginPage(),
-        ),
-      ),
-      GoRoute(
-        path: RouteNames.forgotPassword,
-        pageBuilder: (context, state) => _slideTransition(
-          state,
-          const ForgotPasswordPage(),
-        ),
-      ),
-      // ─── First-login flow (admin-provisioned accounts) ─────────
-      GoRoute(
-        path: RouteNames.forcePasswordChange,
-        pageBuilder: (context, state) => _fadeTransition(
-          state,
-          const ForcePasswordChangePage(),
-        ),
-      ),
-      GoRoute(
-        path: RouteNames.profileCompletion,
-        pageBuilder: (context, state) => _fadeTransition(
-          state,
-          const ProfileCompletionPage(),
-        ),
-      ),
       // In-app notification inbox — shared by every role (not under /admin or
       // /manager, so no role guard blocks it).
       GoRoute(
@@ -354,6 +361,8 @@ GoRouter createRouter(AuthCubit authCubit) {
           state,
           const ChangePasswordPage(),
         ),
+      ),
+        ],
       ),
     ],
   );

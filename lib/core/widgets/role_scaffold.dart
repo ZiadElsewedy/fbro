@@ -6,21 +6,21 @@ import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_bottom_nav.dart';
-import 'package:drop/core/widgets/desktop_nav_sidebar.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
-import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/notifications/presentation/cubit/notification_cubit.dart';
 import 'package:drop/features/notifications/presentation/cubit/notification_state.dart';
 
-/// Shared chrome for every role shell (admin / manager / employee).
+/// Shared chrome for every role's home dashboard (admin / manager / employee).
 ///
-/// Hosts the role's dashboard as [child] under a clean header (notification bell
-/// + tappable avatar → profile) and the DROP bottom navigation bar
-/// (Home · Tasks · Schedule · Profile). The cross-role destinations
-/// (tasks / schedule / profile, which carry settings + sign-out) are reached
-/// from the bottom nav; each pushes its dedicated role-scoped screen.
+/// * **Desktop / macOS** → the persistent navigation lives in [AppShell]'s
+///   sidebar, so here we only render the dashboard under a clean
+///   [AdaptiveScaffold] page header. No app bar, no bottom nav.
+/// * **Mobile / tablet** → the original chrome: a compact app bar
+///   (notification bell + tappable avatar → profile) and the DROP bottom
+///   navigation bar (Home · Tasks · Schedule · Profile).
 class RoleScaffold extends StatelessWidget {
   const RoleScaffold({super.key, required this.title, required this.child});
 
@@ -67,15 +67,14 @@ class RoleScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final role = context.currentRole ?? UserRole.employee;
-    // Desktop / macOS: persistent sidebar chrome. Mobile / tablet: the original
-    // app bar + bottom-nav layout, untouched.
-    return context.isDesktop
-        ? _buildDesktop(context, role)
-        : _buildMobile(context, role);
+    // Desktop: the AppShell sidebar is the navigation; just lay the dashboard
+    // out under a premium page header.
+    if (context.isDesktop) {
+      return AdaptiveScaffold(title: title, body: child);
+    }
+    return _buildMobile(context, context.currentRole ?? UserRole.employee);
   }
 
-  // ─── Mobile / tablet ───────────────────────────────────────────────────────
   Widget _buildMobile(BuildContext context, UserRole role) {
     final user = context.currentUser;
     return Scaffold(
@@ -102,9 +101,11 @@ class RoleScaffold extends StatelessWidget {
             child: GestureDetector(
               onTap: () => context.push(RouteNames.profile),
               child: user != null
-                  ? UserAvatar.fromUser(user, size: 36, ringColor: role.isGlobal
-                      ? AppColors.primary
-                      : AppColors.darkBorder)
+                  ? UserAvatar.fromUser(user,
+                      size: 36,
+                      ringColor: role.isGlobal
+                          ? AppColors.primary
+                          : AppColors.darkBorder)
                   : const UserAvatar(size: 36),
             ),
           ),
@@ -115,158 +116,6 @@ class RoleScaffold extends StatelessWidget {
         items: _items,
         currentIndex: 0,
         onTap: (i) => _onNavTap(context, i),
-      ),
-    );
-  }
-
-  // ─── Desktop / ultrawide (macOS) ─────────────────────────────────────────────
-  Widget _buildDesktop(BuildContext context, UserRole role) {
-    final user = context.currentUser;
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          DesktopNavSidebar(
-            items: _items,
-            currentIndex: 0,
-            onTap: (i) => _onNavTap(context, i),
-            footer: _SidebarUserFooter(
-              user: user,
-              role: role,
-              onTap: () => context.push(RouteNames.profile),
-            ),
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                _DesktopTopBar(
-                  title: title,
-                  showCommunications: role.isAdmin || role.isManager,
-                  onCommunications: () => context.push(RouteNames.communications),
-                  onNotifications: () => context.push(RouteNames.notifications),
-                ),
-                const Divider(height: 1, color: AppColors.darkBorder),
-                Expanded(
-                  child: ContentConstraint(child: child),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The slim desktop header bar that replaces the mobile [AppBar]: a large,
-/// confident page title on the left and the global actions on the right.
-class _DesktopTopBar extends StatelessWidget {
-  const _DesktopTopBar({
-    required this.title,
-    required this.showCommunications,
-    required this.onCommunications,
-    required this.onNotifications,
-  });
-
-  final String title;
-  final bool showCommunications;
-  final VoidCallback onCommunications;
-  final VoidCallback onNotifications;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 68,
-      color: AppColors.darkBg,
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Row(
-        children: [
-          Expanded(child: Text(title, style: AppTypography.h2)),
-          if (showCommunications)
-            IconButton(
-              icon: const Icon(Icons.campaign_outlined,
-                  color: AppColors.textSecondary),
-              tooltip: 'Communications',
-              onPressed: onCommunications,
-            ),
-          _NotificationBell(onPressed: onNotifications),
-        ],
-      ),
-    );
-  }
-}
-
-/// Pinned sidebar footer: avatar + name + role, tappable → profile.
-class _SidebarUserFooter extends StatefulWidget {
-  const _SidebarUserFooter({
-    required this.user,
-    required this.role,
-    required this.onTap,
-  });
-
-  final UserEntity? user;
-  final UserRole role;
-  final VoidCallback onTap;
-
-  @override
-  State<_SidebarUserFooter> createState() => _SidebarUserFooterState();
-}
-
-class _SidebarUserFooterState extends State<_SidebarUserFooter> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final user = widget.user;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: _hovered ? const Color(0x12FFFFFF) : AppColors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              user != null
-                  ? UserAvatar.fromUser(user, size: 36)
-                  : const UserAvatar(size: 36),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      (user?.displayName?.isNotEmpty ?? false)
-                          ? user!.displayName!
-                          : 'Profile',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.label,
-                    ),
-                    Text(
-                      widget.role.name.toUpperCase(),
-                      style: AppTypography.caption.copyWith(
-                        letterSpacing: 1,
-                        color: AppColors.textTertiary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right_rounded,
-                  size: 18, color: AppColors.textTertiary),
-            ],
-          ),
-        ),
       ),
     );
   }

@@ -6,6 +6,7 @@ import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/core/widgets/app_empty_state.dart';
 import 'package:drop/core/widgets/app_motion.dart';
@@ -112,53 +113,46 @@ class _CommunicationsScreenState extends State<CommunicationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        titleSpacing: AppSpacing.pagePadding,
-        leading: _showArchived
-            ? IconButton(
-                tooltip: 'Back to feed',
-                icon: const Icon(Icons.arrow_back_rounded,
-                    color: AppColors.textPrimary),
-                onPressed: () => setState(() => _showArchived = false),
-              )
-            : null,
-        title: Text(_showArchived ? 'Archived' : 'Communications Center',
-            style: AppTypography.h3),
-        actions: [
-          PopupMenuButton<_NavMenu>(
-            tooltip: 'More',
-            icon: const Icon(Icons.more_vert_rounded,
-                color: AppColors.textSecondary),
-            color: AppColors.darkSurfaceElevated,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14)),
-            onSelected: _onMenu,
-            itemBuilder: (context) => [
-              _menuItem(_NavMenu.scheduled, Icons.schedule_rounded, 'Scheduled'),
-              _menuItem(_NavMenu.templates, Icons.dashboard_customize_outlined,
-                  'Templates'),
-              _menuItem(
-                  _NavMenu.toggleArchived,
-                  _showArchived ? Icons.inbox_rounded : Icons.archive_outlined,
-                  _showArchived ? 'Active feed' : 'Archived'),
-            ],
-          ),
-        ],
-      ),
+    return AdaptiveScaffold(
+      title: _showArchived ? 'Archived' : 'Communications Center',
+      leading: _showArchived
+          ? IconButton(
+              tooltip: 'Back to feed',
+              icon: const Icon(Icons.arrow_back_rounded,
+                  color: AppColors.textPrimary),
+              onPressed: () => setState(() => _showArchived = false),
+            )
+          : null,
+      actions: [
+        PopupMenuButton<_NavMenu>(
+          tooltip: 'More',
+          icon: const Icon(Icons.more_vert_rounded,
+              color: AppColors.textSecondary),
+          color: AppColors.darkSurfaceElevated,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          onSelected: _onMenu,
+          itemBuilder: (context) => [
+            _menuItem(_NavMenu.scheduled, Icons.schedule_rounded, 'Scheduled'),
+            _menuItem(_NavMenu.templates, Icons.dashboard_customize_outlined,
+                'Templates'),
+            _menuItem(
+                _NavMenu.toggleArchived,
+                _showArchived ? Icons.inbox_rounded : Icons.archive_outlined,
+                _showArchived ? 'Active feed' : 'Archived'),
+          ],
+        ),
+      ],
       floatingActionButton: _showArchived
           ? null
           : FloatingActionButton.extended(
               onPressed: () => context.push(RouteNames.communicationsCompose),
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
+              backgroundColor: AppColors.accent,
+              foregroundColor: AppColors.onAccent,
               icon: const Icon(Icons.add_rounded),
               label: Text('New Broadcast',
                   style:
-                      AppTypography.label.copyWith(color: AppColors.onPrimary)),
+                      AppTypography.label.copyWith(color: AppColors.onAccent)),
             ),
       body: BlocConsumer<BroadcastCubit, BroadcastState>(
         listener: (context, state) =>

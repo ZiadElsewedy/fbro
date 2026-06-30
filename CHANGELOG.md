@@ -12,6 +12,42 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-06-30 — Desktop-first UI: ShellRoute, persistent sidebar, indigo accent)
+
+The macOS app was a stretched mobile UI (per-screen app bars, pushed screens, no
+persistent nav). This pass establishes a true desktop-first architecture.
+
+- **`ShellRoute` + `AppShell`** (`lib/core/widgets/app_shell.dart`): a single,
+  role-aware persistent sidebar now wraps **every authenticated route** (mounted
+  once, never re-animates). Auth/splash/onboarding stay outside the shell. The
+  router (`app_router.dart`) was restructured to nest all in-app routes under the
+  shell; redirect guards and transitions are unchanged. Mobile/tablet are a no-op
+  pass-through (original chrome preserved).
+- **`AppSidebar`** (`lib/core/widgets/app_sidebar.dart`): premium monochrome rail
+  with sectioned, role-based destinations, hover states, active-destination
+  resolution from the current location, and a pinned user footer with an
+  unread-aware indicator. Indigo accent marks the single active item.
+- **`AdaptiveScaffold`** (`lib/core/widgets/adaptive_scaffold.dart`): the per-screen
+  migration primitive — mobile keeps the `AppBar`; desktop drops it for a calm,
+  spacious in-body page header (large title, optional subtitle, right-aligned
+  actions, auto back button, optional custom leading) with a width-constrained body.
+- **Indigo accent** added to `AppColors` (`accent #5B5FEF` + hover/pressed/surface/
+  border/onAccent), applied *only* to important interactive elements: active nav,
+  primary CTA button (`AppButton` primary is now indigo, flat — no glow), key FABs,
+  and links. The monochrome base is otherwise unchanged.
+- **Premium desktop Login**: split layout (brand canvas + focused sign-in panel)
+  on desktop; the original centred lockup on mobile.
+- **Screens migrated to `AdaptiveScaffold`** (no desktop app bar): notifications,
+  settings, change-password, profile, edit-profile, analytics, schedule
+  management, branch schedule, communications center, admin task management; the
+  three role dashboards via `RoleScaffold` (which now defers desktop chrome to the
+  shell). Replaced the previous `RoleScaffold`-owned desktop sidebar
+  (`desktop_nav_sidebar.dart` removed) with the shell.
+- ⚠️ ~21 secondary screens still render their own `AppBar` on desktop (they now
+  have the sidebar, but not the desktop header). They are listed in CURRENT_STATE
+  as the remaining mechanical `AdaptiveScaffold` migration. Validate the whole
+  pass with `flutter analyze` + run (no Dart SDK was available in the change env).
+
 ### Fixed (2026-06-30 — macOS login "No internet connection" root cause)
 
 The macOS desktop build could not sign in — Firebase Auth surfaced a generic

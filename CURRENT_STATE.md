@@ -11,8 +11,44 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-28 (Branch cover photo on task overview + user-detail validation + account-switch push fix)
+**Last updated:** 2026-06-30 (Desktop-first UI architecture: ShellRoute + persistent sidebar + indigo accent; macOS login fix; full DROP rebrand)
 **Version:** 1.0.0+1 · **Branch:** `enhancement/ui-refactor` (DROP — monochrome premium UX)
+
+---
+
+## ⚙️ Desktop UI migration status (2026-06-30)
+
+The app is now desktop-first via a `ShellRoute` (`AppShell`) that renders a
+persistent, role-aware `AppSidebar` across **every** authenticated route on
+desktop/ultrawide widths; mobile/tablet keep the original app-bar + bottom-nav
+chrome. Indigo (`#5B5FEF`) is the single accent, used only for active nav, the
+primary CTA, key FABs, and links.
+
+**Migrated to `AdaptiveScaffold`** (no desktop app bar, premium desktop header):
+notifications · settings · change-password · profile · edit-profile · analytics ·
+schedule-management · branch-schedule · communications-center · admin-task-overview ·
+plus the three role dashboards (`RoleScaffold`). Login has a bespoke desktop split.
+
+**Still on a raw `AppBar` (have the sidebar, need the mechanical `AdaptiveScaffold`
+swap — desktop punch-list):**
+- Tasks: `my_tasks_screen` (TabBar), `branch_task_list_screen` (leading+FAB),
+  `pending_review_screen` (leading), `task_details_screen` (leading+actions),
+  `task_detail_loader_screen` (leading)
+- Operations: `branch_operations_screen` (custom title widget + FAB),
+  `employee_detail_screen` (leading)
+- Schedule: `my_schedule_screen` (TabBar)
+- Admin: `create_account_screen`, `employee_management_screen` (FAB),
+  `branch_management_screen` (FAB), `admin_users_list_view` (widget, FAB)
+- Communications: `compose_broadcast_screen`, `broadcast_detail_screen`,
+  `broadcast_templates_screen` (FAB), `broadcast_schedules_screen`
+- Auth/onboarding (intentionally outside the shell, mobile-style is acceptable):
+  `forgot_password_page`, `force_password_change_page`, `profile_completion_page`
+
+**Conversion recipe:** replace `Scaffold(appBar: AppBar(title: Text(x), actions: […]))`
+with `AdaptiveScaffold(title: x, actions: […], body: …)`; for full-width data
+surfaces (tables/grids) pass `constrainContent: false`; for a custom leading/sub-view
+toggle pass `leading:`; for a TabBar pass it via `bottom:`. Custom-title screens
+(e.g. branch operations) need a `titleWidget` param added to `AdaptiveScaffold` first.
 
 > **Branch cover photo on the admin task overview (2026-06-28):** The branch cards in
 > `AdminTaskOverviewScreen` now lead with the branch **cover photo** (new `_CoverHeader`:
