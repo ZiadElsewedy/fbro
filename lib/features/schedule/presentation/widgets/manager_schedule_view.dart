@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
@@ -117,6 +118,65 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   // ── Controls ───────────────────────────────────────────────────
   Widget _controls(String branchId, DateTime weekStart, ScheduleCubit cubit,
       int memberCount) {
+    if (context.isDesktop) {
+      return _desktopControls(branchId, weekStart, cubit, memberCount);
+    }
+    return _mobileControls(branchId, weekStart, cubit, memberCount);
+  }
+
+  /// Desktop: a single dense operations toolbar — branch identity on the left,
+  /// branch picker, week navigator and shift filter aligned on the right.
+  Widget _desktopControls(String branchId, DateTime weekStart,
+      ScheduleCubit cubit, int memberCount) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(40, 16, 40, 16),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.darkBorder)),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _branchHeader(branchId, memberCount)),
+          if (widget.isAdmin) ...[
+            const SizedBox(width: AppSpacing.lg),
+            SizedBox(width: 260, child: _branchSelector(branchId)),
+          ],
+          const SizedBox(width: AppSpacing.lg),
+          _weekNavigator(weekStart, cubit),
+          const SizedBox(width: AppSpacing.lg),
+          SizedBox(width: 280, child: _shiftFilter()),
+        ],
+      ),
+    );
+  }
+
+  /// Compact horizontal week navigator (prev · range · next) for the toolbar.
+  Widget _weekNavigator(DateTime weekStart, ScheduleCubit cubit) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _weekStepper(
+            Icons.chevron_left_rounded, cubit.previousWeek, 'Previous week'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text('Week of',
+                  style: AppTypography.caption
+                      .copyWith(color: AppColors.textTertiary)),
+              Text(ScheduleWeek.rangeLabel(weekStart),
+                  style: AppTypography.label),
+            ],
+          ),
+        ),
+        _weekStepper(
+            Icons.chevron_right_rounded, cubit.nextWeek, 'Next week'),
+      ],
+    );
+  }
+
+  Widget _mobileControls(String branchId, DateTime weekStart,
+      ScheduleCubit cubit, int memberCount) {
     return Container(
       padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, AppSpacing.sm,
           AppSpacing.pagePadding, AppSpacing.md),
@@ -354,14 +414,18 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   /// One-line affordance hint — the grid scrolls sideways and each cell is
   /// tappable; say so quietly rather than leaving it to be discovered.
   Widget _gridHint() {
+    final hint = context.isDesktop
+        ? 'Click a shift to assign or manage staff'
+        : 'Tap a shift to assign or manage staff · swipe for more days';
     return Row(
       children: [
         const Icon(Icons.touch_app_outlined,
             size: 14, color: AppColors.textTertiary),
         const SizedBox(width: 6),
         Expanded(
-          child: Text('Tap a shift to assign or manage staff · swipe for more days',
-              style: AppTypography.caption, maxLines: 1,
+          child: Text(hint,
+              style: AppTypography.caption,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis),
         ),
       ],

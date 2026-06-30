@@ -4,10 +4,12 @@ import 'package:drop/core/enums/task_priority.dart';
 import 'package:drop/core/enums/task_status.dart';
 import 'package:drop/core/enums/user_role.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
@@ -142,62 +144,55 @@ class _DetailsView extends StatelessWidget {
     // banner + logo. Watched so it fills in once the directory preloads.
     final branch = context.watch<BranchCubit>().branchById(task.branchId);
 
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
-        title: Text(
-          task.title,
-          style: AppTypography.label.copyWith(fontSize: 17),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        actions: [
-          if (isManagerOrAdmin && !isLocked) ...[
-            IconButton(
-              icon: const Icon(Icons.person_add_alt_1_outlined,
-                  color: AppColors.textSecondary),
-              tooltip: 'Assign',
-              onPressed: () =>
-                  showAssignSheet(context: context, cubit: cubit, task: task),
-            ),
-            IconButton(
-              icon: const Icon(Icons.edit_outlined,
-                  color: AppColors.textSecondary),
-              tooltip: 'Edit',
-              onPressed: () {
-                final user = context.currentUser;
-                showTaskFormSheet(
-                  context: context,
-                  cubit: cubit,
-                  existing: task,
-                  isAdmin: isAdmin,
-                  defaultBranchId: user?.branchId ?? '',
-                );
-              },
-            ),
-          ],
-          // Approved & locked: an admin keeps a Reopen escape hatch; a manager
-          // sees only a non-interactive lock glyph.
-          if (isManagerOrAdmin && isLocked)
-            if (isAdmin)
-              IconButton(
-                icon: const Icon(Icons.lock_open_rounded,
-                    color: AppColors.textSecondary),
-                tooltip: 'Reopen',
-                onPressed: () => _confirmReopen(context),
-              )
-            else
-              const Padding(
-                padding: EdgeInsets.only(right: AppSpacing.md),
-                child: Icon(Icons.lock_outline_rounded,
-                    size: 20, color: AppColors.textTertiary),
-              ),
+    return AdaptiveScaffold(
+      title: task.title,
+      constrainContent: false,
+      actions: [
+        if (isManagerOrAdmin && !isLocked) ...[
+          IconButton(
+            icon: const Icon(Icons.person_add_alt_1_outlined,
+                color: AppColors.textSecondary),
+            tooltip: 'Assign',
+            onPressed: () =>
+                showAssignSheet(context: context, cubit: cubit, task: task),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined,
+                color: AppColors.textSecondary),
+            tooltip: 'Edit',
+            onPressed: () {
+              final user = context.currentUser;
+              showTaskFormSheet(
+                context: context,
+                cubit: cubit,
+                existing: task,
+                isAdmin: isAdmin,
+                defaultBranchId: user?.branchId ?? '',
+              );
+            },
+          ),
         ],
-      ),
-      body: ListView(
+        // Approved & locked: an admin keeps a Reopen escape hatch; a manager
+        // sees only a non-interactive lock glyph.
+        if (isManagerOrAdmin && isLocked)
+          if (isAdmin)
+            IconButton(
+              icon: const Icon(Icons.lock_open_rounded,
+                  color: AppColors.textSecondary),
+              tooltip: 'Reopen',
+              onPressed: () => _confirmReopen(context),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.only(right: AppSpacing.md),
+              child: Icon(Icons.lock_outline_rounded,
+                  size: 20, color: AppColors.textTertiary),
+            ),
+      ],
+      body: context.isDesktop
+          ? _desktopBody(
+              context, isEmployee, isManagerOrAdmin, isAdmin, isLocked)
+          : ListView(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.pagePadding,
           AppSpacing.sm,
@@ -371,6 +366,171 @@ class _DetailsView extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  // ── Desktop: two-column ticket inspection (Linear/Jira style) ──────
+  // Left = the ticket record (status, description, proof, activity); right =
+  // a dedicated, sticky action panel (assignment + approve/rework/submit).
+  Widget _desktopBody(
+    BuildContext context,
+    bool isEmployee,
+    bool isManagerOrAdmin,
+    bool isAdmin,
+    bool isLocked,
+  ) {
+    final branch = context.watch<BranchCubit>().branchById(task.branchId);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Main record ────────────────────────────────────────────
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(40, 24, 28, 48),
+            children: [
+              if (branch?.coverUrl != null && branch!.coverUrl!.isNotEmpty) ...[
+                _BranchBanner(branch: branch),
+                const SizedBox(height: AppSpacing.lg),
+              ],
+              _StatusHeader(
+                task: task,
+                branchName: cubit.branchNames[task.branchId ?? ''],
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              if ((task.description ?? '').isNotEmpty) ...[
+                _Section(
+                  icon: Icons.notes_rounded,
+                  title: 'Description',
+                  child: Text(
+                    task.description!,
+                    style: AppTypography.body.copyWith(
+                        color: AppColors.textSecondary, height: 1.6),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if (task.hasReferences) ...[
+                _Section(
+                  icon: Icons.image_outlined,
+                  title: 'Reference',
+                  child: AttachmentGallery(
+                    attachments: task.referenceAttachments,
+                    columns: 3,
+                    showDuration: true,
+                    showCaption: false,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if (task.hasChecklist) ...[
+                _Section(
+                  icon: Icons.checklist_rounded,
+                  title: 'Checklist',
+                  trailing: _ChecklistBadge(task: task),
+                  child: _ChecklistBlock(
+                    task: task,
+                    interactive:
+                        isEmployee && task.status == TaskStatus.started,
+                    onToggle: (item) =>
+                        cubit.toggleChecklistItem(task, item.id),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if ((task.notes ?? '').isNotEmpty ||
+                  latestAttachments(task).isNotEmpty) ...[
+                _Section(
+                  icon: Icons.rate_review_outlined,
+                  title: 'Submitted work',
+                  child: _SubmittedBlock(task: task),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if ((task.reviewNotes ?? '').isNotEmpty) ...[
+                _Section(
+                  icon: Icons.feedback_outlined,
+                  title: 'Review note',
+                  child: Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: task.status == TaskStatus.rejected
+                          ? AppColors.errorSurface
+                          : AppColors.darkSurfaceElevated,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: task.status == TaskStatus.rejected
+                            ? AppColors.error.withAlpha(60)
+                            : AppColors.darkBorder,
+                      ),
+                    ),
+                    child: Text(
+                      task.reviewNotes!,
+                      style: AppTypography.body.copyWith(
+                          color: AppColors.textSecondary, height: 1.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if (task.activityLog.isNotEmpty)
+                _Section(
+                  icon: Icons.timeline_rounded,
+                  title: 'Activity',
+                  child: _ActivityTimeline(
+                    task: task,
+                    directory: directory,
+                    cubit: cubit,
+                    canReview: isManagerOrAdmin,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const VerticalDivider(width: 1, color: AppColors.darkBorder),
+        // ── Action / context panel ─────────────────────────────────
+        SizedBox(
+          width: 360,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 40, 48),
+            children: [
+              if (isLocked) ...[
+                _LockedBanner(canReopen: isAdmin),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              _Section(
+                icon: Icons.people_alt_outlined,
+                title: 'Assigned to',
+                child: _AssigneeBlock(task: task, directory: directory),
+              ),
+              if (task.recurrence != null &&
+                  task.recurrence!.frequency.value != 'none') ...[
+                const SizedBox(height: AppSpacing.xl),
+                _Section(
+                  icon: Icons.repeat_rounded,
+                  title: 'Recurrence',
+                  child: Text(
+                    task.recurrence!.frequency.label,
+                    style: AppTypography.body
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ),
+              ],
+              if (!isLocked &&
+                  (isEmployee ||
+                      (isManagerOrAdmin &&
+                          task.status == TaskStatus.waitingReview))) ...[
+                const SizedBox(height: AppSpacing.xl),
+                const Divider(color: AppColors.darkBorder),
+                const SizedBox(height: AppSpacing.lg),
+                if (isEmployee)
+                  _EmployeeActions(task: task, cubit: cubit)
+                else
+                  _ReviewBlock(task: task, cubit: cubit),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

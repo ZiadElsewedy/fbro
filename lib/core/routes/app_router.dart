@@ -375,7 +375,7 @@ CustomTransitionPage<void> _fadeTransition(
     CustomTransitionPage<void>(
       key: state.pageKey,
       child: child,
-      transitionDuration: const Duration(milliseconds: 400),
+      transitionDuration: const Duration(milliseconds: 180),
       transitionsBuilder: (context, animation, secondaryAnimation, child) =>
           FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
@@ -389,9 +389,23 @@ CustomTransitionPage<void> _slideTransition(
 ) =>
     CustomTransitionPage<void>(
       key: state.pageKey,
+      // Desktop reads the fade band (≈160ms of the 320ms window); mobile uses
+      // the full window for the slide.
+      transitionDuration: const Duration(milliseconds: 320),
       child: child,
-      transitionDuration: const Duration(milliseconds: 350),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        // Desktop / macOS: no mobile slide — a calm, quick fade so sidebar
+        // navigation feels native, not like pushing phone screens.
+        final isDesktop = MediaQuery.sizeOf(context).width >= 1024;
+        if (isDesktop) {
+          return FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
+            ),
+            child: child,
+          );
+        }
         final slide = Tween<Offset>(
           begin: const Offset(1.0, 0),
           end: Offset.zero,

@@ -12,6 +12,32 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-06-30 — Premium desktop polish: schedule grid, task ticket, comms command-center)
+
+The final desktop-quality pass on the priority screens (beyond AppBar swaps).
+
+- **Calm desktop transitions:** sidebar/route changes now fade (~160ms) on
+  desktop instead of the mobile slide; the dashboard/onboarding fade dropped
+  400ms→180ms. Mobile keeps the slide. (`app_router.dart`)
+- **Schedule = wide ops dashboard:** the weekly grid (`schedule_grid.dart`) now
+  stretches its 7 day-columns to fill the desktop width (no horizontal scroll)
+  via a `LayoutBuilder`; mobile keeps fixed scrolling cells. The controls
+  (`manager_schedule_view.dart`) collapse into a single dense desktop toolbar
+  (branch identity · branch picker · week navigator · shift filter) and the grid
+  hint is desktop-aware.
+- **Task Details = Linear/Jira ticket:** desktop renders a two-column layout —
+  the record (status, description, reference, checklist, submitted proof,
+  activity timeline) on the left and a dedicated **action panel** (assignment,
+  recurrence, approve/rework/submit) on the right. Mobile layout untouched.
+  (`task_details_screen.dart`)
+- **Communications = command-center:** desktop adds a right command panel with
+  live **delivery analytics** (broadcasts · recipients · delivered · delivery
+  rate) and quick links (New Broadcast · Templates · Scheduled · Archived)
+  beside the history feed. (`communications_screen.dart`)
+- **More screens migrated to `AdaptiveScaffold`:** my-tasks (TabBar via `bottom`),
+  employee management, create account, branch management. Key FABs/CTAs adopt the
+  indigo accent.
+
 ### Added (2026-06-30 — Desktop-first UI: ShellRoute, persistent sidebar, indigo accent)
 
 The macOS app was a stretched mobile UI (per-screen app bars, pushed screens, no

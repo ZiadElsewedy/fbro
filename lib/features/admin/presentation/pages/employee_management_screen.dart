@@ -7,6 +7,7 @@ import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/app_search_field.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
@@ -101,28 +102,23 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: Text('Employees', style: AppTypography.h3),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'Refresh',
-            onPressed: () => context.read<AdminUsersCubit>().refresh(),
-          ),
-        ],
-      ),
+    return AdaptiveScaffold(
+      title: 'Employees',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Refresh',
+          onPressed: () => context.read<AdminUsersCubit>().refresh(),
+        ),
+      ],
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push(RouteNames.adminCreateAccount),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.textDark,
+        backgroundColor: AppColors.accent,
+        foregroundColor: AppColors.onAccent,
         icon: const Icon(Icons.person_add_alt_1_rounded),
         label: Text('Create account',
-            style: AppTypography.label.copyWith(color: AppColors.textDark)),
+            style: AppTypography.label.copyWith(color: AppColors.onAccent)),
       ),
       body: BlocConsumer<AdminUsersCubit, AdminUsersState>(
         listener: (context, state) =>

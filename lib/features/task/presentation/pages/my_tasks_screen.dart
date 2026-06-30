@@ -5,6 +5,7 @@ import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
@@ -47,24 +48,19 @@ class _MyTasksScreenState extends State<MyTasksScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: Text('My Tasks', style: AppTypography.h3),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'Refresh',
-            onPressed: () => context.read<TaskCubit>().refresh(),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(44),
-          child: _TabBar(controller: _tabs),
+    return AdaptiveScaffold(
+      title: 'My Tasks',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Refresh',
+          onPressed: () => context.read<TaskCubit>().refresh(),
         ),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(44),
+        child: _TabBar(controller: _tabs),
       ),
       body: BlocConsumer<TaskCubit, TaskState>(
         listener: (context, state) =>

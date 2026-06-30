@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
@@ -159,7 +160,12 @@ class _CommunicationsScreenState extends State<CommunicationsScreen> {
             state.whenOrNull(error: (m) => AppSnackbar.error(context, m)),
         builder: (context, state) => state.maybeWhen(
           loading: () => const ListSkeleton(),
-          loaded: (broadcasts, _) => _feed(broadcasts.where(_matches).toList()),
+          loaded: (broadcasts, _) {
+            final feed = broadcasts.where(_matches).toList();
+            return context.isDesktop
+                ? _desktopLayout(feed, broadcasts)
+                : _feed(feed);
+          },
           error: (_) => _errorState(),
           orElse: () => const SizedBox.shrink(),
         ),
@@ -243,4 +249,154 @@ class _CommunicationsScreenState extends State<CommunicationsScreen> {
               style: AppTypography.label.copyWith(color: AppColors.primary)),
         ),
       );
+
+  // ── Desktop: command-center (history feed + delivery/command panel) ──
+  Widget _desktopLayout(
+      List<BroadcastEntity> feed, List<BroadcastEntity> all) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: _feed(feed)),
+        const VerticalDivider(width: 1, color: AppColors.darkBorder),
+        SizedBox(width: 320, child: _commandPanel(all)),
+      ],
+    );
+  }
+
+  Widget _commandPanel(List<BroadcastEntity> all) {
+    final active = all.where((b) => b.isActive).toList();
+    final sent = active.length;
+    final recipients =
+        active.fold<int>(0, (s, b) => s + (b.recipientCount ?? 0));
+    final delivered =
+        active.fold<int>(0, (s, b) => s + (b.deliveredCount ?? 0));
+    final rate = recipients == 0 ? 0.0 : delivered / recipients;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 24, 40, 48),
+      children: [
+        _panelHeader('DELIVERY'),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            Expanded(child: _statTile('Broadcasts', '$sent')),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(child: _statTile('Recipients', '$recipients')),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: [
+            Expanded(child: _statTile('Delivered', '$delivered')),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _statTile('Delivery rate',
+                  recipients == 0 ? '—' : '${(rate * 100).round()}%',
+                  accent: true),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        _panelHeader('MANAGE'),
+        const SizedBox(height: AppSpacing.md),
+        _panelAction(
+          icon: Icons.add_rounded,
+          label: 'New Broadcast',
+          accent: true,
+          onTap: () => context.push(RouteNames.communicationsCompose),
+        ),
+        _panelAction(
+          icon: Icons.dashboard_customize_outlined,
+          label: 'Templates',
+          onTap: () => context.push(RouteNames.communicationsTemplates),
+        ),
+        _panelAction(
+          icon: Icons.schedule_rounded,
+          label: 'Scheduled',
+          onTap: () => context.push(RouteNames.communicationsSchedules),
+        ),
+        _panelAction(
+          icon: _showArchived ? Icons.inbox_rounded : Icons.archive_outlined,
+          label: _showArchived ? 'Active feed' : 'Archived',
+          onTap: () => setState(() => _showArchived = !_showArchived),
+        ),
+      ],
+    );
+  }
+
+  Widget _panelHeader(String label) => Text(
+        label,
+        style: AppTypography.caption.copyWith(
+          color: AppColors.textTertiary,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+        ),
+      );
+
+  Widget _statTile(String label, String value, {bool accent = false}) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: accent ? AppColors.accentBorder : AppColors.darkBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value,
+              style: AppTypography.h2.copyWith(
+                  color: accent ? AppColors.accent : AppColors.textPrimary)),
+          const SizedBox(height: 2),
+          Text(label, style: AppTypography.caption),
+        ],
+      ),
+    );
+  }
+
+  Widget _panelAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool accent = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Material(
+        color: accent ? AppColors.accentSurface : AppColors.darkSurface,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md, vertical: 13),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color:
+                      accent ? AppColors.accentBorder : AppColors.darkBorder),
+            ),
+            child: Row(
+              children: [
+                Icon(icon,
+                    size: 18,
+                    color: accent ? AppColors.accent : AppColors.textSecondary),
+                const SizedBox(width: AppSpacing.md),
+                Text(label,
+                    style: AppTypography.label.copyWith(
+                        color: accent
+                            ? AppColors.accent
+                            : AppColors.textPrimary)),
+                const Spacer(),
+                Icon(Icons.chevron_right_rounded,
+                    size: 16, color: AppColors.textTertiary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

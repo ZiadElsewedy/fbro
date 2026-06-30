@@ -24,21 +24,29 @@ desktop/ultrawide widths; mobile/tablet keep the original app-bar + bottom-nav
 chrome. Indigo (`#5B5FEF`) is the single accent, used only for active nav, the
 primary CTA, key FABs, and links.
 
+**Premium desktop redesigns (beyond a chrome swap):**
+- **Schedule** (`manager_schedule_view` + `schedule_grid`): full-width weekly grid
+  (no horizontal scroll on desktop) + dense horizontal toolbar.
+- **Task Details** (`task_details_screen`): two-column ticket — record + dedicated
+  action panel.
+- **Communications** (`communications_screen`): history feed + command panel with
+  delivery analytics.
+
 **Migrated to `AdaptiveScaffold`** (no desktop app bar, premium desktop header):
 notifications · settings · change-password · profile · edit-profile · analytics ·
 schedule-management · branch-schedule · communications-center · admin-task-overview ·
-plus the three role dashboards (`RoleScaffold`). Login has a bespoke desktop split.
+my-tasks (TabBar) · employee-management · create-account · branch-management ·
+task-details · plus the three role dashboards (`RoleScaffold`). Login has a bespoke
+desktop split.
 
 **Still on a raw `AppBar` (have the sidebar, need the mechanical `AdaptiveScaffold`
 swap — desktop punch-list):**
-- Tasks: `my_tasks_screen` (TabBar), `branch_task_list_screen` (leading+FAB),
-  `pending_review_screen` (leading), `task_details_screen` (leading+actions),
+- Tasks: `branch_task_list_screen` (leading+FAB), `pending_review_screen` (leading),
   `task_detail_loader_screen` (leading)
-- Operations: `branch_operations_screen` (custom title widget + FAB),
-  `employee_detail_screen` (leading)
+- Operations: `branch_operations_screen` (custom title widget + FAB — needs a
+  `titleWidget` param on `AdaptiveScaffold` first), `employee_detail_screen` (leading)
 - Schedule: `my_schedule_screen` (TabBar)
-- Admin: `create_account_screen`, `employee_management_screen` (FAB),
-  `branch_management_screen` (FAB), `admin_users_list_view` (widget, FAB)
+- Admin: `admin_users_list_view` (widget, FAB)
 - Communications: `compose_broadcast_screen`, `broadcast_detail_screen`,
   `broadcast_templates_screen` (FAB), `broadcast_schedules_screen`
 - Auth/onboarding (intentionally outside the shell, mobile-style is acceptable):

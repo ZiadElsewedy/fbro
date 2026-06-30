@@ -4,6 +4,7 @@ import 'package:drop/core/enums/user_role.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/core/widgets/app_glass_card.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
@@ -105,31 +106,26 @@ class _BranchManagementScreenState extends State<BranchManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: Text('Branches', style: AppTypography.h3),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'Refresh',
-            onPressed: _refresh,
-          ),
-        ],
-      ),
+    return AdaptiveScaffold(
+      title: 'Branches',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Refresh',
+          onPressed: _refresh,
+        ),
+      ],
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => showBranchFormSheet(
           context: context,
           cubit: context.read<BranchCubit>(),
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.onPrimary,
+        backgroundColor: AppColors.accent,
+        foregroundColor: AppColors.onAccent,
         icon: const Icon(Icons.add_rounded),
         label: Text('New Branch',
-            style: AppTypography.label.copyWith(color: AppColors.onPrimary)),
+            style: AppTypography.label.copyWith(color: AppColors.onAccent)),
       ),
       body: Column(
         children: [
