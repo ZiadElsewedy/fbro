@@ -5,7 +5,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:drop/core/constants/app_constants.dart';
 import 'package:drop/core/enums/attachment_type.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/errors/exceptions.dart';
+import 'package:drop/features/task/data/models/recurring_task_template_model.dart';
 import 'package:drop/features/task/data/models/task_model.dart';
 import 'package:drop/features/task/data/models/task_template_model.dart';
 import 'package:drop/features/task/domain/entities/task_attachment.dart';
@@ -20,9 +22,19 @@ abstract class TaskRemoteDataSource {
   Stream<List<TaskModel>> watchAllTasks();
   Stream<List<TaskModel>> watchTasksByBranch(String branchId);
   Stream<List<TaskModel>> watchEmployeeTasks(String employeeId);
+  Stream<List<TaskModel>> watchShiftTasks({
+    required String branchId,
+    required ScheduleShift shift,
+  });
 
   Future<TaskModel?> getTask(String taskId);
   Future<TaskModel> createTask(TaskModel task);
+
+  /// Creates [task] at its own `task.id` — a no-op (returns null) if a doc
+  /// with that id already exists. Sets both `createdAt`/`updatedAt` server
+  /// timestamps (unlike [updateTask], which only stamps `updatedAt`), so a
+  /// task materialized this way sorts correctly forever after.
+  Future<TaskModel?> createTaskWithId(TaskModel task);
   Future<void> updateTask(TaskModel task);
   Future<void> deleteTask(String taskId);
   Future<void> assignTask({
@@ -48,6 +60,14 @@ abstract class TaskRemoteDataSource {
   Future<List<TaskTemplateModel>> getTemplates();
   Future<TaskTemplateModel> createTemplate(TaskTemplateModel template);
   Future<void> deleteTemplate(String templateId);
+
+  // ─── Recurring shift-task templates (Shift Assignment feature) ─
+  Future<List<RecurringTaskTemplateModel>> getRecurringTemplates(
+      String branchId);
+  Future<RecurringTaskTemplateModel> createRecurringTemplate(
+      RecurringTaskTemplateModel template);
+  Future<void> updateRecurringTemplate(RecurringTaskTemplateModel template);
+  Future<void> deleteRecurringTemplate(String templateId);
 }
 
 class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
@@ -61,6 +81,9 @@ class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
 
   CollectionReference<Map<String, dynamic>> get _templates =>
       _firestore.collection(AppConstants.taskTemplatesCollection);
+
+  CollectionReference<Map<String, dynamic>> get _recurringTemplates =>
+      _firestore.collection(AppConstants.recurringTaskTemplatesCollection);
 
   // Newest-first ordering: the admin query orders on a single field
   // (auto-indexed by Firestore, no setup). The branch / employee queries
@@ -124,6 +147,18 @@ class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
       .map(_mapSnap);
 
   @override
+  Stream<List<TaskModel>> watchShiftTasks({
+    required String branchId,
+    required ScheduleShift shift,
+  }) =>
+      _tasks
+          .where('branchId', isEqualTo: branchId)
+          .where('assignmentType', isEqualTo: 'shift')
+          .where('shift', isEqualTo: shift.value)
+          .snapshots()
+          .map(_mapSnap);
+
+  @override
   Future<TaskModel?> getTask(String taskId) async {
     try {
       final doc = await _tasks.doc(taskId).get();
@@ -145,6 +180,22 @@ class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       return created;
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to create task.');
+    }
+  }
+
+  @override
+  Future<TaskModel?> createTaskWithId(TaskModel task) async {
+    try {
+      final docRef = _tasks.doc(task.id);
+      if ((await docRef.get()).exists) return null;
+      await docRef.set({
+        ...task.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return task;
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to create task.');
     }
@@ -346,6 +397,64 @@ class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
       await _templates.doc(templateId).delete();
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to delete task template.');
+    }
+  }
+
+  // ─── Recurring shift-task templates ────────────────────────────
+  @override
+  Future<List<RecurringTaskTemplateModel>> getRecurringTemplates(
+      String branchId) async {
+    try {
+      final snap =
+          await _recurringTemplates.where('branchId', isEqualTo: branchId).get();
+      return snap.docs
+          .map((d) => RecurringTaskTemplateModel.fromMap(d.data(), id: d.id))
+          .toList();
+    } on FirebaseException catch (e) {
+      throw ServerException(
+          e.message ?? 'Failed to load recurring shift-task templates.');
+    }
+  }
+
+  @override
+  Future<RecurringTaskTemplateModel> createRecurringTemplate(
+      RecurringTaskTemplateModel template) async {
+    try {
+      final docRef = _recurringTemplates.doc();
+      final created = template.copyWithId(docRef.id);
+      await docRef.set({
+        ...created.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return created;
+    } on FirebaseException catch (e) {
+      throw ServerException(
+          e.message ?? 'Failed to save recurring shift-task template.');
+    }
+  }
+
+  @override
+  Future<void> updateRecurringTemplate(
+      RecurringTaskTemplateModel template) async {
+    try {
+      await _recurringTemplates.doc(template.id).set({
+        ...template.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } on FirebaseException catch (e) {
+      throw ServerException(
+          e.message ?? 'Failed to update recurring shift-task template.');
+    }
+  }
+
+  @override
+  Future<void> deleteRecurringTemplate(String templateId) async {
+    try {
+      await _recurringTemplates.doc(templateId).delete();
+    } on FirebaseException catch (e) {
+      throw ServerException(
+          e.message ?? 'Failed to delete recurring shift-task template.');
     }
   }
 }

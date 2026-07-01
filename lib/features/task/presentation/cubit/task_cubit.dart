@@ -4,9 +4,13 @@ import 'dart:io';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/enums/notification_type.dart';
+import 'package:drop/core/enums/schedule_day.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/core/enums/task_assignment_type.dart';
 import 'package:drop/core/enums/task_priority.dart';
 import 'package:drop/core/enums/task_status.dart';
 import 'package:drop/core/enums/task_type.dart';
+import 'package:drop/core/enums/template_repeat_mode.dart';
 import 'package:drop/core/errors/failures.dart';
 import 'package:drop/features/notifications/domain/usecases/notify_task_event.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
@@ -14,13 +18,17 @@ import 'package:drop/features/auth/domain/usecases/get_users_by_branch.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
 import 'package:drop/features/branch/domain/repositories/branch_repository.dart';
 import 'package:drop/core/enums/attachment_type.dart';
+import 'package:drop/features/schedule/domain/repositories/schedule_repository.dart';
+import 'package:drop/features/schedule/domain/schedule_week.dart';
 import 'package:drop/features/task/domain/entities/activity_entry.dart';
 import 'package:drop/features/task/domain/entities/checklist_item.dart';
 import 'package:drop/features/task/domain/entities/recurrence_config.dart';
+import 'package:drop/features/task/domain/entities/recurring_task_template_entity.dart';
 import 'package:drop/features/task/domain/entities/task_attachment.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/domain/entities/task_template_entity.dart';
 import 'package:drop/features/task/domain/repositories/task_repository.dart';
+import 'package:drop/features/task/domain/task_ordering.dart';
 import 'package:drop/features/task/domain/usecases/assign_task.dart';
 import 'package:drop/features/task/domain/usecases/create_task.dart';
 import 'package:drop/features/task/domain/usecases/delete_task.dart';
@@ -51,6 +59,7 @@ class PickedAttachment {
 class TaskCubit extends Cubit<TaskState> {
   final TaskRepository _repository;
   final BranchRepository _branchRepository;
+  final ScheduleRepository _scheduleRepository;
   final CreateTask _createTask;
   final UpdateTask _updateTask;
   final DeleteTask _deleteTask;
@@ -60,7 +69,12 @@ class TaskCubit extends Cubit<TaskState> {
   final NotifyTaskEvent _notifyTaskEvent;
 
   UserEntity? _user;
-  StreamSubscription<List<TaskEntity>>? _sub;
+  /// One subscription per task source feeding the current scope. Admin/manager
+  /// have exactly one (all tasks / branch tasks); an employee has one for their
+  /// individually-assigned tasks plus one per shift they're rostered on today
+  /// (Shift Assignment feature) — see [_subscribeFor]/[_updateSource].
+  final List<StreamSubscription<List<TaskEntity>>> _subs = [];
+  final Map<String, List<TaskEntity>> _taskSources = {};
   bool _mutating = false;
   // Submission lives on the cubit (not a widget) so the whole screen reacts and
   // it survives rebuilds; carried on every `loaded` emit (incl. the stream).
@@ -79,6 +93,7 @@ class TaskCubit extends Cubit<TaskState> {
   TaskCubit({
     required this._repository,
     required this._branchRepository,
+    required this._scheduleRepository,
     required this._createTask,
     required this._updateTask,
     required this._deleteTask,
@@ -116,7 +131,7 @@ class TaskCubit extends Cubit<TaskState> {
     // can recover; pull-to-refresh passes forceRefresh to re-subscribe.
     final inError = state.maybeWhen(error: (_) => true, orElse: () => false);
     final sameScope = _user != null && _scopeKey(_user!) == _scopeKey(user);
-    if (!forceRefresh && !inError && _sub != null && sameScope) {
+    if (!forceRefresh && !inError && _subs.isNotEmpty && sameScope) {
       return;
     }
     // Scope changed (different user, or same user with a new role/branch) — the
@@ -132,27 +147,9 @@ class TaskCubit extends Cubit<TaskState> {
     final hasTasks =
         state.maybeWhen(loaded: (t, _, _, _, _) => true, orElse: () => false);
     if (!hasTasks) emit(const TaskState.loading());
-    await _sub?.cancel();
-    _sub = _streamFor(user).listen(
-      (tasks) {
-        // Preserve in-flight submission state — a Firestore write during submit
-        // fires this stream, and we must not drop the overlay mid-finalize.
-        emit(TaskState.loaded(tasks,
-            busy: _mutating,
-            directory: _directory,
-            isSubmitting: _submitting,
-            submissionProgress: _submissionProgress));
-        _ensureDirectory(tasks);
-      },
-      // Capture the real error/stack (a swallowed exception is why this only ever
-      // showed a generic UI message — e.g. a missing Firestore composite index
-      // surfaces here as `failed-precondition`). The UI message stays friendly.
-      onError: (Object error, StackTrace stackTrace) {
-        developer.log('Task stream failed for role ${user.role.value}',
-            name: 'TaskCubit', error: error, stackTrace: stackTrace);
-        emit(const TaskState.error('Failed to load tasks. Please try again.'));
-      },
-    );
+    await _cancelSubs();
+    _taskSources.clear();
+    await _subscribeFor(user);
   }
 
   Future<void> refresh() async {
@@ -160,12 +157,95 @@ class TaskCubit extends Cubit<TaskState> {
     if (user != null) await load(user, forceRefresh: true);
   }
 
-  Stream<List<TaskEntity>> _streamFor(UserEntity user) {
-    if (user.role.isAdmin) return _repository.watchAllTasks();
-    if (user.role.isManager) {
-      return _repository.watchTasksByBranch(user.branchId ?? '');
+  Future<void> _cancelSubs() async {
+    for (final s in _subs) {
+      await s.cancel();
     }
-    return _repository.watchEmployeeTasks(user.uid);
+    _subs.clear();
+  }
+
+  /// Sets up every task source for [user]'s scope. Admin/manager get exactly
+  /// one (unchanged from before shift assignment). An employee gets their
+  /// individually/team-assigned stream **plus** one shift stream per shift
+  /// they're rostered on today (0, 1, or 2 — `shiftsFor` may return both) — a
+  /// shift task's `assigneeIds` is empty, so it would never appear in
+  /// `watchEmployeeTasks` alone.
+  Future<void> _subscribeFor(UserEntity user) async {
+    if (user.role.isAdmin) {
+      _subscribe('all', _repository.watchAllTasks());
+      return;
+    }
+    if (user.role.isManager) {
+      _subscribe('branch', _repository.watchTasksByBranch(user.branchId ?? ''));
+      return;
+    }
+    _subscribe('assignee', _repository.watchEmployeeTasks(user.uid));
+    await _subscribeEmployeeShifts(user);
+  }
+
+  void _subscribe(String sourceKey, Stream<List<TaskEntity>> stream) {
+    _subs.add(stream.listen(
+      (tasks) => _updateSource(sourceKey, tasks),
+      // Capture the real error/stack (a swallowed exception is why this only
+      // ever showed a generic UI message — e.g. a missing Firestore composite
+      // index surfaces here as `failed-precondition`). The UI message stays
+      // friendly.
+      onError: (Object error, StackTrace stackTrace) {
+        developer.log('Task stream "$sourceKey" failed',
+            name: 'TaskCubit', error: error, stackTrace: stackTrace);
+        emit(const TaskState.error('Failed to load tasks. Please try again.'));
+      },
+    ));
+  }
+
+  /// Resolves the employee's shift(s) today from the branch's weekly schedule
+  /// (`ScheduleRepository.getSchedule` + `WeeklyScheduleEntity.shiftsFor` —
+  /// exactly the primitives `computeBranchWorkload` already uses for the same
+  /// "who's on shift X today" question) and subscribes one `watchShiftTasks`
+  /// stream per shift. Resolved once per `load()` call; `refresh()` re-resolves.
+  /// Best-effort — an employee with no branch or no resolvable schedule simply
+  /// gets no shift streams (unchanged behaviour from before this feature).
+  Future<void> _subscribeEmployeeShifts(UserEntity user) async {
+    final branchId = user.branchId;
+    if (branchId == null || branchId.isEmpty) return;
+    try {
+      final schedule = await _scheduleRepository.getSchedule(
+          branchId, ScheduleWeek.currentWeekStart());
+      if (schedule == null) return;
+      final today = ScheduleDay.today();
+      for (final shift in schedule.shiftsFor(user.uid, today)) {
+        _subscribe(
+          'shift:${shift.value}',
+          _repository.watchShiftTasks(branchId: branchId, shift: shift),
+        );
+      }
+    } catch (_) {
+      // Best-effort — see doc comment.
+    }
+  }
+
+  /// Merges every task source's latest snapshot (keyed by source, each holding
+  /// that source's *full* current result set) into one deduped-by-id list and
+  /// emits it. A task disappearing from its source's next snapshot (reassigned,
+  /// deleted, no longer matching a query) is naturally dropped on the next
+  /// merge — no stale entries linger.
+  void _updateSource(String sourceKey, List<TaskEntity> tasks) {
+    _taskSources[sourceKey] = tasks;
+    final merged = <String, TaskEntity>{};
+    for (final list in _taskSources.values) {
+      for (final t in list) {
+        merged[t.id] = t;
+      }
+    }
+    final combined = sortTasksNewestFirst(merged.values.toList());
+    // Preserve in-flight submission state — a Firestore write during submit
+    // fires this stream, and we must not drop the overlay mid-finalize.
+    emit(TaskState.loaded(combined,
+        busy: _mutating,
+        directory: _directory,
+        isSubmitting: _submitting,
+        submissionProgress: _submissionProgress));
+    _ensureDirectory(combined);
   }
 
   /// Loads branchId → name once so the UI can label a task's branch. Re-emits a
@@ -222,7 +302,21 @@ class TaskCubit extends Cubit<TaskState> {
     List<ChecklistItem> checklist = const [],
     RecurrenceConfig? recurrence,
     List<PickedAttachment> referenceAttachments = const [],
+    /// Shift Assignment feature. Defaults to [TaskAssignmentType.individual]
+    /// (existing behaviour, unchanged) for every pre-existing call site.
+    TaskAssignmentType assignmentType = TaskAssignmentType.individual,
+    /// Required when [assignmentType] is [TaskAssignmentType.shift].
+    ScheduleShift? shift,
+    /// The day a shift instance is *for*; defaults to [deadline] (date part) or
+    /// today when omitted. Ignored for individual/team tasks.
+    DateTime? instanceDate,
   }) async {
+    // A shift task targets whoever's rostered on `shift`, never named people.
+    final isShift = assignmentType == TaskAssignmentType.shift;
+    final effectiveAssigneeIds = isShift ? const <String>[] : assigneeIds;
+    final effectiveInstanceDate =
+        isShift ? (instanceDate ?? deadline ?? DateTime.now()) : null;
+
     TaskEntity? created;
     final ok = await _mutate(() async {
       created = await _createTask(TaskEntity(
@@ -232,9 +326,12 @@ class TaskCubit extends Cubit<TaskState> {
         type: type,
         priority: priority,
         branchId: branchId,
-        assigneeIds: assigneeIds,
+        assigneeIds: effectiveAssigneeIds,
         checklist: checklist,
         recurrence: recurrence,
+        assignmentType: assignmentType,
+        shift: shift,
+        instanceDate: effectiveInstanceDate,
         createdBy: _user?.uid,
         deadline: deadline,
         activityLog: [
@@ -257,14 +354,53 @@ class TaskCubit extends Cubit<TaskState> {
         await _updateTask(created!);
       }
     });
-    // Notify the assignees of the brand-new task (best-effort).
-    if (ok && created != null && _user != null && assigneeIds.isNotEmpty) {
+    if (!ok || created == null || _user == null) return;
+
+    // Notify (best-effort) — a shift task resolves its recipients from today's
+    // roster instead of a fixed assignee list; reuses the same NotifyTaskEvent
+    // call individual/team assignment already uses, just with a different
+    // recipient source.
+    if (isShift && shift != null) {
+      final recipients = await _shiftRecipients(
+        branchId: branchId,
+        shift: shift,
+        day: effectiveInstanceDate!,
+      );
+      if (recipients.isNotEmpty) {
+        await _notifyTaskEvent(
+          task: created!,
+          type: NotificationType.taskAssigned,
+          actor: _user!,
+          recipientOverride: recipients,
+        );
+      }
+    } else if (assigneeIds.isNotEmpty) {
       await _notifyTaskEvent(
         task: created!,
         type: NotificationType.taskAssigned,
         actor: _user!,
         recipientOverride: assigneeIds,
       );
+    }
+  }
+
+  /// The uids rostered on [shift] for [day] at [branchId] — the recipients for
+  /// a shift task's assignment notification. Reuses the exact schedule lookup
+  /// (`ScheduleRepository.getSchedule` + `WeeklyScheduleEntity.employeesFor`)
+  /// `computeBranchWorkload` already relies on. Best-effort: no schedule ⇒ no
+  /// recipients, never throws.
+  Future<List<String>> _shiftRecipients({
+    required String branchId,
+    required ScheduleShift shift,
+    required DateTime day,
+  }) async {
+    try {
+      final schedule =
+          await _scheduleRepository.getSchedule(branchId, ScheduleWeek.startOf(day));
+      if (schedule == null) return const [];
+      return schedule.employeesFor(ScheduleDay.fromDate(day), shift);
+    } catch (_) {
+      return const [];
     }
   }
 
@@ -776,6 +912,119 @@ class TaskCubit extends Cubit<TaskState> {
   Future<void> deleteTemplate(String templateId) =>
       _repository.deleteTemplate(templateId);
 
+  // ─── Recurring shift-task templates ────────────────────────────
+  Future<List<RecurringTaskTemplateEntity>> recurringTemplates(
+      String branchId) async {
+    try {
+      return await _repository.getRecurringTemplates(branchId);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Creates a daily/weekly recurring shift-task template, then immediately
+  /// materializes *today's* instance (if due today) so the manager doesn't
+  /// have to wait for the next `generateShiftTaskInstances` Cloud Function run.
+  Future<void> createRecurringShiftTemplate({
+    required String title,
+    String? description,
+    required TaskPriority priority,
+    required String branchId,
+    required ScheduleShift shift,
+    List<ChecklistItemTemplate> checklistItems = const [],
+    required TemplateRepeatMode repeat,
+    int weekday = 1,
+  }) async {
+    final created = await _repository.createRecurringTemplate(
+      RecurringTaskTemplateEntity(
+        id: '',
+        title: title,
+        description: description,
+        priority: priority,
+        checklistItems: checklistItems,
+        branchId: branchId,
+        shift: shift,
+        repeat: repeat,
+        weekday: weekday,
+        createdBy: _user?.uid,
+      ),
+    );
+    await _materializeTodayInstance(created);
+  }
+
+  Future<void> setRecurringTemplateActive(
+    RecurringTaskTemplateEntity template,
+    bool active,
+  ) =>
+      _repository.updateRecurringTemplate(template.copyWith(active: active));
+
+  Future<void> deleteRecurringTemplate(String templateId) =>
+      _repository.deleteRecurringTemplate(templateId);
+
+  /// Creates *today's* instance of [template] at the same deterministic id
+  /// (`rt_{templateId}_{yyyy-MM-dd}`, UTC) the `generateShiftTaskInstances`
+  /// Cloud Function uses, so the two can never double-create the same day's
+  /// instance. A no-op when [template] isn't due today (weekly, wrong weekday)
+  /// or an instance for today already exists. Best-effort: the template save
+  /// already succeeded, and the Cloud Function will generate the instance on
+  /// its next scheduled run if this fails.
+  Future<void> _materializeTodayInstance(
+      RecurringTaskTemplateEntity template) async {
+    final utcNow = DateTime.now().toUtc();
+    if (template.repeat == TemplateRepeatMode.weekly &&
+        template.weekday != utcNow.weekday) {
+      return;
+    }
+    final today = DateTime.utc(utcNow.year, utcNow.month, utcNow.day);
+    final instanceId = 'rt_${template.id}_${_dateKey(today)}';
+    final instance = TaskEntity(
+      id: instanceId,
+      title: template.title,
+      description: template.description,
+      type: TaskType.daily,
+      priority: template.priority,
+      branchId: template.branchId,
+      checklist: template.buildTaskChecklist(),
+      assignmentType: TaskAssignmentType.shift,
+      shift: template.shift,
+      instanceDate: today,
+      sourceTemplateId: template.id,
+      createdBy: _user?.uid,
+      activityLog: [
+        ActivityEntry(
+          status: TaskStatus.pending.value,
+          actorId: _user?.uid ?? '',
+          actorName: _user?.displayName,
+          at: utcNow,
+        ),
+      ],
+    );
+    try {
+      final createdInstance = await _repository.createTaskWithId(instance);
+      if (createdInstance == null) return; // already generated today
+      final recipients = await _shiftRecipients(
+        branchId: template.branchId,
+        shift: template.shift,
+        day: today,
+      );
+      if (recipients.isNotEmpty && _user != null) {
+        await _notifyTaskEvent(
+          task: createdInstance,
+          type: NotificationType.taskAssigned,
+          actor: _user!,
+          recipientOverride: recipients,
+        );
+      }
+    } catch (_) {
+      // Best-effort — see doc comment.
+    }
+  }
+
+  static String _dateKey(DateTime utcDate) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${utcDate.year}-${two(utcDate.month)}-${two(utcDate.day)}';
+  }
+
   // ─── Internals ─────────────────────────────────────────────────
   /// Uploads the manager/admin's picked reference images for [taskId] (in
   /// parallel) and returns the resolved [TaskAttachment]s. Used by create/edit;
@@ -824,6 +1073,8 @@ class TaskCubit extends Cubit<TaskState> {
         assigneeIds: source.assigneeIds,
         checklist: freshChecklist,
         recurrence: recurrence,
+        assignmentType: source.assignmentType,
+        shift: source.shift,
         createdBy: source.createdBy,
         deadline: nextDeadline,
         activityLog: [
@@ -907,7 +1158,9 @@ class TaskCubit extends Cubit<TaskState> {
 
   @override
   Future<void> close() {
-    _sub?.cancel();
+    for (final s in _subs) {
+      s.cancel();
+    }
     return super.close();
   }
 }

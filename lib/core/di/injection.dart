@@ -167,9 +167,21 @@ class AppDependencies {
       checkUsername: CheckUsername(profileRepository),
     );
 
+    // Schedule repository is built early — the TaskCubit needs it to resolve an
+    // employee's shift(s) today (Shift Assignment feature) and shift-task
+    // notification recipients; reused as-is by scheduleCubit/shiftSwapCubit/
+    // branchOperationsCubit below.
+    final ScheduleRepository scheduleRepository = ScheduleRepositoryImpl(
+      ScheduleRemoteDataSourceImpl(
+        FirebaseFirestore.instance,
+        FirebaseFunctions.instance,
+      ),
+    );
+
     taskCubit = TaskCubit(
       repository: taskRepository,
       branchRepository: branchRepository,
+      scheduleRepository: scheduleRepository,
       createTask: CreateTask(taskRepository),
       updateTask: UpdateTask(taskRepository),
       deleteTask: DeleteTask(taskRepository),
@@ -199,12 +211,7 @@ class AppDependencies {
     statisticsCubit = StatisticsCubit(statisticsRepository);
 
     // ─── Weekly schedule + shift swaps (Phase 7) ──────────────
-    final ScheduleRepository scheduleRepository = ScheduleRepositoryImpl(
-      ScheduleRemoteDataSourceImpl(
-        FirebaseFirestore.instance,
-        FirebaseFunctions.instance,
-      ),
-    );
+    // (scheduleRepository built earlier, above, so TaskCubit could use it.)
     scheduleCubit =
         ScheduleCubit(scheduleRepository, GetUsersByBranch(authRepository));
     shiftSwapCubit = ShiftSwapCubit(

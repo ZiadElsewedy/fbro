@@ -25,6 +25,7 @@ import 'package:drop/features/operations/presentation/pages/employee_detail_scre
 import 'package:drop/features/operations/presentation/widgets/workload_card.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
 import 'package:drop/features/task/presentation/pages/branch_task_list_screen.dart';
+import 'package:drop/features/task/presentation/widgets/recurring_shift_task_sheets.dart';
 import 'package:drop/features/task/presentation/widgets/task_template_sheets.dart';
 
 /// The Branch Operations cockpit — the heart of the task→operations redesign.
@@ -90,6 +91,12 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
         ),
       ));
 
+  void _manageRecurringShiftTasks() => showManageRecurringShiftTasksSheet(
+        context: context,
+        cubit: context.read<TaskCubit>(),
+        branchId: widget.branchId,
+      );
+
   void _openEmployee(UserEntity employee) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => EmployeeDetailScreen(
@@ -132,6 +139,12 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
               color: AppColors.textSecondary),
           tooltip: 'All tasks',
           onPressed: _openAllTasks,
+        ),
+        IconButton(
+          icon: const Icon(Icons.event_repeat_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Recurring Shift Tasks',
+          onPressed: _manageRecurringShiftTasks,
         ),
         IconButton(
           icon: const Icon(Icons.refresh_rounded,

@@ -12,6 +12,89 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-07-01 — Shift Assignment feature: assign a task to a shift, not a person)
+
+A task can now be assigned to **a shift** (Morning/Night) instead of named
+employees — for shift-bound routines ("Open Store", "Close Store") where the
+roster rotates daily. Read the existing task/schedule/recurrence code first
+(entities, models, repositories, cubits, Firestore schema) and **reused every
+matching primitive instead of duplicating**: the pre-existing `TaskEntity.shift`
+field (previously just an Operations filter tag) is repurposed as the real
+assignment target in this mode; visibility reuses `WeeklyScheduleEntity`'s
+existing `shiftsFor`/`isAssigned`/`employeesFor` (the same "who's on shift X
+today" logic `computeBranchWorkload` already relies on) with **zero new
+schedule math**; notifications reuse the existing `NotifyTaskEvent` call
+unchanged, just with a roster-resolved recipient list.
+
+- **New enums** `core/enums/task_assignment_type.dart` (`individual`/`team`/
+  `shift` — "team" is a UX-level alias for multi-select individual, no new
+  entity) and `template_repeat_mode.dart` (`once`/`daily`/`weekly`, distinct
+  from the existing per-task `RecurrenceFrequency`).
+- **`TaskEntity`/`TaskModel`** gain `assignmentType`, `instanceDate` (the
+  calendar day a shift instance is *for*), and `sourceTemplateId` (links a
+  generated instance back to its template). Missing `assignmentType` on any
+  pre-existing task parses to `individual` — **zero-migration back-compat**.
+- **New pure domain helper** [`canUserAccessTask`](lib/features/task/domain/task_access.dart)
+  — the single shared visibility gate: individual/team unchanged (`uid ∈
+  assigneeIds`); shift mode requires `uid` to be rostered on `task.shift`
+  *today* per the branch's weekly schedule. Tested in `test/task_access_test.dart`.
+- **`TaskCubit`** now merges **multiple task streams** instead of one: an
+  employee keeps their existing assignee stream and gains one
+  `watchShiftTasks(branchId, shift)` subscription per shift they're rostered on
+  today (`_subscribeEmployeeShifts`, via `ScheduleRepository.getSchedule` +
+  `shiftsFor` — a new `ScheduleRepository` dependency on `TaskCubit`); each
+  source's latest snapshot is merged/deduped by id on every update. Creating a
+  shift task resolves notification recipients from **today's roster**
+  (`_shiftRecipients`) instead of a fixed assignee list.
+- **Recurring shift tasks get a proper Template ⇄ Instance split** — not the
+  existing per-task `RecurrenceConfig` (approve-triggered, wrong for a shift
+  routine nobody may ever complete, and would silently reuse/mutate one task
+  forever instead of producing a trackable record per day). New
+  [`RecurringTaskTemplateEntity`](lib/features/task/domain/entities/recurring_task_template_entity.dart)
+  (collection `recurringTaskTemplates`, always branch-scoped) is the permanent
+  blueprint; the new Cloud Function **`generateShiftTaskInstances`**
+  (`functions/index.js`, `onSchedule` every 24h, modeled on the existing
+  `runTaskReminders`) creates one real `tasks/{id}` per due date at a
+  **deterministic id** (`rt_{templateId}_{yyyy-MM-dd}`, UTC) — the existence
+  check against that id **is** the entire duplicate-prevention guarantee (no
+  separate ledger needed), so every day's completion is independently
+  trackable and overlapping/duplicate function runs are always safe.
+  `TaskCubit.createRecurringShiftTemplate` also materializes **today's**
+  instance client-side immediately via a new dedicated repository method,
+  **`TaskRepository.createTaskWithId`** (a caller-assigned-id create that
+  stamps both `createdAt`/`updatedAt` as server timestamps) — deliberately
+  *not* a reuse of the existing `updateTask` (which only ever stamps
+  `updatedAt`, which would have left `createdAt` permanently null and broken
+  `sortTasksNewestFirst`'s "pending → always newest" ordering forever) — at the
+  **same** deterministic id the Cloud Function uses, so the two paths can
+  never double-create a day's instance.
+- **UI:** `task_action_sheets.dart` gains an "Assigned to" chip row (Employee/
+  Team/Shift, new-task only — the mode is fixed at creation and never
+  editable) that swaps the employee picker for `ShiftChipPicker` +
+  `ShiftRepeatPicker` (Once/Daily/Weekly [+ weekday]) in shift mode. New
+  `recurring_shift_task_sheets.dart` ("Manage Recurring Shift Tasks" —
+  list/pause-resume/delete), wired from `BranchOperationsScreen`'s app bar.
+  `task_card.dart`/`task_details_screen.dart` now show "Morning Shift"/"Night
+  Shift" instead of the (previously misleading) "Unassigned" for these tasks.
+- **`firestore.rules`:** new `isShiftTaskInMyBranch()` helper ORed into the
+  `tasks` read/update rules (branch-scoped trust, same bounded employee-write
+  fields as the existing `isTaskAssignee()` path — an explicit, owner-confirmed
+  tradeoff, not per-shift-verified; the UI is the real gate via client-side
+  `canUserAccessTask`), plus a new `recurringTaskTemplates/{id}` block mirroring
+  `task_templates`. New composite index (`tasks`: `branchId`+`assignmentType`+
+  `shift` in `firestore.indexes.json`).
+
+⚠️ **Deploy required before this works end-to-end:** `firebase deploy --only
+firestore:rules,firestore:indexes,functions` — until then `watchShiftTasks`
+fails `failed-precondition` and daily/weekly instances won't auto-generate
+(shift-mode task creation and the client-side "materialize today" path still
+work without the deploy).
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **240 tests pass**
+(incl. 8 new in `task_access_test.dart`); `dart run build_runner build
+--delete-conflicting-outputs` regenerated the `.freezed.dart` files;
+`node --check functions/index.js` clean.
+
 ### Fixed (2026-07-01 — macOS photo upload: missing sandbox entitlement + dead-end camera options)
 
 Owner report: photo upload didn't work on the macOS build. Diagnosed by reading

@@ -94,9 +94,22 @@ service cloud.firestore {
       return request.auth.uid in resource.data.get('assigneeIds', [])
         || resource.data.get('assignedEmployeeId', '') == request.auth.uid;
     }
+    // Shift Assignment feature: a task with assignmentType 'shift' targets
+    // whoever's rostered on its shift, not a named assignee (assigneeIds is
+    // always empty), so it can't be reached via isTaskAssignee(). Trust is
+    // branch-scoped (any employee in the task's branch), same bounded fields
+    // as isTaskAssignee() below — the UI only ever shows the action to someone
+    // actually on that shift today; the client-side `canUserAccessTask` check
+    // is what hides it from everyone else.
+    function isShiftTaskInMyBranch() {
+      return resource.data.get('assignmentType', 'individual') == 'shift'
+        && selfBranch() != ''
+        && resource.data.get('branchId', '') == selfBranch();
+    }
     match /tasks/{taskId} {
       allow read: if canReachBranch(resource.data.get('branchId', ''))
-        || isTaskAssignee();
+        || isTaskAssignee()
+        || isShiftTaskInMyBranch();
 
       allow create: if canReachBranch(request.resource.data.get('branchId', ''));
 
@@ -110,7 +123,7 @@ service cloud.firestore {
             && (resource.data.get('status', 'pending') != 'approved'
                 || (isAdmin()
                     && request.resource.data.get('status', 'pending') != 'approved')))
-        || (isTaskAssignee()
+        || ((isTaskAssignee() || isShiftTaskInMyBranch())
             // employees can't reassign the task (assignees frozen)
             && request.resource.data.get('assigneeIds', [])
                  == resource.data.get('assigneeIds', [])
@@ -143,6 +156,21 @@ service cloud.firestore {
     //   create — admin (any branch / global), OR an own-branch manager.
     //   update/delete — admin, OR the owning-branch manager.
     match /task_templates/{templateId} {
+      allow read: if isAdmin() || isManager();
+      allow create: if isAdmin()
+        || (isManager()
+            && request.resource.data.get('branchId', '') == selfBranch());
+      allow update, delete: if isAdmin()
+        || (isManager() && resource.data.get('branchId', '') == selfBranch());
+    }
+
+    // ── Recurring shift-task templates (Shift Assignment feature) ──
+    // Permanent blueprints for a shift-assigned task that repeats on its own
+    // clock (e.g. "Open Store" every day on the Morning shift), read by the
+    // `generateShiftTaskInstances` Cloud Function (Admin SDK — bypasses these
+    // rules). Always branch-scoped (a shift only means something within one
+    // branch's roster) — no global option, unlike `task_templates`.
+    match /recurringTaskTemplates/{templateId} {
       allow read: if isAdmin() || isManager();
       allow create: if isAdmin()
         || (isManager()

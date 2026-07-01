@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:drop/core/enums/task_assignment_type.dart';
 import 'package:drop/core/enums/task_priority.dart';
 import 'package:drop/core/enums/task_status.dart';
 import 'package:drop/core/enums/user_role.dart';
@@ -845,6 +846,21 @@ class _AssigneeBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final assignees = resolveAssignees(task, directory);
+    if (task.assignmentType == TaskAssignmentType.shift) {
+      // Shift Assignment feature: targets whoever's rostered on task.shift,
+      // not a named assignee — assigneeIds is always empty here.
+      return Row(
+        children: [
+          const Icon(Icons.schedule_rounded,
+              size: 16, color: AppColors.textTertiary),
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            task.shift == null ? 'Shift task' : '${task.shift!.label} Shift',
+            style: AppTypography.body,
+          ),
+        ],
+      );
+    }
     if (task.assigneeIds.isEmpty) {
       return Text('Unassigned',
           style: AppTypography.body.copyWith(color: AppColors.textTertiary));

@@ -1284,7 +1284,7 @@ stretched-mobile on desktop anymore.**
 | Shifts (Phase 2) | ❌ Removed (Phase 10) | The unused `shift` foundation (data/domain + placeholder screens + `shifts/{shiftId}` rules + `/admin\|manager/shifts`·`/my-shift` routes + DI) was **deleted** as dead code. The **Weekly Schedule** (Phase 7) is the production roster |
 | Weekly Schedule (Phase 7, +2026-06-20 grid redesign) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit`. **Manager/admin view is now a weekly assignment grid** (`ScheduleGrid` + `ShiftCell`) — each cell shows **assigned head-count** (monochrome density tint + "Empty" state, **no staffing quota/target**); cell tap → `ShiftDetailsSheet` (assign/remove/resolve, conflicts). Single-surface screens (tabs removed). Employee keeps the My-Week view. Roster `day → morning/night → employees`; `weekly_schedules/{id}` rules |
 | Shift Swap (Phase 7, +2026-06-20 hardening & grid) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected. **future-shifts-only** validation (`SwapEligibility`) in domain + cubit + UI + rules; admin all-branch visibility via `getAllSwaps()` / `pendingSwaps()`. **Swap tab removed** — surfaced as a floating `SwapAlertCard` → queue modal (reuses `SwapListView`, now showing submitted-time) inside the schedule grid |
-| Tasks (Phase 3–4, +Stabilization, +Phase 9, +Workflow Upgrade, +Media Upgrade) | ✅ Full operations workflow | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens, client-side status-transition rules, **live Firestore streams**, admin branch dropdown, multi-assignee, checklist+completion gate. **Workflow Upgrade (2026-06-18):** recurring tasks, activity timeline (`ActivityEntry[]`), Task Details Screen, employee My Tasks redesign. **Media Upgrade (2026-06-20):** **multiple images + videos per submission**, attached to **task events** — `TaskAttachment` entity + `AttachmentType`; `ActivityEntry.attachments[]`; Storage `tasks/{id}/attachments/{id}.<ext>` (no overwrite); `AttachmentPickerField` (gallery/camera + limits), `AttachmentGallery` + fullscreen `AttachmentViewer` (zoom images, `video_player`). Legacy `proofImageUrl` kept in sync for back-compat |
+| Tasks (Phase 3–4, +Stabilization, +Phase 9, +Workflow Upgrade, +Media Upgrade, +Shift Assignment) | ✅ Full operations workflow | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens, client-side status-transition rules, **live Firestore streams**, admin branch dropdown, multi-assignee, checklist+completion gate. **Workflow Upgrade (2026-06-18):** recurring tasks, activity timeline (`ActivityEntry[]`), Task Details Screen, employee My Tasks redesign. **Media Upgrade (2026-06-20):** **multiple images + videos per submission**, attached to **task events** — `TaskAttachment` entity + `AttachmentType`; `ActivityEntry.attachments[]`; Storage `tasks/{id}/attachments/{id}.<ext>` (no overwrite); `AttachmentPickerField` (gallery/camera + limits), `AttachmentGallery` + fullscreen `AttachmentViewer` (zoom images, `video_player`). Legacy `proofImageUrl` kept in sync for back-compat. **Shift Assignment (2026-07-01):** a task can target a **shift** (Morning/Night) instead of named employees — visible only to whoever's rostered on it *today* (`canUserAccessTask`); recurring shift routines use a proper **template → generated daily instance** split (`recurringTaskTemplates` + `generateShiftTaskInstances` Cloud Function), not the per-task `RecurrenceConfig`. ⚠️ Needs `firestore:rules,firestore:indexes,functions` deploy to fully activate (see Known gaps) |
 | Task / Checklist Templates (Stabilization, +Phase 9) | ✅ Complete | Reusable blueprints ("Open Shop", "Close Shop"). **Phase 9:** templates are now **checklists** — `TaskTemplateEntity.checklistItems` (`ChecklistItemTemplate`: id/title/isRequired) with a checklist editor; creating a task generates its `checklist`. `task_templates/{id}` rules (admin global/any · manager own-branch). New Task → Blank vs. From a template + Manage Templates sheet |
 | Branches (Phase 5, +Phase 9) | ✅ Complete   | `BranchEntity`/`Model`/`Repository`/`RemoteDataSource` + `BranchCubit`; admin CRUD + activate/deactivate + soft delete; `branches/{id}` rules. **Phase 9:** premium cards (manager + employee count + status) + search |
 | Admin module (Phase 5, +Phase 9 UX) | ✅ Complete | Branch / manager / employee management + **admin-only** pending-user approval + branch assignment. `AdminUsersCubit`, `UserAdminRepository` over `users/{uid}`. **Phase 9:** Admin Home restructured to **4 KPIs** + module nav; new **Analytics** page (`/admin/analytics`); avatar-led user cards; search + active/inactive/branch filters |
@@ -1572,8 +1572,19 @@ landing is **Login** (the social Welcome page was removed).
   delete: if false`) — the `sendBroadcast` Cloud Function (Admin SDK) is the sole
   writer and enforces the send-permission matrix server-side. Reusable `isAdmin()`
   / `isManager()` / `canReachBranch()` helpers remain for future collections.
+  **`tasks/{taskId}` (Shift Assignment feature, 2026-07-01):** a new
+  `isShiftTaskInMyBranch()` helper (`assignmentType == 'shift' && branchId ==
+  selfBranch()`) is ORed into the read/update rules — a branch-scoped trust
+  model (any employee in the task's branch, same bounded fields as the existing
+  assignee self-update; not per-shift-verified — the UI is the actual gate via
+  client-side `canUserAccessTask`). **`recurringTaskTemplates/{id}`** mirrors
+  `task_templates/{id}` exactly (read = any admin/manager; create/update/delete
+  = admin or the owning-branch manager).
   ⚠️ Still need to be **deployed**
-  (`firebase deploy --only firestore:rules,storage,functions`).
+  (`firebase deploy --only firestore:rules,firestore:indexes,storage,functions`)
+  — the Shift Assignment feature additionally needs the new `tasks` composite
+  index (`branchId`+`assignmentType`+`shift`) deployed before
+  `watchShiftTasks` will work (fails `failed-precondition` until then).
 
 - **Cloud Functions (Phase 2)** — ✅ **In the repo:** [`functions/`](functions/)
   (Node.js 22, `firebase-admin` + `firebase-functions` v6; the callable is
@@ -1590,7 +1601,15 @@ landing is **Login** (the social Welcome page was removed).
   `us-central1`, matching the client). ⚠️ **Not deployed/runnable** in this repo
   state: needs `cd functions && npm install`, the **Blaze** billing plan, and
   `firebase deploy --only functions`. Verified by `node --check` (syntax) only —
-  Flutter CI can't exercise it.
+  Flutter CI can't exercise it. Also includes the scheduled **`runTaskReminders`**,
+  **`runBroadcastSchedules`**/**`broadcastHousekeeping`**, **`approveSwap`**
+  (callable), and — **Shift Assignment feature (2026-07-01)** —
+  **`generateShiftTaskInstances`** (`onSchedule`, every 24h): scans active
+  `recurringTaskTemplates`, generates today's due instances at the deterministic
+  id `rt_{templateId}_{yyyy-MM-dd}` (UTC; the existence check is the whole
+  duplicate-prevention guarantee), and notifies today's rostered employees by
+  writing straight to `notifications` (reuses `onNotificationCreated`, no new
+  push logic).
 
 ### Firestore schema — `users/{uid}`
 
@@ -1661,7 +1680,10 @@ Phase 10 (dead code, never consumed). The **weekly schedule**
 | `activityLog`        | array<map> | **Workflow Upgrade** — embedded array of `{status, actorId, actorName, at, note}`. Every status transition appends an entry. Shown newest-first on the Task Details screen |
 | `createdBy`          | string?    | uid of the manager/admin who created it               |
 | `assignedShiftId`    | string?    | optional link to `shifts/{shiftId}` (legacy, unused)  |
-| `shift`              | string?    | **Branch Operations (2026-06-21)** — operational shift tag `morning` / `night`, or **null = "any"** (not shift-specific). Drives the Branch Operations shift filter; supersedes the unused legacy `assignedShiftId`. Missing/unknown → null (`ScheduleShift.fromStringOrNull`) |
+| `shift`              | string?    | **Branch Operations (2026-06-21)** — operational shift tag `morning` / `night`, or **null = "any"** (not shift-specific). Drives the Branch Operations shift filter; supersedes the unused legacy `assignedShiftId`. Missing/unknown → null (`ScheduleShift.fromStringOrNull`). **Shift Assignment feature (2026-07-01):** when `assignmentType == 'shift'` this is also the real assignment target (`canUserAccessTask`), not just a filter tag |
+| `assignmentType`     | string     | **Shift Assignment feature (2026-07-01)** — `individual` / `team` / `shift`. `individual`/`team` both read `assigneeIds` (team is a UX-level alias, same mechanism); `shift` leaves `assigneeIds` empty and targets whoever's rostered on `shift` for `instanceDate` instead. Missing → `individual` (zero-migration back-compat) |
+| `instanceDate`       | Timestamp? | **Shift Assignment feature** — the calendar day a shift-assigned instance is *for* (distinct from `deadline`, which may carry a specific time). Null for individual/team tasks |
+| `sourceTemplateId`   | string?    | **Shift Assignment feature** — links a generated shift-task instance back to the `recurringTaskTemplates/{id}` that created it (`generateShiftTaskInstances` Cloud Function, or `TaskCubit._materializeTodayInstance`). Null for one-off tasks |
 | `deadline`           | Timestamp? | due date/time                                         |
 | `notes`              | string?    | employee's free-text notes                            |
 | `proofImageUrl`      | string?    | proof image download URL (uploaded on completion)     |
@@ -1696,6 +1718,39 @@ assignment or status (those are set when a task is created from it).
 > update/delete = admin or the owning-branch manager. Employees don't read
 > templates. Branch filtering (global + own branch) is applied client-side in
 > `TaskCubit.templates` (the collection is tiny).
+
+### Firestore schema — `recurringTaskTemplates/{id}` (Shift Assignment feature, 2026-07-01)
+
+A **permanent blueprint** for a shift-assigned task that repeats on its own
+clock (e.g. "Open Store" every day on the Morning shift) — distinct from
+`task_templates/{id}` (a one-shot checklist blueprint a manager instantiates by
+hand). Read by the `generateShiftTaskInstances` Cloud Function, which creates
+one real `tasks/{id}` document per due date (so per-day completion is
+trackable) and links it back here via `TaskEntity.sourceTemplateId`.
+
+| Field         | Type       | Notes                                                       |
+| ------------- | ---------- | ------------------------------------------------------------ |
+| `id`          | string     | mirrors the doc id (set on create)                          |
+| `title`       | string     | e.g. `Open Store`                                           |
+| `description` | string?    | optional details                                             |
+| `priority`    | string     | `low` / `normal` / `high`                                    |
+| `checklistItems` | array<map> | `{id, title, isRequired}` — instantiated into the generated task's `checklist` |
+| `branchId`    | string     | owning branch — **always** branch-scoped (no global option)  |
+| `shift`       | string     | `morning` / `night` — the target shift                       |
+| `repeat`      | string     | `once` / `daily` / `weekly`. `once` is never persisted as a template row client-side (a single shift task is created directly instead); the Cloud Function skips it defensively |
+| `weekday`     | number     | 1(Mon)–7(Sun), used when `repeat == 'weekly'` (matches `RecurrenceConfig.weekday`) |
+| `active`      | boolean    | whether the generator should still produce instances; a manager pauses via this rather than deleting (history stays intact) |
+| `createdBy`   | string?    | uid of the manager/admin who created it                      |
+| `createdAt`, `updatedAt` | Timestamp | server timestamps                                  |
+
+> Access enforced by `firestore.rules` (`recurringTaskTemplates/{id}`) — same
+> shape as `task_templates`: read = any admin/manager; create = admin or
+> own-branch manager; update/delete = admin or the owning-branch manager.
+> Generated instances use a **deterministic id** `rt_{templateId}_{yyyy-MM-dd}`
+> (UTC) — the existence check against that id is the entire
+> duplicate-prevention guarantee, so the daily Cloud Function run and the
+> client's own "materialize today's instance on save" can never double-create
+> the same day.
 
 ### Firestore schema — `weekly_schedules/{id}` (Phase 7)
 
@@ -1785,6 +1840,17 @@ writes are denied by the rules.
 
 - ⚠️ **Enable Firebase Storage** and **deploy** the committed
   `firestore.rules` / `storage.rules` before production.
+- ⚠️ **Shift Assignment feature (2026-07-01) needs a deploy before it works
+  end-to-end** — `firestore.rules` (new `isShiftTaskInMyBranch()` OR-branch +
+  `recurringTaskTemplates/{id}` block), `firestore.indexes.json` (new `tasks`
+  composite index `branchId`+`assignmentType`+`shift` — `watchShiftTasks` fails
+  `failed-precondition` until deployed), and `functions/generateShiftTaskInstances`
+  (the daily instance generator) all need `firebase deploy --only
+  firestore:rules,firestore:indexes,functions`. Until then: shift-mode task
+  creation and the client-side "materialize today's instance" still work
+  (they don't depend on the new index/function), but an employee's shift-task
+  *stream* won't resolve and daily/weekly recurring instances won't
+  auto-generate.
 - **Approval & user administration are now in-app (Phase 5)** — admins approve/
   reject users, (de)activate, change role/branch, assign managers to branches and
   move employees between branches from the admin module. The **first admin** must
@@ -1874,8 +1940,11 @@ writes are denied by the rules.
   `test/schedule_helpers_test.dart` (name resolution + orphan/broken-reference
   detection), `test/user_model_test.dart` (malformed-doc hardening),
   `test/app_search_field_test.dart` and `test/task_card_layout_test.dart`
-  (layout regressions). `test/widget_test.dart` remains an empty placeholder.
-  Cubit/router tests are still a gap (see suggested next steps).
+  (layout regressions), `test/task_access_test.dart` (Shift Assignment feature
+  — `canUserAccessTask`: individual/team unaffected, shift+scheduled→true,
+  shift+wrong-shift/wrong-day/no-schedule→false). `test/widget_test.dart`
+  remains an empty placeholder. Cubit/router tests are still a gap (see
+  suggested next steps). **240 tests passing** as of 2026-07-01.
 - **Manual QA:** [`QA_CHECKLIST.md`](QA_CHECKLIST.md) — an executable, on-device
   checklist covering the Employee / Manager / Admin workflows, real-time, offline,
   and UI/branding, with the deploy/Storage preconditions a tester must do first.
