@@ -11,10 +11,56 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-01 (full-app live QA pass on Firebase emulators: Employees grid + Change Password heading fixed)
+**Last updated:** 2026-07-01 (macOS photo upload fixed — missing sandbox entitlement; dead-end camera options hidden on desktop)
 **Version:** 1.0.0+1 · **Branch:** `feature/macos-desktop` (DROP — monochrome premium desktop UX)
 
 ---
+
+## ✅ macOS photo upload fixed (2026-07-01)
+
+Owner report: photo upload "wasn't working" on the macOS build (profile
+photo/cover, task proof/reference images, branch logo/cover — anywhere
+`image_picker` is used). Root cause found by reading the actual plugin source:
+**`image_picker` on macOS has no Photos-library integration** — it opens the
+native `NSOpenPanel` file chooser (via `file_selector_macos`) and hands back a
+real file path. The app is **sandboxed**
+(`com.apple.security.app-sandbox = true`), and reading that picked file's bytes
+back afterward (`File(picked.path)`, done by every upload call site) requires
+the **`com.apple.security.files.user-selected.read-only`** entitlement — without
+it the panel opens fine, a photo can be selected, but the subsequent read fails
+("Operation not permitted") and the upload never leaves the client. This is the
+same class of bug as the earlier keychain/network entitlement fixes on this
+branch — an undeclared sandbox capability, invisible in the UI until you look at
+`DebugProfile.entitlements`/`Release.entitlements`.
+
+- **Fixed:** added `com.apple.security.files.user-selected.read-only` to both
+  `macos/Runner/DebugProfile.entitlements` and `Release.entitlements` (kept in
+  sync per the standing rule). Read-only is sufficient — the app only reads the
+  picked file, never writes back to it.
+- **Also fixed while in there:** `image_picker`'s `ImageSource.camera` has no
+  implementation on macOS/Windows/Linux (throws `StateError` unless a
+  `cameraDelegate` is registered, which this app doesn't do) — so the "Take a
+  photo" / "Record a video" options in the Edit Profile avatar picker and the
+  task `AttachmentPickerField` were **dead ends** on desktop (tap → generic
+  "Could not open the picker" error). New **`supportsCameraCapture`**
+  (`core/utils/platform_capabilities.dart`, `!kIsWeb && (Android || iOS)`) gates
+  both call sites so desktop only ever offers the picker path that actually
+  works there ("Choose from library" / "Choose photos"). Mobile is unaffected
+  (still offers both).
+- **Verified:** confirmed via the actual `image_picker_macos`/`file_selector`
+  plugin source (not guessed) that `pickImage`/`pickMultiImage` route through
+  `NSOpenPanel.openFile` and that the camera source throws. Also confirmed via a
+  live emulator-backed run (web build, since this container can't build macOS)
+  that the picker-hides-camera UI change renders correctly and that the
+  gallery-pick → upload path is otherwise wired correctly end-to-end (the only
+  step unverifiable outside a real Mac is the sandbox read itself, which is a
+  well-documented Apple requirement, not a guess).
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **233 tests pass**.
+⚠️ Needs a real macOS run to close the loop (this container has no macOS build
+target) — but the fix directly addresses the documented Apple Sandbox
+requirement for `NSOpenPanel`-sourced files, which is the confirmed mechanism
+`image_picker` uses on macOS.
 
 ## ✅ Live end-to-end QA pass across all three roles (2026-07-01)
 

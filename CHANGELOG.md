@@ -12,6 +12,37 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed (2026-07-01 — macOS photo upload: missing sandbox entitlement + dead-end camera options)
+
+Owner report: photo upload didn't work on the macOS build. Diagnosed by reading
+the `image_picker_macos`/`file_selector` plugin source directly (not guessed):
+on macOS, `image_picker` has no Photos-library integration — it opens the native
+`NSOpenPanel` (file chooser) and returns a real file path. Since the app runs
+**sandboxed** (`com.apple.security.app-sandbox`), reading that file's bytes back
+(`File(picked.path)`, done at every call site: profile avatar/cover, task
+proof/reference images, branch logo/cover) requires a declared entitlement —
+without it the panel opens and a photo can be picked, but the read then fails
+("Operation not permitted") and the upload never starts. Same class of bug as
+the earlier keychain/network entitlement fixes on this branch.
+
+- Added **`com.apple.security.files.user-selected.read-only`** to both
+  `macos/Runner/DebugProfile.entitlements` and `Release.entitlements` (kept in
+  sync, per the standing rule). Read-only is enough — the app never writes back
+  to the picked file.
+- `image_picker`'s `ImageSource.camera` isn't implemented on macOS/Windows/Linux
+  (throws `StateError` without a registered `cameraDelegate`), so the "Take a
+  photo" / "Record a video" rows in the Edit Profile avatar picker and the task
+  `AttachmentPickerField` were dead ends on desktop. New
+  `lib/core/utils/platform_capabilities.dart` (`supportsCameraCapture`, `!kIsWeb
+  && (Platform.isAndroid || Platform.isIOS)`) gates both, so desktop only offers
+  the picker path that actually works there; mobile is unchanged.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **233 tests pass**.
+Verified the picker-UI change live (emulator-backed web build — this container
+has no macOS build target); the sandbox-read fix itself is a documented Apple
+requirement for `NSOpenPanel`-sourced files under the App Sandbox, the same
+mechanism already confirmed for this plugin's `pickImage`/`pickMultiImage`.
+
 ### Fixed (2026-07-01 — live QA on Firebase emulators: Employees grid + Change Password heading)
 
 First **live, running-app** verification pass (every earlier desktop-polish entry

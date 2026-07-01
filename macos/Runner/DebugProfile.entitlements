@@ -11,6 +11,15 @@
 	<!-- Required for outgoing connections (Firebase Auth/Firestore/Storage/FCM). -->
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- REQUIRED for photo/attachment uploads. image_picker on macOS opens the
+	     file's chosen through the native NSOpenPanel (file_selector), not the
+	     Photos library — the sandboxed process can only read the bytes back
+	     afterwards (profile photo, task proof/reference images, branch logo/cover)
+	     if this entitlement is declared. Without it every picked image silently
+	     fails to upload ("Operation not permitted"). Read-only is enough — the
+	     app only reads the picked file, never writes back to it. -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
 	<!-- REQUIRED for Firebase Auth session persistence. FirebaseAuth (11.x) stores
 	     the signed-in user in the keychain on macOS and fails with "An error
 	     occurred when accessing the keychain" without a declared access group.

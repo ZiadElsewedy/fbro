@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/utils/platform_capabilities.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/features/auth/presentation/widgets/app_button.dart';
@@ -71,12 +72,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
               title: Text('Choose from library', style: AppTypography.label),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined,
-                  color: AppColors.textPrimary, size: 20),
-              title: Text('Take a photo', style: AppTypography.label),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
+            if (supportsCameraCapture)
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined,
+                    color: AppColors.textPrimary, size: 20),
+                title: Text('Take a photo', style: AppTypography.label),
+                onTap: () => Navigator.pop(context, ImageSource.camera),
+              ),
             const SizedBox(height: AppSpacing.sm),
           ],
         ),
