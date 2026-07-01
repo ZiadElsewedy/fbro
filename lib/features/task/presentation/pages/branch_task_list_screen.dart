@@ -5,6 +5,7 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
@@ -92,16 +93,22 @@ class BranchTaskListScreen extends StatelessWidget {
                     AppSpacing.xxxl * 2,
                   ),
                   children: [
-                    for (var i = 0; i < tasks.length; i++)
-                      EntranceFade(
-                        delay: staggerDelay(i),
-                        child: ManagerTaskCard(
-                          task: tasks[i],
-                          directory: directory,
-                          isAdmin: isAdmin,
-                          defaultBranchId: branchId,
-                        ),
-                      ),
+                    ResponsiveCardGrid(
+                      runSpacing: 0, // ManagerTaskCard carries its own bottom margin
+                      maxItemWidth: 480,
+                      children: [
+                        for (var i = 0; i < tasks.length; i++)
+                          EntranceFade(
+                            delay: staggerDelay(i),
+                            child: ManagerTaskCard(
+                              task: tasks[i],
+                              directory: directory,
+                              isAdmin: isAdmin,
+                              defaultBranchId: branchId,
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
         ),

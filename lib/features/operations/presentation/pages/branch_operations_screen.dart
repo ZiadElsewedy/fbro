@@ -8,6 +8,7 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/brand_watermark.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
@@ -196,14 +197,20 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
           if (employees.isEmpty)
             _EmptyTeam(filter: filter)
           else
-            for (var i = 0; i < employees.length; i++)
-              EntranceFade(
-                delay: staggerDelay(i),
-                child: WorkloadCard(
-                  workload: employees[i],
-                  onTap: () => _openEmployee(employees[i].user),
-                ),
-              ),
+            ResponsiveCardGrid(
+              runSpacing: 0, // WorkloadCard carries its own bottom margin
+              maxItemWidth: 460,
+              children: [
+                for (var i = 0; i < employees.length; i++)
+                  EntranceFade(
+                    delay: staggerDelay(i),
+                    child: WorkloadCard(
+                      workload: employees[i],
+                      onTap: () => _openEmployee(employees[i].user),
+                    ),
+                  ),
+              ],
+            ),
         ],
       ),
     );
@@ -261,8 +268,11 @@ class _BranchHero extends StatelessWidget {
               ),
             ],
           ),
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
+          // A fixed banner height (not a 16:9 aspect ratio) so the cover stays a
+          // slim premium hero on wide desktop windows instead of ballooning to
+          // ~700px tall. The image fills it via BoxFit.cover.
+          child: SizedBox(
+            height: context.isDesktop ? 230 : 190,
             child: BrandWatermark(
               opacity: 0.03,
               fontSize: 64,
@@ -375,33 +385,42 @@ class _SummaryHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tiles = <Widget>[
+      _StatTile(value: summary.activeTasks, label: 'Active tasks'),
+      _StatTile(
+          value: summary.overdueTasks,
+          label: 'Overdue',
+          alert: summary.overdueTasks > 0),
+      _StatTile(value: summary.pendingReviews, label: 'Pending review'),
+      _StatTile(value: summary.staffActive, label: 'Staff active'),
+    ];
+
+    // Desktop: one tight row of four compact stat tiles (not 2×2 giant cards).
+    if (context.isDesktop) {
+      return Row(
+        children: [
+          for (var i = 0; i < tiles.length; i++) ...[
+            if (i > 0) const SizedBox(width: AppSpacing.sm),
+            Expanded(child: tiles[i]),
+          ],
+        ],
+      );
+    }
+
+    // Mobile / tablet: 2×2.
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-                child: _StatTile(
-                    value: summary.activeTasks, label: 'Active tasks')),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-                child: _StatTile(
-                    value: summary.overdueTasks,
-                    label: 'Overdue',
-                    alert: summary.overdueTasks > 0)),
-          ],
-        ),
+        Row(children: [
+          Expanded(child: tiles[0]),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: tiles[1]),
+        ]),
         const SizedBox(height: AppSpacing.sm),
-        Row(
-          children: [
-            Expanded(
-                child: _StatTile(
-                    value: summary.pendingReviews, label: 'Pending review')),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-                child:
-                    _StatTile(value: summary.staffActive, label: 'Staff active')),
-          ],
-        ),
+        Row(children: [
+          Expanded(child: tiles[2]),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: tiles[3]),
+        ]),
       ],
     );
   }

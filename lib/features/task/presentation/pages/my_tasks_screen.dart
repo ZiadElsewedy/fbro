@@ -8,6 +8,7 @@ import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
@@ -178,7 +179,7 @@ class _ActiveTasksTab extends StatelessWidget {
               icon: Icons.replay_rounded,
               color: AppColors.error,
             ),
-            ..._buildCards(context, rejected, directory),
+            _buildCards(context, rejected, directory),
           ],
           if (inProgress.isNotEmpty) ...[
             _SectionHeader(
@@ -186,7 +187,7 @@ class _ActiveTasksTab extends StatelessWidget {
               count: inProgress.length,
               icon: Icons.timelapse_rounded,
             ),
-            ..._buildCards(context, inProgress, directory),
+            _buildCards(context, inProgress, directory),
           ],
           if (today.isNotEmpty) ...[
             _SectionHeader(
@@ -194,7 +195,7 @@ class _ActiveTasksTab extends StatelessWidget {
               count: today.length,
               icon: Icons.today_outlined,
             ),
-            ..._buildCards(context, today, directory),
+            _buildCards(context, today, directory),
           ],
           if (pending.isNotEmpty) ...[
             _SectionHeader(
@@ -202,7 +203,7 @@ class _ActiveTasksTab extends StatelessWidget {
               count: pending.length,
               icon: Icons.schedule_outlined,
             ),
-            ..._buildCards(context, pending, directory),
+            _buildCards(context, pending, directory),
           ],
           if (inReview.isNotEmpty) ...[
             _SectionHeader(
@@ -210,29 +211,35 @@ class _ActiveTasksTab extends StatelessWidget {
               count: inReview.length,
               icon: Icons.hourglass_empty_rounded,
             ),
-            ..._buildCards(context, inReview, directory),
+            _buildCards(context, inReview, directory),
           ],
         ],
       ),
     );
   }
 
-  List<Widget> _buildCards(
+  Widget _buildCards(
     BuildContext context,
     List<TaskEntity> list,
     Map<String, UserEntity> dir,
   ) {
-    return [
-      for (var i = 0; i < list.length; i++)
-        _AnimatedCard(
-          key: ValueKey(list[i].id),
-          index: i,
-          child: EmployeeTaskCard(
-            task: list[i],
-            directory: dir,
+    // EmployeeTaskCard carries its own bottom margin, so the grid adds no extra
+    // vertical spacing (runSpacing: 0) — only lays cards side-by-side on desktop.
+    return ResponsiveCardGrid(
+      runSpacing: 0,
+      maxItemWidth: 480,
+      children: [
+        for (var i = 0; i < list.length; i++)
+          _AnimatedCard(
+            key: ValueKey(list[i].id),
+            index: i,
+            child: EmployeeTaskCard(
+              task: list[i],
+              directory: dir,
+            ),
           ),
-        ),
-    ];
+      ],
+    );
   }
 
   List<TaskEntity> _todayTasks(List<TaskEntity> all) {
@@ -296,12 +303,18 @@ class _DoneTasksTab extends StatelessWidget {
           AppSpacing.xxxl,
         ),
         children: [
-          for (var i = 0; i < done.length; i++)
-            _AnimatedCard(
-              key: ValueKey(done[i].id),
-              index: i,
-              child: EmployeeTaskCard(task: done[i], directory: directory),
-            ),
+          ResponsiveCardGrid(
+            runSpacing: 0, // EmployeeTaskCard carries its own bottom margin
+            maxItemWidth: 480,
+            children: [
+              for (var i = 0; i < done.length; i++)
+                _AnimatedCard(
+                  key: ValueKey(done[i].id),
+                  index: i,
+                  child: EmployeeTaskCard(task: done[i], directory: directory),
+                ),
+            ],
+          ),
         ],
       ),
     );

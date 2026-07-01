@@ -28,6 +28,7 @@ class AdaptiveScaffold extends StatelessWidget {
     this.bottom,
     this.bottomBar,
     this.constrainContent = true,
+    this.contentMaxWidth,
     this.scrollableHeaderActions = false,
   });
 
@@ -58,6 +59,11 @@ class AdaptiveScaffold extends StatelessWidget {
   /// Centre the body in a comfortable max-width column on wide windows.
   final bool constrainContent;
 
+  /// Overrides the centred column width when [constrainContent] is true. Useful
+  /// for forms, which read best in a narrow (~560) column rather than the wide
+  /// default dashboard width. Null → the default [Breakpoints.contentMaxWidth].
+  final double? contentMaxWidth;
+
   /// When true the header actions sit in a scrollable row (avoids overflow when
   /// a screen has many actions on a narrow desktop window).
   final bool scrollableHeaderActions;
@@ -82,7 +88,12 @@ class AdaptiveScaffold extends StatelessWidget {
     }
 
     final canPop = Navigator.of(context).canPop();
-    final content = constrainContent ? ContentConstraint(child: body) : body;
+    final content = constrainContent
+        ? ContentConstraint(
+            maxWidth: contentMaxWidth ?? Breakpoints.contentMaxWidth,
+            child: body,
+          )
+        : body;
 
     return Scaffold(
       backgroundColor: AppColors.darkBg,

@@ -44,6 +44,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: 'Profile',
+      contentMaxWidth: 680,
       body: BlocBuilder<ProfileCubit, ProfileState>(
         builder: (context, state) {
           return state.maybeWhen(

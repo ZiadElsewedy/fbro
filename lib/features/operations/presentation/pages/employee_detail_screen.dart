@@ -7,6 +7,7 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
@@ -111,17 +112,22 @@ class EmployeeDetailScreen extends StatelessWidget {
     for (final g in groups) {
       if (g.tasks.isEmpty) continue;
       children.add(_SectionHeader(label: g.label, count: g.tasks.length));
-      for (final t in g.tasks) {
-        children.add(EntranceFade(
-          delay: staggerDelay(index++),
-          child: ManagerTaskCard(
-            task: t,
-            directory: directory,
-            isAdmin: isAdmin,
-            defaultBranchId: defaultBranchId,
-          ),
-        ));
-      }
+      children.add(ResponsiveCardGrid(
+        runSpacing: 0, // ManagerTaskCard (via TaskCard) carries its own margin
+        maxItemWidth: 480,
+        children: [
+          for (final t in g.tasks)
+            EntranceFade(
+              delay: staggerDelay(index++),
+              child: ManagerTaskCard(
+                task: t,
+                directory: directory,
+                isAdmin: isAdmin,
+                defaultBranchId: defaultBranchId,
+              ),
+            ),
+        ],
+      ));
     }
 
     return Column(

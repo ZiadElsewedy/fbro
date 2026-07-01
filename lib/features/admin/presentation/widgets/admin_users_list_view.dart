@@ -5,6 +5,7 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/app_search_field.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
@@ -144,18 +145,24 @@ class _AdminUsersListViewState extends State<AdminUsersListView> {
                       AppSpacing.xxxl * 2,
                     ),
                     children: [
-                      for (var i = 0; i < filtered.length; i++)
-                        EntranceFade(
-                          delay: staggerDelay(i),
-                          child: AdminUserCard(
-                            user: filtered[i],
-                            branchLabel: filtered[i].branchId == null
-                                ? null
-                                : _branchNames[filtered[i].branchId],
-                            actions:
-                                widget.actionsBuilder(context, filtered[i]),
-                          ),
-                        ),
+                      ResponsiveCardGrid(
+                        runSpacing: 0, // AdminUserCard carries its own bottom margin
+                        ultrawideColumns: 2, // rich cards read best at 2-up max
+                        children: [
+                          for (var i = 0; i < filtered.length; i++)
+                            EntranceFade(
+                              delay: staggerDelay(i),
+                              child: AdminUserCard(
+                                user: filtered[i],
+                                branchLabel: filtered[i].branchId == null
+                                    ? null
+                                    : _branchNames[filtered[i].branchId],
+                                actions:
+                                    widget.actionsBuilder(context, filtered[i]),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
           ),

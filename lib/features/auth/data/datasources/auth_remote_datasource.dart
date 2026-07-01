@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:drop/core/errors/exceptions.dart';
 import 'package:drop/features/auth/data/models/user_model.dart';
@@ -59,19 +57,11 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String email,
     required String password,
   }) async {
-    // ── TEMPORARY KEYCHAIN DIAGNOSTICS (remove once the macOS keychain issue is
-    //    confirmed fixed). FirebaseAuth persists the signed-in session to the
-    //    macOS keychain *inside* signInWithEmailAndPassword; a keychain failure
-    //    surfaces here as a FirebaseAuthException (code 'keychain-error'). These
-    //    logs pinpoint exactly which call fails and with what native detail. ──
-    _diag('signInWithEmail: BEFORE signInWithEmailAndPassword (email=$email)');
     try {
       final credential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-      _diag('signInWithEmail: AFTER signInWithEmailAndPassword '
-          '(uid=${credential.user?.uid ?? "null"}) — keychain write OK');
       final user = credential.user;
       if (user == null) {
         throw const AuthException(
@@ -79,34 +69,15 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         );
       }
       return UserModel.fromFirebaseUser(user, authProvider: _resolveProvider(user));
-    } on FirebaseAuthException catch (e, st) {
-      _diag(
-        'signInWithEmail: FirebaseAuthException\n'
-        '  code   = ${e.code}\n'
-        '  message= ${e.message}\n'
-        '  plugin = ${e.plugin}\n'
-        '  details= ${e.stackTrace}',
-        error: e,
-        stackTrace: st,
-      );
+    } on FirebaseAuthException catch (e) {
       throw AuthException(_resolveSignInError(e.code, e.message));
-    } catch (e, st) {
+    } catch (e) {
       // Anything that is not a FirebaseAuthException (raw socket/DNS/SSL
       // failures, method-channel PlatformExceptions, timeouts) used to escape
       // this layer and surface as an opaque "no internet" string from the
       // native SDK. Map it to a precise, actionable message instead.
-      _diag('signInWithEmail: non-FirebaseAuthException ${e.runtimeType}: $e',
-          error: e, stackTrace: st);
       throw AuthException(_resolveInfraError(e));
     }
-  }
-
-  /// Temporary structured diagnostic logger (debug builds only) for tracing the
-  /// keychain/auth path. Safe to delete with the call sites above.
-  void _diag(String message, {Object? error, StackTrace? stackTrace}) {
-    if (!kDebugMode) return;
-    developer.log(message,
-        name: 'auth.keychain', error: error, stackTrace: stackTrace);
   }
 
   String _resolveSignInError(String code, String? message) {

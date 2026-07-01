@@ -12,6 +12,99 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-07-01 — full-screen UI audit: form/detail column widths)
+
+Swept **every** page (39) for desktop-width behaviour. Beyond the card grids
+(below), the remaining issue was **forms and detail screens stretching to the
+full 1280 dashboard width**, which reads poorly. Added a `contentMaxWidth`
+override to `AdaptiveScaffold` (feeds its `ContentConstraint`) and applied a
+comfortable column width to the screens that are read, not scanned:
+
+- **Forms** centred to a narrow column: Change Password (560), Create Account &
+  Edit Profile (620).
+- **Read/list panes** centred: Settings & Profile (680), Notifications inbox
+  (760 — kept single-column; a chronological + swipeable feed shouldn't grid).
+- **Left full-bleed (correct as-is):** the schedule grids
+  (`branch_schedule_screen`, `schedule_management_screen`,
+  `constrainContent: false`), analytics (charts want width), and the dashboards
+  (already responsive grids via `RoleScaffold`). Auth-gate pages
+  (`force_password_change`, `profile_completion`) already centre via
+  `AuthScaffold`.
+- **Cleanup:** removed 3 dead unused-parameter warnings from `settings_page`
+  (`iconColor`/`labelColor`/`subtitleColor` — no caller ever set them). Analyzer
+  now 7 issues (was 10), all pre-existing `auth_cubit` style infos.
+
+`flutter analyze` (7 pre-existing infos, 0 new) · **231 tests pass** · macOS
+build green.
+
+### Fixed (2026-07-01 — oversized heroes/cards/dashboards on macOS)
+
+Owner feedback: on a large macOS window the cockpit cover, the stat cards and
+the dashboards were **way too big**. Fixes:
+
+- **Branch Operations cover was ~700px tall** (a 16:9 `AspectRatio` at full
+  width). Now a fixed slim **230px** banner (190 on mobile), image still
+  `BoxFit.cover`. (`branch_operations_screen._BranchHero`)
+- **Cockpit summary was a 2×2 grid of giant stat cards** → on desktop it's now
+  one tight **row of four** compact tiles. (`_SummaryHeader`)
+- **Admin dashboard laid every card 2-per-row** (each ~630px). `_grid` is now a
+  width-aware `ResponsiveCardGrid` (3–4 compact tiles per row on desktop).
+- **`StatGrid`** (shared manager + employee dashboards) was hardcoded to 2
+  columns → now **2–4** width-aware columns (`statGridColumns`).
+- **Global content width tightened 1280 → 1120** (`Breakpoints.contentMaxWidth`)
+  so heroes/cards/buttons read premium instead of sprawling on wide monitors.
+
+`flutter analyze` clean (7 pre-existing infos) · **233 tests pass** · macOS build
+green.
+
+### Fixed (2026-07-01 — task cards were still too wide on macOS)
+
+Follow-up to the card-grid work: at a typical ~1440 macOS window a 2-column task
+card was still ~540px — too wide/uncomfortable. Two fixes:
+
+- **`ResponsiveCardGrid` gained a `maxItemWidth` mode**: the column count is now
+  derived from the available width so **no card is ever wider than the limit**
+  (a lone card sits in one narrow cell instead of stretching). Applied to every
+  task-card surface at **480** (workload cards 460, branch-overview cards 520),
+  giving a comfortable ~350–465px card and 2–3 columns depending on window size.
+- **Two more task screens were still single-column full-width and are now
+  gridded:** the **Branch Operations cockpit** (employee `WorkloadCard`s — the
+  screen shown when you tap a branch) and **Employee detail** (that employee's
+  task cards, gridded within each status group). These were the widest offenders.
+
+`flutter analyze` clean (7 pre-existing infos) · **233 tests pass** (+2
+`maxItemWidth` cases) · macOS build green.
+
+### Changed (2026-07-01 — task screens use desktop width: responsive card grids)
+
+On wide macOS windows the task screens rendered one over-wide card per row (a
+single branch cover ballooned to ~half the screen). New reusable
+**`ResponsiveCardGrid`** (`core/widgets`) lays cards out width-aware: 1 column on
+mobile (unchanged), 2 on desktop, 3 on ultrawide — via a `Wrap` so each card
+keeps its natural height. An optional `runSpacing: 0` lets cards that already
+carry their own bottom margin (the task cards) avoid double spacing.
+
+- **Admin Task Management** (`admin_task_overview_screen`): branch cards now grid
+  (2/3 columns) so several branches show at once and each cover photo stays a
+  sensible height instead of half the screen.
+- **Branch task list** (`branch_task_list_screen`) and **My Tasks**
+  (`my_tasks_screen`, both the sectioned Active tab and the Done tab): task cards
+  lay out 2-up on desktop.
+- **Employees / Managers** (`admin_users_list_view`) and **Branches**
+  (`branch_management_screen`): user/branch cards lay out 2-up (these richer
+  management cards are capped at `ultrawideColumns: 2` so they never get cramped).
+- **Pending Review** (`pending_review_screen`): the leaf task-card level grids
+  2-up; the drill-down navigation rows stay full-width (they're nav, not cards).
+- **Scheduled broadcasts** (`broadcast_schedules_screen`): schedule cards grid
+  2-up.
+- **Deliberately left single-column** (premium ≠ everything-is-a-grid): the
+  Notifications inbox (chronological + swipe-to-action) and the Communications
+  feed (already a desktop command-center with a side panel).
+- Mobile layout unchanged (single column). `flutter analyze` clean;
+  **231 tests pass** (+4 `responsive_card_grid_test`); macOS build green.
+- Also removed the temporary keychain sign-in diagnostics (issue confirmed fixed)
+  while keeping the explicit `keychain-error` → actionable-message mapping.
+
 ### Changed (2026-07-01 — desktop punch-list: 10 screens onto AdaptiveScaffold)
 
 Completed the desktop-header migration punch-list — every remaining screen on a

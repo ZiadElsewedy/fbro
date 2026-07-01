@@ -13,6 +13,7 @@ import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/glass_container.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
 import 'package:drop/core/widgets/live_list_item.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
@@ -283,20 +284,24 @@ class _PendingReviewScreenState extends State<PendingReviewScreen> {
       key: const PageStorageKey('pr-leaf'),
       padding: const EdgeInsets.all(AppSpacing.pagePadding),
       children: [
-        for (var i = 0; i < mine.length; i++)
-          LiveListItem(
-            key: ValueKey('t:${mine[i].id}'),
-            isNew: freshIds.contains(mine[i].id),
-            entranceDelay: Duration(milliseconds: i * 40),
-            // ManagerTaskCard (via TaskCard) carries its own bottom margin, so no
-            // extra Padding here.
-            child: ManagerTaskCard(
-              task: mine[i],
-              directory: cubit.directory,
-              isAdmin: true,
-              defaultBranchId: mine[i].branchId ?? '',
-            ),
-          ),
+        ResponsiveCardGrid(
+          runSpacing: 0, // ManagerTaskCard (via TaskCard) carries its own margin
+          maxItemWidth: 480,
+          children: [
+            for (var i = 0; i < mine.length; i++)
+              LiveListItem(
+                key: ValueKey('t:${mine[i].id}'),
+                isNew: freshIds.contains(mine[i].id),
+                entranceDelay: Duration(milliseconds: i * 40),
+                child: ManagerTaskCard(
+                  task: mine[i],
+                  directory: cubit.directory,
+                  isAdmin: true,
+                  defaultBranchId: mine[i].branchId ?? '',
+                ),
+              ),
+          ],
+        ),
       ],
     );
   }

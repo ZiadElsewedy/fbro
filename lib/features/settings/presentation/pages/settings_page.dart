@@ -17,6 +17,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: 'Settings',
+      contentMaxWidth: 680,
       body: BlocBuilder<AuthCubit, AuthState>(
         builder: (context, state) {
           final user = state.maybeWhen(
@@ -111,9 +112,6 @@ class _SettingsRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String? subtitle;
-  final Color? subtitleColor;
-  final Color? iconColor;
-  final Color? labelColor;
   final VoidCallback onTap;
   final bool isFirst;
   final bool isLast;
@@ -123,9 +121,6 @@ class _SettingsRow extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.subtitle,
-    this.subtitleColor,
-    this.iconColor,
-    this.labelColor,
     this.isFirst = false,
     this.isLast = false,
   });
@@ -160,23 +155,19 @@ class _SettingsRow extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(icon,
-                    size: 18, color: iconColor ?? AppColors.primary),
+                Icon(icon, size: 18, color: AppColors.primary),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(label,
-                          style: AppTypography.label
-                              .copyWith(color: labelColor)),
+                      Text(label, style: AppTypography.label),
                       if (subtitle != null && subtitle!.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(subtitle!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: AppTypography.caption
-                                .copyWith(color: subtitleColor)),
+                            style: AppTypography.caption),
                       ],
                     ],
                   ),

@@ -7,6 +7,7 @@ import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/core/widgets/app_glass_card.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
 import 'package:drop/core/widgets/drop_empty_state.dart';
 import 'package:drop/core/widgets/premium_button.dart';
@@ -171,11 +172,17 @@ class _BranchManagementScreenState extends State<BranchManagementScreen> {
                       AppSpacing.xxxl * 2,
                     ),
                     children: [
-                      for (var i = 0; i < filtered.length; i++)
-                        EntranceFade(
-                          delay: staggerDelay(i),
-                          child: _card(filtered[i]),
-                        ),
+                      ResponsiveCardGrid(
+                        runSpacing: 0, // _card carries its own bottom padding
+                        ultrawideColumns: 2, // rich cards read best at 2-up max
+                        children: [
+                          for (var i = 0; i < filtered.length; i++)
+                            EntranceFade(
+                              delay: staggerDelay(i),
+                              child: _card(filtered[i]),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
           ),

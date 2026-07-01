@@ -7,6 +7,7 @@ import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
@@ -136,14 +137,19 @@ class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen> {
                         children: [
                           _CompanySummary(metrics: company, branches: rows.length),
                           const SizedBox(height: AppSpacing.lg),
-                          for (var i = 0; i < rows.length; i++)
-                            EntranceFade(
-                              delay: staggerDelay(i),
-                              child: _BranchOverviewCard(
-                                row: rows[i],
-                                onTap: () => _openBranch(rows[i]),
-                              ),
-                            ),
+                          ResponsiveCardGrid(
+                            maxItemWidth: 520,
+                            children: [
+                              for (var i = 0; i < rows.length; i++)
+                                EntranceFade(
+                                  delay: staggerDelay(i),
+                                  child: _BranchOverviewCard(
+                                    row: rows[i],
+                                    onTap: () => _openBranch(rows[i]),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ],
                       ),
               ),
@@ -402,7 +408,6 @@ class _BranchOverviewCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         clipBehavior: Clip.antiAlias,
-        margin: const EdgeInsets.only(bottom: AppSpacing.md),
         decoration: BoxDecoration(
           color: AppColors.darkSurface,
           borderRadius: AppRadius.cardAll,

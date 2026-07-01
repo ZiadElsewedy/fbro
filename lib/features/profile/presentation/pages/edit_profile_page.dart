@@ -127,6 +127,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: 'Edit Profile',
+      contentMaxWidth: 620,
       body: BlocConsumer<ProfileCubit, ProfileState>(
         listenWhen: (prev, curr) => curr.isSavedOrError,
         listener: (context, state) {

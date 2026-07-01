@@ -10,6 +10,7 @@ import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/action_card.dart';
 import 'package:drop/core/widgets/admin_section_header.dart';
 import 'package:drop/core/widgets/animated_count.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/dashboard_metric_card.dart';
 import 'package:drop/core/widgets/brand_watermark.dart';
@@ -230,30 +231,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     ]);
   }
 
-  /// Lay out [cards] two-per-row at equal height.
+  /// Lay [cards] out in a width-aware grid: two-per-row on mobile, but 3–4
+  /// compact tiles per row on desktop instead of two over-wide cards.
   Widget _grid(List<Widget> cards) {
-    return Column(
-      children: [
-        for (var i = 0; i < cards.length; i += 2)
-          Padding(
-            padding: EdgeInsets.only(
-                bottom: i + 2 < cards.length ? AppSpacing.md : 0),
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(child: cards[i]),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child:
-                        i + 1 < cards.length ? cards[i + 1] : const SizedBox(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
+    return ResponsiveCardGrid(maxItemWidth: 300, children: cards);
   }
 }
 

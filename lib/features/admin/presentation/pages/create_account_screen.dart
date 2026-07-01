@@ -164,6 +164,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: 'Create account',
+      contentMaxWidth: 620,
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, AppSpacing.lg,
             AppSpacing.pagePadding, AppSpacing.xxxl),

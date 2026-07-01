@@ -39,6 +39,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
     return AdaptiveScaffold(
       title: 'Change Password',
+      contentMaxWidth: 560,
       body: BlocListener<AuthCubit, AuthState>(
         listener: (context, state) {
           state.whenOrNull(
