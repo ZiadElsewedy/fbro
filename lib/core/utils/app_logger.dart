@@ -32,28 +32,32 @@ class AppLog {
     return '${p(n.hour)}:${p(n.minute)}:${p(n.second)}.${p(n.millisecond, 3)}';
   }
 
-  static void _print(String color, String scope, String message) {
+  // Emoji markers ride along with the ANSI colours: terminals render both,
+  // but consoles that strip ANSI (Xcode) still show the emoji, so a log line
+  // is level-readable everywhere.
+  static void _print(String color, String emoji, String scope, String message) {
     if (!enabled) return;
-    debugPrint('$color[${_stamp()}][$scope] $message$_reset');
+    debugPrint('$color$emoji [${_stamp()}][$scope] $message$_reset');
   }
 
   /// Yellow — a function/flow was entered.
   static void call(String scope, String fn, [String? details]) =>
-      _print(_yellow, scope, '→ $fn${details == null ? '' : ' ($details)'}');
+      _print(_yellow, '🟡', scope,
+          '→ $fn${details == null ? '' : ' ($details)'}');
 
   /// Green — an operation completed.
   static void success(String scope, String message) =>
-      _print(_green, scope, '✓ $message');
+      _print(_green, '🟢', scope, '✓ $message');
 
   /// Red — an operation failed.
   static void error(String scope, String message,
       [Object? err, StackTrace? stack]) {
-    _print(_red, scope, '✗ $message${err == null ? '' : ' — $err'}');
+    _print(_red, '🔴', scope, '✗ $message${err == null ? '' : ' — $err'}');
     if (stack != null && enabled) debugPrint('$_red$stack$_reset');
   }
 
   /// Cyan — navigation events (route pushes/pops, redirect decisions).
-  static void route(String message) => _print(_cyan, 'nav', message);
+  static void route(String message) => _print(_cyan, '🔵', 'nav', message);
 
   /// Times an async [operation]: yellow on entry, green with the elapsed
   /// milliseconds on completion, red (and rethrow) on failure.
