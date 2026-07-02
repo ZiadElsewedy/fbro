@@ -32,6 +32,9 @@ class ProfileModel {
       country: str(map['country']),
       city: str(map['city']),
       website: str(map['website']),
+      address: str(map['address']),
+      emergencyContact: str(map['emergencyContact']),
+      paymentNumber: str(map['paymentNumber']),
       isVerified: (map['isVerified'] as bool?) ?? false,
       accountStatus: (map['accountStatus'] as String?) ?? 'active',
       createdAt: map.date('createdAt'),
@@ -68,6 +71,7 @@ class ProfileModel {
     String? coverImage,
     String? emergencyContact,
     String? address,
+    String? paymentNumber,
   }) {
     final map = <String, dynamic>{'updatedAt': FieldValue.serverTimestamp()};
     if (fullName != null) {
@@ -90,6 +94,9 @@ class ProfileModel {
     // Onboarding fields (Profile Completion). Stored on users/{uid}.
     if (emergencyContact != null) map['emergencyContact'] = emergencyContact;
     if (address != null) map['address'] = address;
+    // Self-service payroll field: the number the salary is sent to. The
+    // admin-only salary fields are frozen by the users self-update rule.
+    if (paymentNumber != null) map['paymentNumber'] = paymentNumber;
     return map;
   }
 }

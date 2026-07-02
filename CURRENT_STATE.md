@@ -11,8 +11,354 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-06-30 (Desktop-first UI architecture: ShellRoute + persistent sidebar + indigo accent; macOS login fix; full DROP rebrand)
-**Version:** 1.0.0+1 · **Branch:** `enhancement/ui-refactor` (DROP — monochrome premium UX)
+**Last updated:** 2026-07-02 (swap-queue one-tap access + macOS icon + Schedule 3.1)
+**Version:** 1.0.0+1 · **Branch:** `feature/macos-desktop` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Admin swap requests — one tap from Pending Actions (2026-07-02)
+
+The admin home's "N Swap Requests" row used to push `/admin/schedule`, which
+lands on "Pick a branch" — the admin had to select the branch and find the
+swap chip manually. It now opens **`showSwapQueueSheet`** directly (the
+all-branches actionable queue; `ShiftSwapCubit.loadAll()` is already live on
+the dashboard, and approve/reject work in-sheet). Manager/employee paths were
+already direct (fixed-branch strip chip / inline Home section). A ⌘K palette
+swaps entry was deliberately skipped (palette is route-based; one-off callback
+machinery = over-engineering). `flutter analyze` clean · **268 tests pass**.
+
+---
+
+## ✅ macOS app icon + animated brand logo (2026-07-02)
+
+**Dock/Finder icon is now the DROP brand:** Big Sur squircle (dark monochrome
+gradient + hairline border + white wordmark), composed from
+`assets/drop_logo.png` by a Swift/AppKit script → master at
+`assets/icon/app_icon_macos.png` (1024²), all 7 sizes written into
+`macos/Runner/Assets.xcassets/AppIcon.appiconset/`; `flutter_launcher_icons`
+config gained a `macos:` block pointing at the master (Android/iOS untouched).
+**Verified inside the built `DROP.app` bundle** (`AppIcon.icns` extracted and
+inspected; macOS debug build green). If the Dock caches the old icon:
+`killall Dock`. **Animated logo:** new **`AnimatedDropLogo`**
+(`core/widgets/animated_drop_logo.dart`) — a soft diagonal light band sweeps
+the ~88%-white wordmark once per ~3.2s (ShaderMask srcATop, rests between
+passes, strictly monochrome). Live on the **Splash** lockup (under its
+entrance fade/scale) and the **Login desktop brand panel**; chrome marks stay
+static. `flutter analyze` clean · **268 tests pass** (+1).
+
+---
+
+## ✅ Schedule 3.1 — drag-to-switch + brand polish (2026-07-02)
+
+Owner extended the Schedule 3.0 drag scope: dropping a dragged person **onto
+another person's chip** now trades their slots (drag Ziad onto Richard → they
+switch shifts). New **`ScheduleCubit.exchange`** (single busy cycle,
+assign-both-first-then-release ordering — a failed write never strands anyone;
+self-swap / same-slot = no-op); `AssignmentChip` doubles as a `DragTarget`
+(primary ring + ⇄ cue when targeted) that wins the hit test over its host
+cell, so chip-drop = switch while empty-cell-drop stays the existing move.
+Wired via `onSwapChip` through `ShiftCell` → `ScheduleGrid` →
+`manager_schedule_view` (admin + manager). Grid hint names the gesture. Brand:
+quiet `DropLogo` signature on the hint row + both schedule empty states now
+brand-led `DropEmptyState`. Covered by `test/schedule_exchange_test.dart`
+(incl. a real chip-onto-chip drag). `flutter analyze` clean · **267 tests
+pass** (+4). ⚠️ On-device QA: real-trackpad chip-onto-chip drop on the Mac.
+
+---
+
+## ✅ DROP logo rollout across the app chrome (2026-07-02)
+
+Owner request: the real logo (`assets/drop_logo.png`) on the homepage and all
+important screens. Done via the three shared chrome widgets (no per-screen
+edits, strictly monochrome): **`RoleScaffold`** mobile app bar leads with a
+`DropLogo` (22px) + title lockup on all three role homes; **`AppSidebar`**'s
+desktop brand header now renders the real artwork (30px) instead of the
+typographic `DropWordmark` (still used by `BrandWatermark`); and
+**`AdaptiveScaffold`** gains `showBrandMark` (default on) — a quiet
+non-interactive tertiary `DropLogo` (16px) closing every **mobile** app bar
+(desktop is already branded by the persistent sidebar). Covered by
+`test/brand_chrome_test.dart`. `flutter analyze` clean · **263 tests pass**
+(+4). ⚠️ Visual QA suggested on a phone + the Mac (lockup sizing/spacing).
+
+---
+
+## ✅ Mobile blank "My Week" after Swaps tab — root-caused and fixed (2026-07-02)
+
+Owner report: on mobile, Schedule → My Week rendered initially but went blank
+after visiting the Swaps tab and returning (recovered only on manual refresh).
+**Not a data/cubit bug** — `TabBarView` disposes the My Week tab on switch and
+recreates it on return; its entrance `AnimationController` (starts at 0.0) was
+only played from the `BlocConsumer` **listener**, which never fires because the
+`ScheduleCubit` is still `loaded` with no new emission → the whole tab rendered
+at **opacity 0**. Fixed in `my_schedule_screen.dart`: on mount, an
+already-loaded cubit snaps the controller to 1.0 (stagger still plays on real
+load/refresh). Also fixed there: `SwapListView` got `currentUid: ''` (user was
+cached without `setState`) which hid all swap card actions — the uid is now
+read at build time. Reproduced + guarded by `test/my_schedule_tab_test.dart`.
+**Pattern rule: never gate an entrance animation solely on a bloc state
+transition — sync it with the current state at mount (TabBarView recreates
+tabs).** `flutter analyze` clean · **259 tests pass** (+1).
+
+---
+
+## ✅ Phase 3 — crash & logging infrastructure (2026-07-02)
+
+Production-grade observability, centralized in two files:
+
+- **[`core/observability/crash_reporter.dart`](lib/core/observability/crash_reporter.dart)**
+  — global crash capture via 4 funnels (`FlutterError.onError` ·
+  `PlatformDispatcher.onError` · `runZonedGuarded` around the whole bootstrap
+  · isolate listener). Structured 🔴 CRASH report: timestamp / screen / route /
+  user / role / error / full stacktrace / last action / last-30 breadcrumbs.
+  **Persisted to `Application Support/last_crash.log` even in release**;
+  next launch shows a banner → Copy report (clipboard) / Dismiss.
+  `CrashContext` is fed passively (navigator observers → route; auth listener
+  → user/role; `AppLog.call` → last action).
+- **`core/utils/app_logger.dart`** — full category set: 🟡 CALL / 🟢 SUCCESS /
+  🔵 ROUTE / 🟣 STATE (cubit transitions, via `AppBlocObserver`) / 🟠 WARNING /
+  🔴 ERROR; optional `meta` map on every line; breadcrumb ring (always on,
+  bounded 30); `time()` prints `⏱ … finished in Nms` and escalates **>1000 ms
+  → 🟠 WARNING**. Console output is debug-only; breadcrumbs + crash file are
+  release-active with negligible overhead.
+- **Instrumented:** Firebase boot · session restore · FCM permission/token ·
+  schedule load · per-role statistics load · notifications first-snapshot.
+  Navigation (root + shell + redirects) and all cubit lifecycles were already
+  auto-logged.
+- New direct dependency: `path_provider ^2.1.4`.
+
+`flutter analyze` clean · **258 tests pass** (+7 `observability_test.dart`) ·
+macOS debug build green. To sanity-check on the Mac: run, then `⌘K` around the
+app and watch the 🔵/🟣/⏱ stream; force a test crash if desired and relaunch to
+see the export banner.
+
+---
+
+## ✅ macOS navigation freeze — root-caused and fixed (2026-07-02)
+
+**The freeze** (clicking Tasks/Notifications sometimes locked the UI) was
+Phase 2's `AppShell` `AnimatedSwitcher` around the `ShellRoute` child — that
+child is go_router's shell **Navigator with a GlobalKey**, and the cross-fade
+mounted it twice → duplicate-GlobalKey exception → corrupted element tree →
+dead navigation. Desktop-only, cross-destination-only — matched the symptoms
+exactly. **Fixed by removing the wrapper** (guard comment left in
+`app_shell.dart`); the desktop fade already exists per-page, so no visual
+change. **RULE: never wrap the ShellRoute child in anything that can mount it
+twice (AnimatedSwitcher / keyed swaps / cross-fades).**
+
+**The "Please ensure an APNS token is available" warning**: `registerToken`
+called `getToken()` at sign-in on macOS, which has **no `aps-environment`
+entitlement** (APNS token can never arrive). `NotificationService` is now
+gated on new `supportsPushNotifications` (Android/iOS only — desktop skips
+permission prompt + registration entirely) and checks `getAPNSToken()` before
+`getToken()` on Apple platforms (fixes the same too-early race on iOS).
+
+**Global debug logging** (debug builds only): `core/utils/app_logger.dart` —
+`AppLog.call` (yellow) / `.success` (green) / `.error` (red) / `.route`
+(cyan) / `.time` (async ms timing); `AppBlocObserver` (all cubit lifecycles +
+state transitions, wired in `main`); `LoggingNavigatorObserver` on root +
+shell navigators (pages now carry real path names); redirect decisions logged.
+
+`flutter analyze` clean · **251 tests pass** · macOS debug build green.
+⚠️ Owner: click through Tasks/Notifications on the Mac to confirm; `flutter
+run -d macos` now shows the colored nav/cubit/timing logs.
+
+---
+
+## ✅ Phase 2 — premium desktop UX (2026-07-02)
+
+Owner-approved visual overhaul (mock-first; approved scope: move-only
+drag & drop · full ⌘K palette · fact-chips, no percentages). **Presentation
+layer only — nothing to deploy.**
+
+1. **Schedule 3.0** — people are individual **chips** in the grid cells
+   (drag-to-move between slots on desktop via new `ScheduleCubit.move`;
+   right-click/long-press menu: move-to-opposite-shift [double-booking-safe]
+   · remove). New pure `schedule_insights.dart` + a clickable **insight
+   strip** (open shifts · one-person shifts · **double-booked** conflicts —
+   red dot on the chip) that highlights matching cells and dims the rest;
+   swap queue is now a strip chip (floating footer removed); the coverage
+   %-bar card is gone (quota framing — settled rejection).
+2. **macOS layer** — `app_context_menu.dart` (app-wide right-click),
+   `command_palette.dart` (**⌘K**: go-to + role actions + people, keyboard
+   navigable), `hover_lift.dart`, and a 180 ms content cross-fade on sidebar
+   navigation (`AppShell`, keyed by destination).
+3. **Admin dashboard (desktop)** — executive two-column: main column =
+   greeting + ⌘K pill → pulse hero → metrics → **Live activity feed** (from
+   task `activityLog`s); 330px right rail = Pending Actions · quick
+   actions/manage (2-up) · **Branch pulse** (per-branch open/review from the
+   live stream). Rebuild-scoping preserved; mobile unchanged.
+4. **Employee management** — desktop Details is a **person inspector**
+   slide-over (contact/work/compensation + this-week chips + inline actions);
+   **right-click on employee cards** = full action menu; **Create Account**
+   desktop = 2×2 section cards (Identity · Access · Work · Compensation).
+
+`flutter analyze` clean (7 pre-existing infos) · **251 tests pass** (+4
+`schedule_insights_test.dart`) · macOS debug build green (`DROP.app`).
+⚠️ On-device QA suggested: chip drag on a real trackpad, palette focus
+behavior, inspector over the sheets.
+
+---
+
+## ✅ UI/UX audit pass (2026-07-02)
+
+Full-app audit against the "premium macOS app" brief — report in
+[UI_UX_AUDIT_2026-07-02.md](UI_UX_AUDIT_2026-07-02.md). **Verdict: the branding
+sweep, monochrome design system, desktop shell, branded splash, and schedule
+insights were already complete** (verified in code, not just docs). The only
+`fbro` remnants are the registered Firebase iOS bundle id (`com.example.fbro`)
+and the repo folder name — both intentionally untouched (changing the bundle id
+detaches the app from Firebase). Two owner rulings were applied over the brief:
+**strictly monochrome (no indigo)** and **lean, not enterprise**. Three real
+gaps were closed:
+
+1. **Compensation record** (`users/{uid}`): new `salaryAmount` / `salaryType`
+   (`monthly`/`weekly`/`daily`) / `paymentMethod`
+   (`cash`/`bank`/`wallet`/`instapay`) / `paymentNumber` fields on
+   `UserEntity`/`UserModel` (excluded from `toMap`). Admin edits them in
+   **Create Account** (Compensation section; post-create `setCompensation`
+   write that warns-but-never-blocks the credentials dialog) and the **Edit
+   Info** sheet (single busy-cycle via `updateDetails(writeCompensation:
+   true)` → new `UserAdminRepository.updateUserCompensation`, all four keys
+   written, null clears); the employee **Details** dialog shows Salary / Paid
+   via / Payment no. Shared UI in
+   `admin/presentation/widgets/compensation_fields.dart`.
+2. **Employee self-service profile**: `ProfileEntity` now carries `address` /
+   `emergencyContact` / `paymentNumber`; **Edit Profile** exposes validated
+   Contact details + Salary payment number sections (previously name/bio/photos
+   only — contact data was write-once at onboarding); the **Profile** page
+   displays them. `paymentNumber` threaded through the full profile chain
+   (editMap → datasource → repo → `UpdateProfile` → `ProfileCubit.save`).
+3. **⌘1–⌘9 sidebar navigation** on desktop (`AppShell` `CallbackShortcuts` +
+   autofocused `FocusScope`; `AppSidebar` rows hint `⌘n` on hover).
+
+**Permissions model:** the `users` self-update rule freezes
+`salaryAmount`/`salaryType`/`paymentMethod` (admin-only); `paymentNumber` is the
+one compensation field the employee may write (their own receiving number).
+
+⚠️ **Deploy required:** `firebase deploy --only firestore:rules` — until then an
+employee's paymentNumber self-write is still allowed by the old rule (fine) but
+the salary-field freeze is not enforced server-side.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new) · **247 tests pass** (+7
+`user_compensation_test.dart`) · freezed regenerated · **macOS debug build
+green** (`✓ Built build/macos/Build/Products/Debug/DROP.app`).
+
+---
+
+## ✅ macOS photo upload fixed (2026-07-01)
+
+Owner report: photo upload "wasn't working" on the macOS build (profile
+photo/cover, task proof/reference images, branch logo/cover — anywhere
+`image_picker` is used). Root cause found by reading the actual plugin source:
+**`image_picker` on macOS has no Photos-library integration** — it opens the
+native `NSOpenPanel` file chooser (via `file_selector_macos`) and hands back a
+real file path. The app is **sandboxed**
+(`com.apple.security.app-sandbox = true`), and reading that picked file's bytes
+back afterward (`File(picked.path)`, done by every upload call site) requires
+the **`com.apple.security.files.user-selected.read-only`** entitlement — without
+it the panel opens fine, a photo can be selected, but the subsequent read fails
+("Operation not permitted") and the upload never leaves the client. This is the
+same class of bug as the earlier keychain/network entitlement fixes on this
+branch — an undeclared sandbox capability, invisible in the UI until you look at
+`DebugProfile.entitlements`/`Release.entitlements`.
+
+- **Fixed:** added `com.apple.security.files.user-selected.read-only` to both
+  `macos/Runner/DebugProfile.entitlements` and `Release.entitlements` (kept in
+  sync per the standing rule). Read-only is sufficient — the app only reads the
+  picked file, never writes back to it.
+- **Also fixed while in there:** `image_picker`'s `ImageSource.camera` has no
+  implementation on macOS/Windows/Linux (throws `StateError` unless a
+  `cameraDelegate` is registered, which this app doesn't do) — so the "Take a
+  photo" / "Record a video" options in the Edit Profile avatar picker and the
+  task `AttachmentPickerField` were **dead ends** on desktop (tap → generic
+  "Could not open the picker" error). New **`supportsCameraCapture`**
+  (`core/utils/platform_capabilities.dart`, `!kIsWeb && (Android || iOS)`) gates
+  both call sites so desktop only ever offers the picker path that actually
+  works there ("Choose from library" / "Choose photos"). Mobile is unaffected
+  (still offers both).
+- **Verified:** confirmed via the actual `image_picker_macos`/`file_selector`
+  plugin source (not guessed) that `pickImage`/`pickMultiImage` route through
+  `NSOpenPanel.openFile` and that the camera source throws. Also confirmed via a
+  live emulator-backed run (web build, since this container can't build macOS)
+  that the picker-hides-camera UI change renders correctly and that the
+  gallery-pick → upload path is otherwise wired correctly end-to-end (the only
+  step unverifiable outside a real Mac is the sandbox read itself, which is a
+  well-documented Apple requirement, not a guess).
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **233 tests pass**.
+⚠️ Needs a real macOS run to close the loop (this container has no macOS build
+target) — but the fix directly addresses the documented Apple Sandbox
+requirement for `NSOpenPanel`-sourced files, which is the confirmed mechanism
+`image_picker` uses on macOS.
+
+## ✅ Live end-to-end QA pass across all three roles (2026-07-01)
+
+Previous desktop-polish passes below were all **static** (code + `flutter analyze`/`test`
+only — no Dart SDK / no running app in those sessions). This pass actually **ran the
+app** — built for web, connected to local Firebase Auth/Firestore/Storage emulators
+(seeded with an admin/manager/3 employees/2 branches/tasks in every status), and
+drove it with a real Chromium browser at a 1440×900 desktop viewport (the macOS
+desktop breakpoint), clicking through every sidebar destination for all three roles
+plus the auth/onboarding gate screens. This is the first session to **visually
+confirm** (not just infer from code) that the desktop redesign work in the sections
+below actually renders correctly.
+
+**Verified working, matches the documented design:** Login (desktop split panel),
+all three dashboards, Task Management + Branch Operations cockpit + Employee detail
++ Task Details ticket, the weekly Schedule grid (+ assign-shift sheet), Communications
+Center (feed + delivery panel), Notifications empty state, Analytics grid, Branches
+list + Edit Branch sheet (media/swap-policy sections), Managers list, Create Account
+form, New Task sheet, Profile/Settings, and the full first-login gate (Force Password
+Change → Profile Completion → Home).
+
+**Two real bugs found and fixed** (the rest of the punch-list below was already
+correct):
+1. **Employees page ignored the responsive grid.** `EmployeeManagementScreen` had
+   its own bespoke `ListView` of `EmployeeCard`s that never went through
+   `ResponsiveCardGrid` — unlike the sibling Managers page (`AdminUsersListView`),
+   it always rendered a single full-width column, wasting most of a 1440px window.
+   Fixed by wrapping it in the same `ResponsiveCardGrid(runSpacing: 0,
+   ultrawideColumns: 2)` convention used everywhere else.
+2. **Change Password had a duplicated, badly-wrapped title.** The page kept a
+   pre-`AdaptiveScaffold`-migration in-body heading (`Text('Change\nPassword',
+   style: displayMedium)`) even though `AdaptiveScaffold(title: 'Change Password')`
+   already renders that title in both the mobile app bar and the desktop page
+   header — so desktop showed "Change Password" twice, with the second copy
+   force-wrapped onto two lines by a stale hardcoded `\n`. Removed the redundant
+   heading (kept the one-line instructional subtitle).
+
+`flutter analyze` clean (7 pre-existing infos, 0 new) · **233 tests pass** ·
+`flutter build web --release` green. QA harness (temp emulator entrypoint, seed
+script, Playwright driver) was scratch-only and not committed.
+
+## ✅ macOS desktop hardening (2026-07-01)
+
+Three fixes on the `feature/macos-desktop` branch, all verified on a signed
+debug build + the live login screen:
+
+1. **Keychain login crash — SOLVED.** The error is a `FirebaseAuthException`
+   (`keychain-error`) from FirebaseAuth's native macOS session persistence — NOT
+   `flutter_secure_storage` (declared in pubspec but **unused** in `lib/`). Root
+   cause: **`DebugProfile.entitlements` was missing `keychain-access-groups`**
+   (Keychain Sharing had only been added to `Release.entitlements`, but
+   `flutter run` uses Debug). Fix: added the keychain group to
+   `DebugProfile.entitlements` + restored the sandbox to match Release. Signing
+   was already set (`DEVELOPMENT_TEAM = 7Q3PY75VGH`). **Verified** the debug
+   binary embeds `keychain-access-groups = 7Q3PY75VGH.com.example.fbro`. Temporary
+   `auth.keychain` debug logging added around sign-in. **Rule: keep Debug and
+   Release entitlements in sync.**
+2. **Desktop layout engages** — `MainFlutterWindow.swift` opens the window at
+   1440×900 (min 1024×720) so the >=1024pt premium split/sidebar UI renders
+   instead of the mobile fallback that appeared at the old ~800×600 default.
+3. **Strictly monochrome restored** — the indigo `#5B5FEF` this branch had
+   reintroduced is reverted; `AppColors.accent*` tokens now resolve to the
+   white-on-black accent (`app_colors.dart`). Active-nav / primary-CTA / link
+   emphasis is white or a faint white wash.
+
+> **NOTE for future work:** older sections below still describe an *indigo
+> accent* as the desktop direction (the 2026-06-30 migration section). That is
+> **superseded by the 2026-07-01 monochrome revert above** — indigo is no
+> longer used anywhere.
 
 ---
 
@@ -39,24 +385,30 @@ my-tasks (TabBar) · employee-management · create-account · branch-management 
 task-details · plus the three role dashboards (`RoleScaffold`). Login has a bespoke
 desktop split.
 
-**Still on a raw `AppBar` (have the sidebar, need the mechanical `AdaptiveScaffold`
-swap — desktop punch-list):**
-- Tasks: `branch_task_list_screen` (leading+FAB), `pending_review_screen` (leading),
-  `task_detail_loader_screen` (leading)
-- Operations: `branch_operations_screen` (custom title widget + FAB — needs a
-  `titleWidget` param on `AdaptiveScaffold` first), `employee_detail_screen` (leading)
-- Schedule: `my_schedule_screen` (TabBar)
-- Admin: `admin_users_list_view` (widget, FAB)
-- Communications: `compose_broadcast_screen`, `broadcast_detail_screen`,
-  `broadcast_templates_screen` (FAB), `broadcast_schedules_screen`
-- Auth/onboarding (intentionally outside the shell, mobile-style is acceptable):
-  `forgot_password_page`, `force_password_change_page`, `profile_completion_page`
+**✅ Desktop punch-list COMPLETE (2026-07-01).** Every screen that was still on a
+raw mobile `AppBar` now uses `AdaptiveScaffold`: Tasks (`branch_task_list_screen`,
+`pending_review_screen`, `task_detail_loader_screen`), Operations
+(`branch_operations_screen`, `employee_detail_screen`), Schedule
+(`my_schedule_screen`), Admin (`admin_users_list_view`), and Communications
+(`compose_broadcast_screen`, `broadcast_detail_screen`, `broadcast_templates_screen`,
+`broadcast_schedules_screen`). `AdaptiveScaffold` gained **`titleWidget`** (custom
+title lockup, e.g. branch/employee avatar+name — scaled up on desktop) and
+**`bottomBar`** (pinned bottom action bar, used by the broadcast send bar).
+`flutter analyze` clean (no new issues), **227 tests pass**, macOS build green.
 
-**Conversion recipe:** replace `Scaffold(appBar: AppBar(title: Text(x), actions: […]))`
-with `AdaptiveScaffold(title: x, actions: […], body: …)`; for full-width data
-surfaces (tables/grids) pass `constrainContent: false`; for a custom leading/sub-view
-toggle pass `leading:`; for a TabBar pass it via `bottom:`. Custom-title screens
-(e.g. branch operations) need a `titleWidget` param added to `AdaptiveScaffold` first.
+The **auth/onboarding pages are now responsive too** via a new reusable
+**`AuthScaffold`** — mobile keeps the app bar; desktop centres the content in a
+~440px column (matching the Login panel) with a top utility row (back / "Sign
+out"). Applied to `forgot_password_page`, `force_password_change_page`,
+`profile_completion_page`. So **no authenticated or auth screen renders as
+stretched-mobile on desktop anymore.**
+
+**Conversion recipe (for any future screen):** replace
+`Scaffold(appBar: AppBar(title: Text(x), actions: […]))` with
+`AdaptiveScaffold(title: x, actions: […], body: …)`; full-width data surfaces pass
+`constrainContent: false`; custom leading/sub-view toggle → `leading:`; TabBar →
+`bottom:`; custom title lockup → `titleWidget:`; pinned bottom action bar →
+`bottomBar:`.
 
 > **Branch cover photo on the admin task overview (2026-06-28):** The branch cards in
 > `AdminTaskOverviewScreen` now lead with the branch **cover photo** (new `_CoverHeader`:
@@ -1161,7 +1513,7 @@ toggle pass `leading:`; for a TabBar pass it via `bottom:`. Custom-title screens
 | Shifts (Phase 2) | ❌ Removed (Phase 10) | The unused `shift` foundation (data/domain + placeholder screens + `shifts/{shiftId}` rules + `/admin\|manager/shifts`·`/my-shift` routes + DI) was **deleted** as dead code. The **Weekly Schedule** (Phase 7) is the production roster |
 | Weekly Schedule (Phase 7, +2026-06-20 grid redesign) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit`. **Manager/admin view is now a weekly assignment grid** (`ScheduleGrid` + `ShiftCell`) — each cell shows **assigned head-count** (monochrome density tint + "Empty" state, **no staffing quota/target**); cell tap → `ShiftDetailsSheet` (assign/remove/resolve, conflicts). Single-surface screens (tabs removed). Employee keeps the My-Week view. Roster `day → morning/night → employees`; `weekly_schedules/{id}` rules |
 | Shift Swap (Phase 7, +2026-06-20 hardening & grid) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected. **future-shifts-only** validation (`SwapEligibility`) in domain + cubit + UI + rules; admin all-branch visibility via `getAllSwaps()` / `pendingSwaps()`. **Swap tab removed** — surfaced as a floating `SwapAlertCard` → queue modal (reuses `SwapListView`, now showing submitted-time) inside the schedule grid |
-| Tasks (Phase 3–4, +Stabilization, +Phase 9, +Workflow Upgrade, +Media Upgrade) | ✅ Full operations workflow | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens, client-side status-transition rules, **live Firestore streams**, admin branch dropdown, multi-assignee, checklist+completion gate. **Workflow Upgrade (2026-06-18):** recurring tasks, activity timeline (`ActivityEntry[]`), Task Details Screen, employee My Tasks redesign. **Media Upgrade (2026-06-20):** **multiple images + videos per submission**, attached to **task events** — `TaskAttachment` entity + `AttachmentType`; `ActivityEntry.attachments[]`; Storage `tasks/{id}/attachments/{id}.<ext>` (no overwrite); `AttachmentPickerField` (gallery/camera + limits), `AttachmentGallery` + fullscreen `AttachmentViewer` (zoom images, `video_player`). Legacy `proofImageUrl` kept in sync for back-compat |
+| Tasks (Phase 3–4, +Stabilization, +Phase 9, +Workflow Upgrade, +Media Upgrade, +Shift Assignment) | ✅ Full operations workflow | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens, client-side status-transition rules, **live Firestore streams**, admin branch dropdown, multi-assignee, checklist+completion gate. **Workflow Upgrade (2026-06-18):** recurring tasks, activity timeline (`ActivityEntry[]`), Task Details Screen, employee My Tasks redesign. **Media Upgrade (2026-06-20):** **multiple images + videos per submission**, attached to **task events** — `TaskAttachment` entity + `AttachmentType`; `ActivityEntry.attachments[]`; Storage `tasks/{id}/attachments/{id}.<ext>` (no overwrite); `AttachmentPickerField` (gallery/camera + limits), `AttachmentGallery` + fullscreen `AttachmentViewer` (zoom images, `video_player`). Legacy `proofImageUrl` kept in sync for back-compat. **Shift Assignment (2026-07-01):** a task can target a **shift** (Morning/Night) instead of named employees — visible only to whoever's rostered on it *today* (`canUserAccessTask`); recurring shift routines use a proper **template → generated daily instance** split (`recurringTaskTemplates` + `generateShiftTaskInstances` Cloud Function), not the per-task `RecurrenceConfig`. ⚠️ Needs `firestore:rules,firestore:indexes,functions` deploy to fully activate (see Known gaps) |
 | Task / Checklist Templates (Stabilization, +Phase 9) | ✅ Complete | Reusable blueprints ("Open Shop", "Close Shop"). **Phase 9:** templates are now **checklists** — `TaskTemplateEntity.checklistItems` (`ChecklistItemTemplate`: id/title/isRequired) with a checklist editor; creating a task generates its `checklist`. `task_templates/{id}` rules (admin global/any · manager own-branch). New Task → Blank vs. From a template + Manage Templates sheet |
 | Branches (Phase 5, +Phase 9) | ✅ Complete   | `BranchEntity`/`Model`/`Repository`/`RemoteDataSource` + `BranchCubit`; admin CRUD + activate/deactivate + soft delete; `branches/{id}` rules. **Phase 9:** premium cards (manager + employee count + status) + search |
 | Admin module (Phase 5, +Phase 9 UX) | ✅ Complete | Branch / manager / employee management + **admin-only** pending-user approval + branch assignment. `AdminUsersCubit`, `UserAdminRepository` over `users/{uid}`. **Phase 9:** Admin Home restructured to **4 KPIs** + module nav; new **Analytics** page (`/admin/analytics`); avatar-led user cards; search + active/inactive/branch filters |
@@ -1449,8 +1801,19 @@ landing is **Login** (the social Welcome page was removed).
   delete: if false`) — the `sendBroadcast` Cloud Function (Admin SDK) is the sole
   writer and enforces the send-permission matrix server-side. Reusable `isAdmin()`
   / `isManager()` / `canReachBranch()` helpers remain for future collections.
+  **`tasks/{taskId}` (Shift Assignment feature, 2026-07-01):** a new
+  `isShiftTaskInMyBranch()` helper (`assignmentType == 'shift' && branchId ==
+  selfBranch()`) is ORed into the read/update rules — a branch-scoped trust
+  model (any employee in the task's branch, same bounded fields as the existing
+  assignee self-update; not per-shift-verified — the UI is the actual gate via
+  client-side `canUserAccessTask`). **`recurringTaskTemplates/{id}`** mirrors
+  `task_templates/{id}` exactly (read = any admin/manager; create/update/delete
+  = admin or the owning-branch manager).
   ⚠️ Still need to be **deployed**
-  (`firebase deploy --only firestore:rules,storage,functions`).
+  (`firebase deploy --only firestore:rules,firestore:indexes,storage,functions`)
+  — the Shift Assignment feature additionally needs the new `tasks` composite
+  index (`branchId`+`assignmentType`+`shift`) deployed before
+  `watchShiftTasks` will work (fails `failed-precondition` until then).
 
 - **Cloud Functions (Phase 2)** — ✅ **In the repo:** [`functions/`](functions/)
   (Node.js 22, `firebase-admin` + `firebase-functions` v6; the callable is
@@ -1467,7 +1830,15 @@ landing is **Login** (the social Welcome page was removed).
   `us-central1`, matching the client). ⚠️ **Not deployed/runnable** in this repo
   state: needs `cd functions && npm install`, the **Blaze** billing plan, and
   `firebase deploy --only functions`. Verified by `node --check` (syntax) only —
-  Flutter CI can't exercise it.
+  Flutter CI can't exercise it. Also includes the scheduled **`runTaskReminders`**,
+  **`runBroadcastSchedules`**/**`broadcastHousekeeping`**, **`approveSwap`**
+  (callable), and — **Shift Assignment feature (2026-07-01)** —
+  **`generateShiftTaskInstances`** (`onSchedule`, every 24h): scans active
+  `recurringTaskTemplates`, generates today's due instances at the deterministic
+  id `rt_{templateId}_{yyyy-MM-dd}` (UTC; the existence check is the whole
+  duplicate-prevention guarantee), and notifies today's rostered employees by
+  writing straight to `notifications` (reuses `onNotificationCreated`, no new
+  push logic).
 
 ### Firestore schema — `users/{uid}`
 
@@ -1538,7 +1909,10 @@ Phase 10 (dead code, never consumed). The **weekly schedule**
 | `activityLog`        | array<map> | **Workflow Upgrade** — embedded array of `{status, actorId, actorName, at, note}`. Every status transition appends an entry. Shown newest-first on the Task Details screen |
 | `createdBy`          | string?    | uid of the manager/admin who created it               |
 | `assignedShiftId`    | string?    | optional link to `shifts/{shiftId}` (legacy, unused)  |
-| `shift`              | string?    | **Branch Operations (2026-06-21)** — operational shift tag `morning` / `night`, or **null = "any"** (not shift-specific). Drives the Branch Operations shift filter; supersedes the unused legacy `assignedShiftId`. Missing/unknown → null (`ScheduleShift.fromStringOrNull`) |
+| `shift`              | string?    | **Branch Operations (2026-06-21)** — operational shift tag `morning` / `night`, or **null = "any"** (not shift-specific). Drives the Branch Operations shift filter; supersedes the unused legacy `assignedShiftId`. Missing/unknown → null (`ScheduleShift.fromStringOrNull`). **Shift Assignment feature (2026-07-01):** when `assignmentType == 'shift'` this is also the real assignment target (`canUserAccessTask`), not just a filter tag |
+| `assignmentType`     | string     | **Shift Assignment feature (2026-07-01)** — `individual` / `team` / `shift`. `individual`/`team` both read `assigneeIds` (team is a UX-level alias, same mechanism); `shift` leaves `assigneeIds` empty and targets whoever's rostered on `shift` for `instanceDate` instead. Missing → `individual` (zero-migration back-compat) |
+| `instanceDate`       | Timestamp? | **Shift Assignment feature** — the calendar day a shift-assigned instance is *for* (distinct from `deadline`, which may carry a specific time). Null for individual/team tasks |
+| `sourceTemplateId`   | string?    | **Shift Assignment feature** — links a generated shift-task instance back to the `recurringTaskTemplates/{id}` that created it (`generateShiftTaskInstances` Cloud Function, or `TaskCubit._materializeTodayInstance`). Null for one-off tasks |
 | `deadline`           | Timestamp? | due date/time                                         |
 | `notes`              | string?    | employee's free-text notes                            |
 | `proofImageUrl`      | string?    | proof image download URL (uploaded on completion)     |
@@ -1573,6 +1947,39 @@ assignment or status (those are set when a task is created from it).
 > update/delete = admin or the owning-branch manager. Employees don't read
 > templates. Branch filtering (global + own branch) is applied client-side in
 > `TaskCubit.templates` (the collection is tiny).
+
+### Firestore schema — `recurringTaskTemplates/{id}` (Shift Assignment feature, 2026-07-01)
+
+A **permanent blueprint** for a shift-assigned task that repeats on its own
+clock (e.g. "Open Store" every day on the Morning shift) — distinct from
+`task_templates/{id}` (a one-shot checklist blueprint a manager instantiates by
+hand). Read by the `generateShiftTaskInstances` Cloud Function, which creates
+one real `tasks/{id}` document per due date (so per-day completion is
+trackable) and links it back here via `TaskEntity.sourceTemplateId`.
+
+| Field         | Type       | Notes                                                       |
+| ------------- | ---------- | ------------------------------------------------------------ |
+| `id`          | string     | mirrors the doc id (set on create)                          |
+| `title`       | string     | e.g. `Open Store`                                           |
+| `description` | string?    | optional details                                             |
+| `priority`    | string     | `low` / `normal` / `high`                                    |
+| `checklistItems` | array<map> | `{id, title, isRequired}` — instantiated into the generated task's `checklist` |
+| `branchId`    | string     | owning branch — **always** branch-scoped (no global option)  |
+| `shift`       | string     | `morning` / `night` — the target shift                       |
+| `repeat`      | string     | `once` / `daily` / `weekly`. `once` is never persisted as a template row client-side (a single shift task is created directly instead); the Cloud Function skips it defensively |
+| `weekday`     | number     | 1(Mon)–7(Sun), used when `repeat == 'weekly'` (matches `RecurrenceConfig.weekday`) |
+| `active`      | boolean    | whether the generator should still produce instances; a manager pauses via this rather than deleting (history stays intact) |
+| `createdBy`   | string?    | uid of the manager/admin who created it                      |
+| `createdAt`, `updatedAt` | Timestamp | server timestamps                                  |
+
+> Access enforced by `firestore.rules` (`recurringTaskTemplates/{id}`) — same
+> shape as `task_templates`: read = any admin/manager; create = admin or
+> own-branch manager; update/delete = admin or the owning-branch manager.
+> Generated instances use a **deterministic id** `rt_{templateId}_{yyyy-MM-dd}`
+> (UTC) — the existence check against that id is the entire
+> duplicate-prevention guarantee, so the daily Cloud Function run and the
+> client's own "materialize today's instance on save" can never double-create
+> the same day.
 
 ### Firestore schema — `weekly_schedules/{id}` (Phase 7)
 
@@ -1662,6 +2069,17 @@ writes are denied by the rules.
 
 - ⚠️ **Enable Firebase Storage** and **deploy** the committed
   `firestore.rules` / `storage.rules` before production.
+- ⚠️ **Shift Assignment feature (2026-07-01) needs a deploy before it works
+  end-to-end** — `firestore.rules` (new `isShiftTaskInMyBranch()` OR-branch +
+  `recurringTaskTemplates/{id}` block), `firestore.indexes.json` (new `tasks`
+  composite index `branchId`+`assignmentType`+`shift` — `watchShiftTasks` fails
+  `failed-precondition` until deployed), and `functions/generateShiftTaskInstances`
+  (the daily instance generator) all need `firebase deploy --only
+  firestore:rules,firestore:indexes,functions`. Until then: shift-mode task
+  creation and the client-side "materialize today's instance" still work
+  (they don't depend on the new index/function), but an employee's shift-task
+  *stream* won't resolve and daily/weekly recurring instances won't
+  auto-generate.
 - **Approval & user administration are now in-app (Phase 5)** — admins approve/
   reject users, (de)activate, change role/branch, assign managers to branches and
   move employees between branches from the admin module. The **first admin** must
@@ -1751,8 +2169,11 @@ writes are denied by the rules.
   `test/schedule_helpers_test.dart` (name resolution + orphan/broken-reference
   detection), `test/user_model_test.dart` (malformed-doc hardening),
   `test/app_search_field_test.dart` and `test/task_card_layout_test.dart`
-  (layout regressions). `test/widget_test.dart` remains an empty placeholder.
-  Cubit/router tests are still a gap (see suggested next steps).
+  (layout regressions), `test/task_access_test.dart` (Shift Assignment feature
+  — `canUserAccessTask`: individual/team unaffected, shift+scheduled→true,
+  shift+wrong-shift/wrong-day/no-schedule→false). `test/widget_test.dart`
+  remains an empty placeholder. Cubit/router tests are still a gap (see
+  suggested next steps). **240 tests passing** as of 2026-07-01.
 - **Manual QA:** [`QA_CHECKLIST.md`](QA_CHECKLIST.md) — an executable, on-device
   checklist covering the Employee / Manager / Admin workflows, real-time, offline,
   and UI/branding, with the deploy/Storage preconditions a tester must do first.

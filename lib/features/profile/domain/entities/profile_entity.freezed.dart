@@ -33,6 +33,17 @@ mixin _$ProfileEntity {
   String? get country => throw _privateConstructorUsedError;
   String? get city => throw _privateConstructorUsedError;
   String? get website =>
+      throw _privateConstructorUsedError; // ─── Contact & payroll (operations — stored on the same users doc) ──
+  /// Home / mailing address. Self-editable.
+  String? get address => throw _privateConstructorUsedError;
+
+  /// Emergency contact (name · phone). Self-editable.
+  String? get emergencyContact => throw _privateConstructorUsedError;
+
+  /// The phone / wallet / account number the salary is sent to — the one
+  /// compensation field the employee edits themselves. The admin-only salary
+  /// fields (amount / type / method) are NOT part of the profile contract.
+  String? get paymentNumber =>
       throw _privateConstructorUsedError; // ─── Account ────────────────────────────────────────────────
   bool get isVerified => throw _privateConstructorUsedError;
   String get accountStatus => throw _privateConstructorUsedError;
@@ -80,6 +91,9 @@ abstract class $ProfileEntityCopyWith<$Res> {
     String? country,
     String? city,
     String? website,
+    String? address,
+    String? emergencyContact,
+    String? paymentNumber,
     bool isVerified,
     String accountStatus,
     DateTime? createdAt,
@@ -125,6 +139,9 @@ class _$ProfileEntityCopyWithImpl<$Res, $Val extends ProfileEntity>
     Object? country = freezed,
     Object? city = freezed,
     Object? website = freezed,
+    Object? address = freezed,
+    Object? emergencyContact = freezed,
+    Object? paymentNumber = freezed,
     Object? isVerified = null,
     Object? accountStatus = null,
     Object? createdAt = freezed,
@@ -196,6 +213,18 @@ class _$ProfileEntityCopyWithImpl<$Res, $Val extends ProfileEntity>
             website: freezed == website
                 ? _value.website
                 : website // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            address: freezed == address
+                ? _value.address
+                : address // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            emergencyContact: freezed == emergencyContact
+                ? _value.emergencyContact
+                : emergencyContact // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            paymentNumber: freezed == paymentNumber
+                ? _value.paymentNumber
+                : paymentNumber // ignore: cast_nullable_to_non_nullable
                       as String?,
             isVerified: null == isVerified
                 ? _value.isVerified
@@ -279,6 +308,9 @@ abstract class _$$ProfileEntityImplCopyWith<$Res>
     String? country,
     String? city,
     String? website,
+    String? address,
+    String? emergencyContact,
+    String? paymentNumber,
     bool isVerified,
     String accountStatus,
     DateTime? createdAt,
@@ -323,6 +355,9 @@ class __$$ProfileEntityImplCopyWithImpl<$Res>
     Object? country = freezed,
     Object? city = freezed,
     Object? website = freezed,
+    Object? address = freezed,
+    Object? emergencyContact = freezed,
+    Object? paymentNumber = freezed,
     Object? isVerified = null,
     Object? accountStatus = null,
     Object? createdAt = freezed,
@@ -394,6 +429,18 @@ class __$$ProfileEntityImplCopyWithImpl<$Res>
         website: freezed == website
             ? _value.website
             : website // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        address: freezed == address
+            ? _value.address
+            : address // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        emergencyContact: freezed == emergencyContact
+            ? _value.emergencyContact
+            : emergencyContact // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        paymentNumber: freezed == paymentNumber
+            ? _value.paymentNumber
+            : paymentNumber // ignore: cast_nullable_to_non_nullable
                   as String?,
         isVerified: null == isVerified
             ? _value.isVerified
@@ -470,6 +517,9 @@ class _$ProfileEntityImpl extends _ProfileEntity {
     this.country,
     this.city,
     this.website,
+    this.address,
+    this.emergencyContact,
+    this.paymentNumber,
     this.isVerified = false,
     this.accountStatus = 'active',
     this.createdAt,
@@ -516,6 +566,20 @@ class _$ProfileEntityImpl extends _ProfileEntity {
   final String? city;
   @override
   final String? website;
+  // ─── Contact & payroll (operations — stored on the same users doc) ──
+  /// Home / mailing address. Self-editable.
+  @override
+  final String? address;
+
+  /// Emergency contact (name · phone). Self-editable.
+  @override
+  final String? emergencyContact;
+
+  /// The phone / wallet / account number the salary is sent to — the one
+  /// compensation field the employee edits themselves. The admin-only salary
+  /// fields (amount / type / method) are NOT part of the profile contract.
+  @override
+  final String? paymentNumber;
   // ─── Account ────────────────────────────────────────────────
   @override
   @JsonKey()
@@ -559,7 +623,7 @@ class _$ProfileEntityImpl extends _ProfileEntity {
 
   @override
   String toString() {
-    return 'ProfileEntity(uid: $uid, email: $email, phoneNumber: $phoneNumber, authProvider: $authProvider, fullName: $fullName, username: $username, profileImage: $profileImage, coverImage: $coverImage, bio: $bio, gender: $gender, birthDate: $birthDate, country: $country, city: $city, website: $website, isVerified: $isVerified, accountStatus: $accountStatus, createdAt: $createdAt, updatedAt: $updatedAt, followersCount: $followersCount, followingCount: $followingCount, postsCount: $postsCount, likesCount: $likesCount, isOnline: $isOnline, lastSeen: $lastSeen, isProfilePublic: $isProfilePublic, allowMessages: $allowMessages, allowNotifications: $allowNotifications)';
+    return 'ProfileEntity(uid: $uid, email: $email, phoneNumber: $phoneNumber, authProvider: $authProvider, fullName: $fullName, username: $username, profileImage: $profileImage, coverImage: $coverImage, bio: $bio, gender: $gender, birthDate: $birthDate, country: $country, city: $city, website: $website, address: $address, emergencyContact: $emergencyContact, paymentNumber: $paymentNumber, isVerified: $isVerified, accountStatus: $accountStatus, createdAt: $createdAt, updatedAt: $updatedAt, followersCount: $followersCount, followingCount: $followingCount, postsCount: $postsCount, likesCount: $likesCount, isOnline: $isOnline, lastSeen: $lastSeen, isProfilePublic: $isProfilePublic, allowMessages: $allowMessages, allowNotifications: $allowNotifications)';
   }
 
   @override
@@ -588,6 +652,11 @@ class _$ProfileEntityImpl extends _ProfileEntity {
             (identical(other.country, country) || other.country == country) &&
             (identical(other.city, city) || other.city == city) &&
             (identical(other.website, website) || other.website == website) &&
+            (identical(other.address, address) || other.address == address) &&
+            (identical(other.emergencyContact, emergencyContact) ||
+                other.emergencyContact == emergencyContact) &&
+            (identical(other.paymentNumber, paymentNumber) ||
+                other.paymentNumber == paymentNumber) &&
             (identical(other.isVerified, isVerified) ||
                 other.isVerified == isVerified) &&
             (identical(other.accountStatus, accountStatus) ||
@@ -633,6 +702,9 @@ class _$ProfileEntityImpl extends _ProfileEntity {
     country,
     city,
     website,
+    address,
+    emergencyContact,
+    paymentNumber,
     isVerified,
     accountStatus,
     createdAt,
@@ -673,6 +745,9 @@ abstract class _ProfileEntity extends ProfileEntity {
     final String? country,
     final String? city,
     final String? website,
+    final String? address,
+    final String? emergencyContact,
+    final String? paymentNumber,
     final bool isVerified,
     final String accountStatus,
     final DateTime? createdAt,
@@ -717,7 +792,20 @@ abstract class _ProfileEntity extends ProfileEntity {
   @override
   String? get city;
   @override
-  String? get website; // ─── Account ────────────────────────────────────────────────
+  String? get website; // ─── Contact & payroll (operations — stored on the same users doc) ──
+  /// Home / mailing address. Self-editable.
+  @override
+  String? get address;
+
+  /// Emergency contact (name · phone). Self-editable.
+  @override
+  String? get emergencyContact;
+
+  /// The phone / wallet / account number the salary is sent to — the one
+  /// compensation field the employee edits themselves. The admin-only salary
+  /// fields (amount / type / method) are NOT part of the profile contract.
+  @override
+  String? get paymentNumber; // ─── Account ────────────────────────────────────────────────
   @override
   bool get isVerified;
   @override

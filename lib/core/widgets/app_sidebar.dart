@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
-import 'package:drop/core/widgets/drop_wordmark.dart';
+import 'package:drop/core/widgets/drop_logo.dart';
 
 /// A single navigable destination in the [AppSidebar].
 class SidebarItem {
@@ -31,7 +31,7 @@ class SidebarSection {
 /// Mounted once by [AppShell] and kept alive across route changes, so it never
 /// re-animates or flickers as the user moves between screens — the hallmark of a
 /// native desktop app vs. a stretched mobile one. Strictly monochrome, with the
-/// indigo [AppColors.accent] reserved for the single active destination.
+/// white [AppColors.accent] reserved for the single active destination.
 class AppSidebar extends StatelessWidget {
   const AppSidebar({
     super.key,
@@ -68,6 +68,9 @@ class AppSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final active = _activeRoute;
+    // Flat destination order — matches the AppShell ⌘1…⌘9 shortcut bindings,
+    // so each row can hint its own shortcut on hover.
+    final flat = [for (final s in sections) ...s.items];
     return Container(
       width: Breakpoints.sidebarWidth,
       decoration: const BoxDecoration(
@@ -79,15 +82,16 @@ class AppSidebar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Brand header.
+            // Brand header — the real DROP artwork (assets/drop_logo.png).
             Padding(
-              padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
+              padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const DropWordmark(fontSize: 23),
+                  const DropLogo(height: 30),
                   const SizedBox(width: 8),
                   Padding(
-                    padding: const EdgeInsets.only(top: 5),
+                    padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
                       'OPERATIONS',
                       style: AppTypography.caption.copyWith(
@@ -121,6 +125,9 @@ class AppSidebar extends StatelessWidget {
                       _SidebarRow(
                         item: item,
                         selected: item.route == active,
+                        shortcutHint: flat.indexOf(item) < 9
+                            ? '⌘${flat.indexOf(item) + 1}'
+                            : null,
                         onTap: () => onSelect(item.route),
                       ),
                   ],
@@ -143,11 +150,15 @@ class _SidebarRow extends StatefulWidget {
     required this.item,
     required this.selected,
     required this.onTap,
+    this.shortcutHint,
   });
 
   final SidebarItem item;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Keyboard shortcut label (e.g. "⌘1"), revealed on hover.
+  final String? shortcutHint;
 
   @override
   State<_SidebarRow> createState() => _SidebarRowState();
@@ -216,6 +227,18 @@ class _SidebarRowState extends State<_SidebarRow> {
                     ),
                   ),
                 ),
+                if (widget.shortcutHint != null)
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 150),
+                    opacity: _hovered ? 1 : 0,
+                    child: Text(
+                      widget.shortcutHint!,
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textTertiary,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

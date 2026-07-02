@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/brand_watermark.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
@@ -22,6 +25,7 @@ import 'package:drop/features/operations/presentation/pages/employee_detail_scre
 import 'package:drop/features/operations/presentation/widgets/workload_card.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
 import 'package:drop/features/task/presentation/pages/branch_task_list_screen.dart';
+import 'package:drop/features/task/presentation/widgets/recurring_shift_task_sheets.dart';
 import 'package:drop/features/task/presentation/widgets/task_template_sheets.dart';
 
 /// The Branch Operations cockpit — the heart of the task→operations redesign.
@@ -87,6 +91,12 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
         ),
       ));
 
+  void _manageRecurringShiftTasks() => showManageRecurringShiftTasksSheet(
+        context: context,
+        cubit: context.read<TaskCubit>(),
+        branchId: widget.branchId,
+      );
+
   void _openEmployee(UserEntity employee) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => EmployeeDetailScreen(
@@ -98,47 +108,51 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: BlocBuilder<BranchCubit, BranchState>(
-          builder: (context, _) {
-            final branch = context.read<BranchCubit>().branchById(widget.branchId);
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                BranchAvatar(
-                  logoUrl: branch?.logoUrl,
-                  name: branch?.name ?? _branchLabel,
-                  size: 30,
-                  radius: 9,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Flexible(
-                  child: Text(branch?.name ?? _branchLabel,
-                      style: AppTypography.h3, overflow: TextOverflow.ellipsis),
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.checklist_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'All tasks',
-            onPressed: _openAllTasks,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'Refresh',
-            onPressed: () => context.read<BranchOperationsCubit>().refresh(),
-          ),
-        ],
+    final isDesktop = context.isDesktop;
+    return AdaptiveScaffold(
+      title: _branchLabel,
+      titleWidget: BlocBuilder<BranchCubit, BranchState>(
+        builder: (context, _) {
+          final branch = context.read<BranchCubit>().branchById(widget.branchId);
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              BranchAvatar(
+                logoUrl: branch?.logoUrl,
+                name: branch?.name ?? _branchLabel,
+                size: isDesktop ? 40 : 30,
+                radius: isDesktop ? 12 : 9,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Flexible(
+                child: Text(branch?.name ?? _branchLabel,
+                    style: isDesktop ? AppTypography.h1 : AppTypography.h3,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          );
+        },
       ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.checklist_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'All tasks',
+          onPressed: _openAllTasks,
+        ),
+        IconButton(
+          icon: const Icon(Icons.event_repeat_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Recurring Shift Tasks',
+          onPressed: _manageRecurringShiftTasks,
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Refresh',
+          onPressed: () => context.read<BranchOperationsCubit>().refresh(),
+        ),
+      ],
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _newTask,
         backgroundColor: AppColors.primary,
@@ -196,14 +210,20 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
           if (employees.isEmpty)
             _EmptyTeam(filter: filter)
           else
-            for (var i = 0; i < employees.length; i++)
-              EntranceFade(
-                delay: staggerDelay(i),
-                child: WorkloadCard(
-                  workload: employees[i],
-                  onTap: () => _openEmployee(employees[i].user),
-                ),
-              ),
+            ResponsiveCardGrid(
+              runSpacing: 0, // WorkloadCard carries its own bottom margin
+              maxItemWidth: 460,
+              children: [
+                for (var i = 0; i < employees.length; i++)
+                  EntranceFade(
+                    delay: staggerDelay(i),
+                    child: WorkloadCard(
+                      workload: employees[i],
+                      onTap: () => _openEmployee(employees[i].user),
+                    ),
+                  ),
+              ],
+            ),
         ],
       ),
     );
@@ -261,8 +281,11 @@ class _BranchHero extends StatelessWidget {
               ),
             ],
           ),
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
+          // A fixed banner height (not a 16:9 aspect ratio) so the cover stays a
+          // slim premium hero on wide desktop windows instead of ballooning to
+          // ~700px tall. The image fills it via BoxFit.cover.
+          child: SizedBox(
+            height: context.isDesktop ? 230 : 190,
             child: BrandWatermark(
               opacity: 0.03,
               fontSize: 64,
@@ -375,33 +398,42 @@ class _SummaryHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tiles = <Widget>[
+      _StatTile(value: summary.activeTasks, label: 'Active tasks'),
+      _StatTile(
+          value: summary.overdueTasks,
+          label: 'Overdue',
+          alert: summary.overdueTasks > 0),
+      _StatTile(value: summary.pendingReviews, label: 'Pending review'),
+      _StatTile(value: summary.staffActive, label: 'Staff active'),
+    ];
+
+    // Desktop: one tight row of four compact stat tiles (not 2×2 giant cards).
+    if (context.isDesktop) {
+      return Row(
+        children: [
+          for (var i = 0; i < tiles.length; i++) ...[
+            if (i > 0) const SizedBox(width: AppSpacing.sm),
+            Expanded(child: tiles[i]),
+          ],
+        ],
+      );
+    }
+
+    // Mobile / tablet: 2×2.
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-                child: _StatTile(
-                    value: summary.activeTasks, label: 'Active tasks')),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-                child: _StatTile(
-                    value: summary.overdueTasks,
-                    label: 'Overdue',
-                    alert: summary.overdueTasks > 0)),
-          ],
-        ),
+        Row(children: [
+          Expanded(child: tiles[0]),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: tiles[1]),
+        ]),
         const SizedBox(height: AppSpacing.sm),
-        Row(
-          children: [
-            Expanded(
-                child: _StatTile(
-                    value: summary.pendingReviews, label: 'Pending review')),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-                child:
-                    _StatTile(value: summary.staffActive, label: 'Staff active')),
-          ],
-        ),
+        Row(children: [
+          Expanded(child: tiles[2]),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: tiles[3]),
+        ]),
       ],
     );
   }

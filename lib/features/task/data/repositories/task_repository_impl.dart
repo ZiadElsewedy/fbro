@@ -1,11 +1,14 @@
 import 'dart:io';
 
 import 'package:drop/core/enums/attachment_type.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/errors/exceptions.dart';
 import 'package:drop/core/errors/failures.dart';
 import 'package:drop/features/task/data/datasources/task_remote_datasource.dart';
+import 'package:drop/features/task/data/models/recurring_task_template_model.dart';
 import 'package:drop/features/task/data/models/task_model.dart';
 import 'package:drop/features/task/data/models/task_template_model.dart';
+import 'package:drop/features/task/domain/entities/recurring_task_template_entity.dart';
 import 'package:drop/features/task/domain/entities/task_attachment.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/domain/entities/task_template_entity.dart';
@@ -62,6 +65,15 @@ class TaskRepositoryImpl implements TaskRepository {
       _remote.watchEmployeeTasks(employeeId).map(_newestFirst);
 
   @override
+  Stream<List<TaskEntity>> watchShiftTasks({
+    required String branchId,
+    required ScheduleShift shift,
+  }) =>
+      _remote
+          .watchShiftTasks(branchId: branchId, shift: shift)
+          .map(_newestFirst);
+
+  @override
   Future<TaskEntity?> getTask(String taskId) async {
     try {
       final model = await _remote.getTask(taskId);
@@ -76,6 +88,16 @@ class TaskRepositoryImpl implements TaskRepository {
     try {
       final created = await _remote.createTask(TaskModel.fromEntity(task));
       return created.toEntity();
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<TaskEntity?> createTaskWithId(TaskEntity task) async {
+    try {
+      final created = await _remote.createTaskWithId(TaskModel.fromEntity(task));
+      return created?.toEntity();
     } on ServerException catch (e) {
       throw ServerFailure(e.message);
     }
@@ -192,6 +214,50 @@ class TaskRepositoryImpl implements TaskRepository {
     try {
       await _remote.deleteTemplate(templateId);
       _invalidateTemplates();
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  // ─── Recurring shift-task templates ────────────────────────────
+  @override
+  Future<List<RecurringTaskTemplateEntity>> getRecurringTemplates(
+      String branchId) async {
+    try {
+      final models = await _remote.getRecurringTemplates(branchId);
+      return models.map((m) => m.toEntity()).toList();
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<RecurringTaskTemplateEntity> createRecurringTemplate(
+      RecurringTaskTemplateEntity template) async {
+    try {
+      final created = await _remote.createRecurringTemplate(
+          RecurringTaskTemplateModel.fromEntity(template));
+      return created.toEntity();
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<void> updateRecurringTemplate(
+      RecurringTaskTemplateEntity template) async {
+    try {
+      await _remote.updateRecurringTemplate(
+          RecurringTaskTemplateModel.fromEntity(template));
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<void> deleteRecurringTemplate(String templateId) async {
+    try {
+      await _remote.deleteRecurringTemplate(templateId);
     } on ServerException catch (e) {
       throw ServerFailure(e.message);
     }

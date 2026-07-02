@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/errors/failures.dart';
+import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/statistics/domain/repositories/statistics_repository.dart';
 import 'statistics_state.dart';
@@ -40,11 +41,14 @@ class StatisticsCubit extends Cubit<StatisticsState> {
       emit(const StatisticsState.loading());
     }
     try {
-      final stats = user.role.isAdmin
-          ? await _repository.adminStats()
-          : user.role.isManager
-              ? await _repository.managerStats(user.branchId ?? '')
-              : await _repository.employeeStats(user.uid, user.branchId);
+      final stats = await AppLog.time(
+          'statistics',
+          '${user.role.value}Stats',
+          () => user.role.isAdmin
+              ? _repository.adminStats()
+              : user.role.isManager
+                  ? _repository.managerStats(user.branchId ?? '')
+                  : _repository.employeeStats(user.uid, user.branchId));
       _loadedKey = key;
       _loadedAt = DateTime.now();
       emit(StatisticsState.loaded(stats));

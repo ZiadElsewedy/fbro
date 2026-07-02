@@ -9,6 +9,7 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/utils/validators.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/features/auth/presentation/widgets/auth_scaffold.dart';
 import 'package:drop/features/auth/presentation/animations/fade_slide_transition.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:drop/features/auth/presentation/widgets/app_button.dart';
@@ -105,22 +106,16 @@ class _ProfileCompletionPageState extends State<ProfileCompletionPage> {
         ? 'Select your birth date'
         : '${_birthDate!.day}/${_birthDate!.month}/${_birthDate!.year}';
 
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        actions: [
-          TextButton(
-            onPressed: () => context.read<AuthCubit>().signOut(),
-            child: Text('Sign out',
-                style: AppTypography.label
-                    .copyWith(color: AppColors.textSecondary)),
-          ),
-        ],
-      ),
-      body: BlocListener<ProfileCubit, ProfileState>(
+    return AuthScaffold(
+      actions: [
+        TextButton(
+          onPressed: () => context.read<AuthCubit>().signOut(),
+          child: Text('Sign out',
+              style: AppTypography.label
+                  .copyWith(color: AppColors.textSecondary)),
+        ),
+      ],
+      child: BlocListener<ProfileCubit, ProfileState>(
         listener: (context, state) {
           state.mapOrNull(
             saved: (_) {

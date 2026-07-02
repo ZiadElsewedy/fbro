@@ -20,6 +20,7 @@ class UpdateProfile {
     String? coverImage,
     String? emergencyContact,
     String? address,
+    String? paymentNumber,
   }) =>
       _repository.updateProfile(
         uid: uid,
@@ -36,5 +37,6 @@ class UpdateProfile {
         coverImage: coverImage,
         emergencyContact: emergencyContact,
         address: address,
+        paymentNumber: paymentNumber,
       );
 }

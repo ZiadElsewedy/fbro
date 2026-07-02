@@ -1,12 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/utils/platform_capabilities.dart';
+import 'package:drop/core/utils/validators.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/features/auth/presentation/widgets/app_button.dart';
@@ -26,6 +29,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _bio = TextEditingController();
+  final _phone = TextEditingController();
+  final _address = TextEditingController();
+  final _emergency = TextEditingController();
+  final _paymentNumber = TextEditingController();
 
   File? _avatarFile;
   File? _coverFile;
@@ -38,6 +45,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _initial = p;
     _name.text = p.fullName ?? '';
     _bio.text = p.bio ?? '';
+    _phone.text = p.phoneNumber ?? '';
+    _address.text = p.address ?? '';
+    _emergency.text = p.emergencyContact ?? '';
+    _paymentNumber.text = p.paymentNumber ?? '';
     _seeded = true;
   }
 
@@ -45,6 +56,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
   void dispose() {
     _name.dispose();
     _bio.dispose();
+    _phone.dispose();
+    _address.dispose();
+    _emergency.dispose();
+    _paymentNumber.dispose();
     super.dispose();
   }
 
@@ -71,12 +86,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
               title: Text('Choose from library', style: AppTypography.label),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined,
-                  color: AppColors.textPrimary, size: 20),
-              title: Text('Take a photo', style: AppTypography.label),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
+            if (supportsCameraCapture)
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined,
+                    color: AppColors.textPrimary, size: 20),
+                title: Text('Take a photo', style: AppTypography.label),
+                onTap: () => Navigator.pop(context, ImageSource.camera),
+              ),
             const SizedBox(height: AppSpacing.sm),
           ],
         ),
@@ -118,6 +134,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
           uid: _initial.uid,
           fullName: _orNull(_name),
           bio: _orNull(_bio),
+          phoneNumber: _orNull(_phone),
+          address: _orNull(_address),
+          emergencyContact: _orNull(_emergency),
+          paymentNumber: _orNull(_paymentNumber),
           avatarFile: _avatarFile,
           coverFile: _coverFile,
         );
@@ -127,6 +147,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: 'Edit Profile',
+      contentMaxWidth: 620,
       body: BlocConsumer<ProfileCubit, ProfileState>(
         listenWhen: (prev, curr) => curr.isSavedOrError,
         listener: (context, state) {
@@ -161,6 +182,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
             initial: _initial,
             name: _name,
             bio: _bio,
+            phone: _phone,
+            address: _address,
+            emergency: _emergency,
+            paymentNumber: _paymentNumber,
             avatarFile: _avatarFile,
             coverFile: _coverFile,
             isSaving: isSaving,
@@ -183,7 +208,7 @@ extension on ProfileState {
 class _Form extends StatelessWidget {
   final GlobalKey<FormState> formKey;
   final ProfileEntity initial;
-  final TextEditingController name, bio;
+  final TextEditingController name, bio, phone, address, emergency, paymentNumber;
   final File? avatarFile;
   final File? coverFile;
   final bool isSaving;
@@ -197,6 +222,10 @@ class _Form extends StatelessWidget {
     required this.initial,
     required this.name,
     required this.bio,
+    required this.phone,
+    required this.address,
+    required this.emergency,
+    required this.paymentNumber,
     required this.avatarFile,
     required this.coverFile,
     required this.isSaving,
@@ -244,6 +273,47 @@ class _Form extends StatelessWidget {
                     icon: Icons.notes_rounded,
                     maxLength: 160,
                     maxLines: 3,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const _SectionLabel(
+                    'CONTACT DETAILS',
+                    hint: 'Keep these current — your manager uses them to '
+                        'reach you.',
+                  ),
+                  _Field(
+                    controller: phone,
+                    hint: 'Phone number',
+                    icon: Icons.phone_outlined,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [Validators.phoneInput],
+                    validator: (v) => Validators.phone(v, required: false),
+                  ),
+                  _Field(
+                    controller: address,
+                    hint: 'Address',
+                    icon: Icons.home_outlined,
+                    validator: (v) => Validators.address(v, required: false),
+                  ),
+                  _Field(
+                    controller: emergency,
+                    hint: 'Emergency contact (name · phone)',
+                    icon: Icons.emergency_outlined,
+                    validator: (v) =>
+                        Validators.emergencyContact(v, required: false),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const _SectionLabel(
+                    'SALARY PAYMENT NUMBER',
+                    hint: 'The wallet or account number your salary is sent '
+                        'to. Salary details are managed by your admin.',
+                  ),
+                  _Field(
+                    controller: paymentNumber,
+                    hint: 'Wallet / account number',
+                    icon: Icons.account_balance_wallet_outlined,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [Validators.phoneInput],
+                    validator: (v) => Validators.phone(v, required: false),
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   AppButton(
@@ -383,6 +453,34 @@ class _ImagesHeader extends StatelessWidget {
   }
 }
 
+/// Small uppercase section header with an optional plain-language hint line —
+/// keeps the longer form scannable for a first-time user.
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  final String? hint;
+  const _SectionLabel(this.text, {this.hint});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md, left: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(text,
+              style: AppTypography.caption.copyWith(letterSpacing: 1.0)),
+          if (hint != null) ...[
+            const SizedBox(height: 4),
+            Text(hint!,
+                style: AppTypography.caption
+                    .copyWith(color: AppColors.textTertiary)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// Compact, always-dark input — independent of the ambient theme.
 class _Field extends StatelessWidget {
   final TextEditingController controller;
@@ -391,6 +489,8 @@ class _Field extends StatelessWidget {
   final String? Function(String?)? validator;
   final int? maxLength;
   final int maxLines;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
 
   const _Field({
     required this.controller,
@@ -399,6 +499,8 @@ class _Field extends StatelessWidget {
     this.validator,
     this.maxLength,
     this.maxLines = 1,
+    this.keyboardType,
+    this.inputFormatters,
   });
 
   @override
@@ -410,6 +512,8 @@ class _Field extends StatelessWidget {
         validator: validator,
         maxLength: maxLength,
         maxLines: maxLines,
+        keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
         cursorColor: AppColors.primary,
         style: AppTypography.label.copyWith(
             color: AppColors.textPrimary, fontWeight: FontWeight.w400, fontSize: 15),

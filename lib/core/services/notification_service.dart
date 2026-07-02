@@ -3,6 +3,8 @@ import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:drop/core/constants/app_constants.dart';
+import 'package:drop/core/utils/app_logger.dart';
+import 'package:drop/core/utils/platform_capabilities.dart';
 
 /// Firebase Cloud Messaging engine (Phase 6 foundation + Phase 2 receive
 /// handling). Requests notification permission, keeps the device's FCM token in
@@ -37,9 +39,21 @@ class NotificationService {
   /// One-time setup at app start: permission + message listeners. Best-effort —
   /// never throws (FCM is unsupported on some platforms).
   Future<void> init() async {
+    AppLog.call('fcm', 'init');
+    // Push is mobile-only: this build (e.g. macOS — no aps-environment
+    // entitlement) can never finish APNS registration, so skip the permission
+    // prompt and listeners entirely instead of warning on every launch.
+    if (!supportsPushNotifications) {
+      AppLog.success(
+          'fcm', 'init skipped — push not supported on this platform');
+      return;
+    }
     try {
-      final settings = await _messaging.requestPermission(
-          alert: true, badge: true, sound: true);
+      final settings = await AppLog.time(
+          'fcm',
+          'requestPermission',
+          () => _messaging.requestPermission(
+              alert: true, badge: true, sound: true));
       // DIAGNOSTIC (temporary): surface whether the OS granted notification
       // permission — a denied/notDetermined status means no system push will
       // ever show. Check this in `flutter logs` / logcat / Xcode console.
@@ -88,8 +102,30 @@ class NotificationService {
     // the prior owner. (L1 client gap behind the EXCLUSIVE-ownership guarantee.)
     if (_uid != uid) _currentToken = null;
     _uid = uid;
+    AppLog.call('fcm', 'registerToken', details: 'uid=$uid');
+    if (!supportsPushNotifications) {
+      AppLog.success(
+          'fcm', 'registerToken skipped — push not supported on this platform');
+      return;
+    }
     try {
-      final token = await _messaging.getToken();
+      // Apple platforms: `getToken()` before the APNS token arrives is the
+      // "APNS token has not been set yet" failure — the auth listener fires
+      // this the instant sign-in completes, which is usually earlier than
+      // APNS registration. Wait for it explicitly and bail cleanly when the
+      // platform can't produce one (missing entitlement / simulator); the
+      // `onTokenRefresh` listener re-registers when a token appears later.
+      if (requiresApnsToken) {
+        final apns = await _messaging.getAPNSToken();
+        if (apns == null) {
+          AppLog.error('fcm',
+              'registerToken aborted — APNS token not available yet '
+              '(push entitlement missing, or registration still in flight)');
+          return;
+        }
+      }
+      final token = await AppLog.time(
+          'fcm', 'getToken', () => _messaging.getToken());
       // DIAGNOSTIC (temporary): did the device obtain an FCM token at all? A
       // null token = the device can't register (iOS without APNs/entitlement,
       // missing Play Services, permission denied). A non-null token that never

@@ -5,18 +5,21 @@ import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
+import 'package:drop/features/schedule/presentation/schedule_insights.dart';
+import 'package:drop/features/schedule/presentation/widgets/assignment_chip.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
 import 'package:drop/features/schedule/presentation/widgets/shift_cell.dart';
 
-/// The weekly assignment grid (Phase 7 redesign) — replaces the vertical day
-/// cards. Days are columns (Sun→Sat), shifts are two rows (Morning / Night).
-/// The shift rail and the day headers are **pinned**; the day cells scroll
-/// horizontally together so all seven days stay usable and tappable on a phone
-/// (per the mobile constraint).
+/// The weekly assignment grid (Schedule 3.0) — days are columns (Sun→Sat),
+/// shifts are two rows (Morning / Night). The shift rail and the day headers
+/// are **pinned**; the day cells scroll horizontally together so all seven
+/// days stay usable and tappable on a phone (per the mobile constraint).
 ///
-/// Each cell shows **how many employees are assigned** — no staffing quota /
-/// target is implied. Orphaned (broken) references are excluded from the count
-/// and flagged instead, so the number reflects real, current people.
+/// Every assigned person renders as an individual chip (drag / right-click /
+/// tap target); [insights] drive per-chip conflict cues and, when
+/// [activeInsight] is set, dim every slot outside that insight's highlight.
+/// No staffing quota / target is implied. Orphaned (broken) references are
+/// excluded and flagged instead, so cells reflect real, current people.
 class ScheduleGrid extends StatelessWidget {
   const ScheduleGrid({
     super.key,
@@ -24,6 +27,12 @@ class ScheduleGrid extends StatelessWidget {
     required this.members,
     required this.onCellTap,
     this.filter,
+    this.insights,
+    this.activeInsight,
+    this.canEdit = false,
+    this.onMoveChip,
+    this.onRemoveChip,
+    this.onSwapChip,
   });
 
   final WeeklyScheduleEntity schedule;
@@ -33,6 +42,30 @@ class ScheduleGrid extends StatelessWidget {
   /// When set, only this shift's row is shown (the header "Shift filter"); null
   /// shows both Morning and Night.
   final ScheduleShift? filter;
+
+  /// Week facts (open / one-person / double-booked), computed by the view.
+  final ScheduleInsights? insights;
+
+  /// The insight the user selected on the strip — its slots stay lit, the
+  /// rest of the grid dims.
+  final ScheduleInsightKind? activeInsight;
+
+  final bool canEdit;
+
+  /// Desktop drag-to-move: [data]'s person leaves their source slot for the
+  /// drop cell's (day, shift).
+  final void Function(
+          ChipDragData data, ScheduleDay toDay, ScheduleShift toShift)?
+      onMoveChip;
+
+  /// Chip context-menu remove.
+  final void Function(ScheduleDay day, ScheduleShift shift, String uid)?
+      onRemoveChip;
+
+  /// Desktop drag-to-switch: [data]'s person was dropped onto `withUid`, who
+  /// holds (toDay, toShift) — the two trade slots.
+  final void Function(ChipDragData data, ScheduleDay toDay,
+      ScheduleShift toShift, String withUid)? onSwapChip;
 
   static const double _railWidth = 78;
   static const double _cellWidth = 128;
@@ -192,13 +225,39 @@ class ScheduleGrid extends StatelessWidget {
     final valid = validAssignments(uids, members);
     final orphans = orphanAssignments(uids, members);
     final users = [for (final uid in valid) userForUid(uid, members)!];
+    final dimmed = activeInsight != null &&
+        !(insights?.slotsFor(activeInsight!).contains((day, shift)) ?? false);
+    final oppositeUids = validAssignments(
+            schedule.employeesFor(day, shift.opposite), members)
+        .toSet();
     return ShiftCell(
+      key: ValueKey('cell-${day.name}-${shift.name}'),
       users: users,
+      day: day,
+      shift: shift,
       isToday: isToday,
       hasOrphan: orphans.isNotEmpty,
       width: cellWidth,
       height: _cellHeight,
       onTap: () => onCellTap(day, shift),
+      canEdit: canEdit,
+      dimmed: dimmed,
+      conflictedUids: insights?.doubleBookedByDay[day] ?? const {},
+      oppositeUids: oppositeUids,
+      onDropChip: onMoveChip == null
+          ? null
+          : (data) => onMoveChip!(data, day, shift),
+      onRemoveUid:
+          onRemoveChip == null ? null : (uid) => onRemoveChip!(day, shift, uid),
+      onMoveUidToOpposite: onMoveChip == null
+          ? null
+          : (uid) => onMoveChip!(
+              ChipDragData(uid: uid, day: day, shift: shift),
+              day,
+              shift.opposite),
+      onSwapChip: onSwapChip == null
+          ? null
+          : (data, withUid) => onSwapChip!(data, day, shift, withUid),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/drop_logo.dart';
 
 /// A scaffold that adapts its chrome to the platform width.
 ///
@@ -21,16 +22,25 @@ class AdaptiveScaffold extends StatelessWidget {
     required this.title,
     required this.body,
     this.subtitle,
+    this.titleWidget,
     this.actions = const [],
     this.leading,
     this.floatingActionButton,
     this.bottom,
+    this.bottomBar,
     this.constrainContent = true,
+    this.contentMaxWidth,
     this.scrollableHeaderActions = false,
+    this.showBrandMark = true,
   });
 
   final String title;
   final String? subtitle;
+
+  /// Optional custom title lockup (e.g. a branch avatar + name) that replaces
+  /// the plain [title]/[subtitle] text in both the mobile app bar and the
+  /// desktop page header. [title] is still used as the accessible/window label.
+  final Widget? titleWidget;
   final Widget body;
   final List<Widget> actions;
 
@@ -44,12 +54,26 @@ class AdaptiveScaffold extends StatelessWidget {
   /// mobile (e.g. a [TabBar] or a filter row).
   final PreferredSizeWidget? bottom;
 
+  /// Optional bar pinned to the very bottom of the screen (e.g. a send / submit
+  /// action bar). Maps to [Scaffold.bottomNavigationBar] on both tiers.
+  final Widget? bottomBar;
+
   /// Centre the body in a comfortable max-width column on wide windows.
   final bool constrainContent;
+
+  /// Overrides the centred column width when [constrainContent] is true. Useful
+  /// for forms, which read best in a narrow (~560) column rather than the wide
+  /// default dashboard width. Null → the default [Breakpoints.contentMaxWidth].
+  final double? contentMaxWidth;
 
   /// When true the header actions sit in a scrollable row (avoids overflow when
   /// a screen has many actions on a narrow desktop window).
   final bool scrollableHeaderActions;
+
+  /// Quiet DROP brand mark at the trailing edge of the **mobile** app bar
+  /// (desktop is already branded by the persistent [AppSidebar] lockup).
+  /// Non-interactive and tinted tertiary so it never competes with actions.
+  final bool showBrandMark;
 
   @override
   Widget build(BuildContext context) {
@@ -59,28 +83,39 @@ class AdaptiveScaffold extends StatelessWidget {
         appBar: AppBar(
           backgroundColor: AppColors.darkBg,
           elevation: 0,
-          title: Text(title, style: AppTypography.h3),
+          title: titleWidget ?? Text(title, style: AppTypography.h3),
           leading: leading,
-          actions: actions,
+          actions: [
+            ...actions,
+            if (showBrandMark) const _AppBarBrandMark(),
+          ],
           bottom: bottom,
         ),
         body: body,
         floatingActionButton: floatingActionButton,
+        bottomNavigationBar: bottomBar,
       );
     }
 
     final canPop = Navigator.of(context).canPop();
-    final content = constrainContent ? ContentConstraint(child: body) : body;
+    final content = constrainContent
+        ? ContentConstraint(
+            maxWidth: contentMaxWidth ?? Breakpoints.contentMaxWidth,
+            child: body,
+          )
+        : body;
 
     return Scaffold(
       backgroundColor: AppColors.darkBg,
       floatingActionButton: floatingActionButton,
+      bottomNavigationBar: bottomBar,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _DesktopPageHeader(
             title: title,
             subtitle: subtitle,
+            titleWidget: titleWidget,
             actions: actions,
             leading: leading,
             scrollableActions: scrollableHeaderActions,
@@ -98,10 +133,27 @@ class AdaptiveScaffold extends StatelessWidget {
   }
 }
 
+/// The quiet DROP mark closing every mobile app bar — brand presence on all
+/// migrated screens without competing with the actionable icons beside it.
+class _AppBarBrandMark extends StatelessWidget {
+  const _AppBarBrandMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(left: 6, right: 16),
+      child: Center(
+        child: DropLogo(height: 16, color: AppColors.textTertiary),
+      ),
+    );
+  }
+}
+
 class _DesktopPageHeader extends StatelessWidget {
   const _DesktopPageHeader({
     required this.title,
     required this.subtitle,
+    required this.titleWidget,
     required this.actions,
     required this.leading,
     required this.scrollableActions,
@@ -110,6 +162,7 @@ class _DesktopPageHeader extends StatelessWidget {
 
   final String title;
   final String? subtitle;
+  final Widget? titleWidget;
   final List<Widget> actions;
   final Widget? leading;
   final bool scrollableActions;
@@ -136,17 +189,18 @@ class _DesktopPageHeader extends StatelessWidget {
             const SizedBox(width: 14),
           ],
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(title, style: AppTypography.h1),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 4),
-                  Text(subtitle!, style: AppTypography.body),
-                ],
-              ],
-            ),
+            child: titleWidget ??
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(title, style: AppTypography.h1),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(subtitle!, style: AppTypography.body),
+                    ],
+                  ],
+                ),
           ),
           const SizedBox(width: 16),
           if (scrollableActions)

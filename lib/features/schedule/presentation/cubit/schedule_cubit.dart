@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/errors/failures.dart';
+import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/auth/domain/usecases/get_users_by_branch.dart';
 import 'package:drop/features/schedule/domain/repositories/schedule_repository.dart';
@@ -78,14 +79,74 @@ class ScheduleCubit extends Cubit<ScheduleState> {
             employeeId: uid,
           ));
 
+  /// Drag-to-move (Schedule 3.0): reassign [uid] from one slot to another in
+  /// a single busy cycle. Assign to the target FIRST, then release the source
+  /// — if the assign fails the person never leaves their original shift.
+  Future<void> move({
+    required ScheduleDay fromDay,
+    required ScheduleShift fromShift,
+    required ScheduleDay toDay,
+    required ScheduleShift toShift,
+    required String uid,
+  }) {
+    if (fromDay == toDay && fromShift == toShift) return Future.value();
+    final scheduleId = ScheduleWeek.docId(_branchId, _weekStart);
+    return _mutate(() async {
+      await _repository.assignEmployee(
+        scheduleId: scheduleId,
+        day: toDay,
+        shift: toShift,
+        employeeId: uid,
+      );
+      await _repository.removeEmployee(
+        scheduleId: scheduleId,
+        day: fromDay,
+        shift: fromShift,
+        employeeId: uid,
+      );
+    });
+  }
+
+  /// Chip-onto-chip drag (Schedule 3.1): two people trade slots in a single
+  /// busy cycle — [uidA] (from A's slot) takes B's slot and [uidB] takes A's.
+  /// Same safety order as [move]: both are assigned to their NEW slots first,
+  /// then released from the old ones — a failed assign never strands anyone
+  /// off the schedule.
+  Future<void> exchange({
+    required ScheduleDay dayA,
+    required ScheduleShift shiftA,
+    required String uidA,
+    required ScheduleDay dayB,
+    required ScheduleShift shiftB,
+    required String uidB,
+  }) {
+    // Self-swaps and same-slot trades are no-ops, not errors.
+    if (uidA == uidB) return Future.value();
+    if (dayA == dayB && shiftA == shiftB) return Future.value();
+    final scheduleId = ScheduleWeek.docId(_branchId, _weekStart);
+    return _mutate(() async {
+      await _repository.assignEmployee(
+          scheduleId: scheduleId, day: dayB, shift: shiftB, employeeId: uidA);
+      await _repository.assignEmployee(
+          scheduleId: scheduleId, day: dayA, shift: shiftA, employeeId: uidB);
+      await _repository.removeEmployee(
+          scheduleId: scheduleId, day: dayA, shift: shiftA, employeeId: uidA);
+      await _repository.removeEmployee(
+          scheduleId: scheduleId, day: dayB, shift: shiftB, employeeId: uidB);
+    });
+  }
+
   // ── Internals ──────────────────────────────────────────────────
   Future<void> _emitLoaded() async {
     try {
       final schedule = _branchId.isEmpty
           ? null
-          : await _repository.getSchedule(_branchId, _weekStart);
-      final members =
-          _branchId.isEmpty ? const <UserEntity>[] : await _getUsersByBranch(_branchId);
+          : await AppLog.time('schedule', 'getSchedule',
+              () => _repository.getSchedule(_branchId, _weekStart));
+      final members = _branchId.isEmpty
+          ? const <UserEntity>[]
+          : await AppLog.time(
+              'schedule', 'getUsersByBranch', () => _getUsersByBranch(_branchId));
       emit(ScheduleState.loaded(
         branchId: _branchId,
         weekStart: _weekStart,

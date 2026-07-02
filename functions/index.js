@@ -48,6 +48,7 @@ const REMINDER_CONFIG = "reminderConfig";
 const BRANCHES = "branches";
 const WEEKLY_SCHEDULES = "weekly_schedules";
 const SHIFT_SWAPS = "shift_swaps";
+const RECURRING_TASK_TEMPLATES = "recurringTaskTemplates";
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -1314,5 +1315,184 @@ exports.runTaskReminders = onSchedule("every 30 minutes", async () => {
   }
 
   logger.info("task reminders run", { scanned: snap.size, sent });
+});
+
+// ── Recurring shift-task instance generation (Shift Assignment feature) ──
+
+// yyyy-MM-dd in UTC (a Cloud Function has no per-branch local time, so UTC is
+// the deterministic convention — mirrors ScheduleWeek's date-key format).
+function isoDate(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// 1 = Monday … 7 = Sunday (matches RecurringTaskTemplateEntity.weekday /
+// Dart's DateTime.weekday convention).
+function isoWeekday(d) {
+  const jsDay = d.getUTCDay(); // 0 = Sunday … 6 = Saturday
+  return jsDay === 0 ? 7 : jsDay;
+}
+
+// weekly_schedules.assignments.<day> key spelling — matches SWAP_DAY_INDEX.
+const SCHEDULE_DAY_NAMES = [
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+];
+function scheduleDayName(d) {
+  return SCHEDULE_DAY_NAMES[d.getUTCDay()];
+}
+
+// The Sunday (UTC midnight) that starts the week containing d, as a
+// yyyy-MM-dd key — mirrors ScheduleWeek.startOf/docId (`<branchId>_<key>`).
+function weekStartKey(d) {
+  const sunday = new Date(Date.UTC(
+    d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - d.getUTCDay(),
+  ));
+  return isoDate(sunday);
+}
+
+/**
+ * Daily instance generation for recurring shift-task templates (Shift
+ * Assignment feature). Scans active `recurringTaskTemplates` and, for each one
+ * due today (daily, or weekly matching today's ISO weekday), creates *one*
+ * real `tasks/{id}` document at a **deterministic id**
+ * (`rt_{templateId}_{yyyy-MM-dd}`, UTC) — the existence check against that id
+ * is the entire duplicate-prevention guarantee (no separate ledger needed),
+ * so overlapping/duplicate runs are always safe. Mirrors `runTaskReminders`'s
+ * style (small collection scan, per-item try/catch, summary log). Notifies
+ * today's rostered employees by writing straight to `notifications` (reuses
+ * the existing `onNotificationCreated` trigger — no new push logic) and
+ * `swapAssignedUids` (already defined above for `approveSwap`) to read the
+ * roster off the same `weekly_schedules` doc shape.
+ */
+exports.generateShiftTaskInstances = onSchedule("every 24 hours", async () => {
+  const now = new Date();
+  const todayKey = isoDate(now);
+  const todayDow = isoWeekday(now);
+  const dayName = scheduleDayName(now);
+
+  const snap = await db
+    .collection(RECURRING_TASK_TEMPLATES)
+    .where("active", "==", true)
+    .get();
+
+  let created = 0;
+  for (const doc of snap.docs) {
+    const t = doc.data() || {};
+    const repeat = t.repeat || "daily";
+    // "once" is defensive only — the client never persists a template row
+    // with repeat:"once" (a single shift task is created directly instead).
+    if (repeat === "once") continue;
+    if (repeat === "weekly" && Number(t.weekday) !== todayDow) continue;
+
+    const branchId = String(t.branchId || "");
+    if (!branchId) continue;
+    const shift = t.shift === "night" ? "night" : "morning";
+    const instanceId = `rt_${doc.id}_${todayKey}`;
+    const ref = db.collection(TASKS).doc(instanceId);
+
+    try {
+      if ((await ref.get()).exists) continue; // already generated today
+
+      const checklist = Array.isArray(t.checklistItems)
+        ? t.checklistItems.map((c) => ({
+            id: String((c && c.id) || ""),
+            title: String((c && c.title) || ""),
+            isRequired: !c || c.isRequired !== false,
+            completed: false,
+            completedAt: null,
+          }))
+        : [];
+
+      await ref.set({
+        id: instanceId,
+        title: t.title || "",
+        description: t.description || null,
+        type: "daily",
+        status: "pending",
+        priority: t.priority || "normal",
+        branchId,
+        assigneeIds: [],
+        assignedEmployeeId: null,
+        checklist,
+        referenceAttachments: [],
+        createdBy: t.createdBy || null,
+        assignedShiftId: null,
+        shift,
+        assignmentType: "shift",
+        instanceDate: admin.firestore.Timestamp.fromDate(
+          new Date(`${todayKey}T00:00:00.000Z`),
+        ),
+        sourceTemplateId: doc.id,
+        deadline: null,
+        notes: null,
+        proofImageUrl: null,
+        startedAt: null,
+        submittedAt: null,
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        reviewNotes: null,
+        revisionNumber: 0,
+        requiresRework: false,
+        rejectionReason: null,
+        recurrence: null,
+        activityLog: [
+          {
+            status: "pending",
+            actorId: "system",
+            actorName: null,
+            at: admin.firestore.Timestamp.fromDate(now),
+            note: "Auto-generated (recurring shift task)",
+            attachments: [],
+          },
+        ],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      created++;
+
+      // Notify today's rostered employees on this shift (best-effort).
+      try {
+        const scheduleId = `${branchId}_${weekStartKey(now)}`;
+        const schedSnap = await db.collection(WEEKLY_SCHEDULES).doc(scheduleId).get();
+        const uids = schedSnap.exists
+          ? swapAssignedUids(schedSnap.data().assignments || {}, dayName, shift)
+          : [];
+        if (uids.length) {
+          const batch = db.batch();
+          for (const uid of uids) {
+            const nref = db.collection(NOTIFICATIONS).doc();
+            batch.set(nref, {
+              id: nref.id,
+              recipientUid: uid,
+              senderUid: "system",
+              type: "taskAssigned",
+              title: "New Task Assigned",
+              body: t.title || "A new shift task was assigned",
+              readAt: null,
+              payload: { taskId: instanceId, route: "task_details" },
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          await batch.commit();
+        }
+      } catch (notifyErr) {
+        logger.warn("shift task notify failed", {
+          taskId: instanceId,
+          error: String(notifyErr),
+        });
+      }
+    } catch (err) {
+      logger.warn("shift task instance generation failed", {
+        templateId: doc.id,
+        error: String(err),
+      });
+    }
+  }
+
+  logger.info("shift task instances generated", { templates: snap.size, created });
 });
 

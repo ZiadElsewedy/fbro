@@ -6,6 +6,7 @@ import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/features/auth/presentation/widgets/auth_scaffold.dart';
 import 'package:drop/features/auth/presentation/animations/fade_slide_transition.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_state.dart';
@@ -33,12 +34,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: const BackButton(),
-        backgroundColor: Colors.transparent,
-      ),
-      body: BlocConsumer<AuthCubit, AuthState>(
+    return AuthScaffold(
+      showBack: true,
+      child: BlocConsumer<AuthCubit, AuthState>(
         listener: (context, state) {
           state.whenOrNull(
             passwordResetSent: () => _showSuccess(context),

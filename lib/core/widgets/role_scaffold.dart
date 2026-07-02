@@ -8,6 +8,7 @@ import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_bottom_nav.dart';
+import 'package:drop/core/widgets/drop_logo.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/features/notifications/presentation/cubit/notification_cubit.dart';
@@ -83,7 +84,15 @@ class RoleScaffold extends StatelessWidget {
         backgroundColor: AppColors.darkBg,
         elevation: 0,
         titleSpacing: 24,
-        title: Text(title, style: AppTypography.h3),
+        // Brand lockup — the real DROP artwork leads every role's home.
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const DropLogo(height: 22),
+            const SizedBox(width: 10),
+            Text(title, style: AppTypography.h3),
+          ],
+        ),
         actions: [
           // Communications Center — admin + manager only (employees can't access).
           if (role.isAdmin || role.isManager)

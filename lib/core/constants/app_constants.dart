@@ -5,6 +5,7 @@ class AppConstants {
   static const String usersCollection = 'users';
   static const String tasksCollection = 'tasks';
   static const String taskTemplatesCollection = 'task_templates';
+  static const String recurringTaskTemplatesCollection = 'recurringTaskTemplates';
   static const String branchesCollection = 'branches';
   static const String weeklySchedulesCollection = 'weekly_schedules';
   static const String shiftSwapsCollection = 'shift_swaps';

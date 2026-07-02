@@ -51,8 +51,27 @@ mixin _$TaskEntity {
   /// The operational shift this task belongs to (Branch Operations) —
   /// `morning` / `night`, or **null** when the task is not shift-specific
   /// ("any", applies under every shift filter). Drives the Branch Operations
-  /// shift filter; supersedes the unused legacy [assignedShiftId] string.
+  /// shift filter; supersedes the unused legacy [assignedShiftId] string. When
+  /// [assignmentType] is [TaskAssignmentType.shift] this is also the actual
+  /// assignment target (see `canUserAccessTask`), not just a filter tag.
   ScheduleShift? get shift => throw _privateConstructorUsedError;
+
+  /// How this task is assigned. `individual`/`team` both read [assigneeIds];
+  /// `shift` leaves [assigneeIds] empty and targets whoever is rostered on
+  /// [shift] for [instanceDate] instead. Missing on any task written before
+  /// this field existed → [TaskAssignmentType.individual] (no migration
+  /// needed; see `TaskModel.fromMap`).
+  TaskAssignmentType get assignmentType => throw _privateConstructorUsedError;
+
+  /// The calendar day a shift-assigned instance is *for* — distinct from
+  /// [deadline] (which may carry a specific time of day). Null for
+  /// individual/team tasks and for any task predating shift assignment.
+  DateTime? get instanceDate => throw _privateConstructorUsedError;
+
+  /// Links a shift instance back to the [RecurringTaskTemplateEntity] that
+  /// generated it (`generateShiftTaskInstances` Cloud Function). Null for
+  /// one-off tasks and for every task predating recurring shift templates.
+  String? get sourceTemplateId => throw _privateConstructorUsedError;
   DateTime? get deadline => throw _privateConstructorUsedError;
 
   /// Free-text notes added by the executing employee.
@@ -129,6 +148,9 @@ abstract class $TaskEntityCopyWith<$Res> {
     String? createdBy,
     String? assignedShiftId,
     ScheduleShift? shift,
+    TaskAssignmentType assignmentType,
+    DateTime? instanceDate,
+    String? sourceTemplateId,
     DateTime? deadline,
     String? notes,
     String? proofImageUrl,
@@ -179,6 +201,9 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
     Object? createdBy = freezed,
     Object? assignedShiftId = freezed,
     Object? shift = freezed,
+    Object? assignmentType = null,
+    Object? instanceDate = freezed,
+    Object? sourceTemplateId = freezed,
     Object? deadline = freezed,
     Object? notes = freezed,
     Object? proofImageUrl = freezed,
@@ -251,6 +276,18 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
                 ? _value.shift
                 : shift // ignore: cast_nullable_to_non_nullable
                       as ScheduleShift?,
+            assignmentType: null == assignmentType
+                ? _value.assignmentType
+                : assignmentType // ignore: cast_nullable_to_non_nullable
+                      as TaskAssignmentType,
+            instanceDate: freezed == instanceDate
+                ? _value.instanceDate
+                : instanceDate // ignore: cast_nullable_to_non_nullable
+                      as DateTime?,
+            sourceTemplateId: freezed == sourceTemplateId
+                ? _value.sourceTemplateId
+                : sourceTemplateId // ignore: cast_nullable_to_non_nullable
+                      as String?,
             deadline: freezed == deadline
                 ? _value.deadline
                 : deadline // ignore: cast_nullable_to_non_nullable
@@ -362,6 +399,9 @@ abstract class _$$TaskEntityImplCopyWith<$Res>
     String? createdBy,
     String? assignedShiftId,
     ScheduleShift? shift,
+    TaskAssignmentType assignmentType,
+    DateTime? instanceDate,
+    String? sourceTemplateId,
     DateTime? deadline,
     String? notes,
     String? proofImageUrl,
@@ -412,6 +452,9 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
     Object? createdBy = freezed,
     Object? assignedShiftId = freezed,
     Object? shift = freezed,
+    Object? assignmentType = null,
+    Object? instanceDate = freezed,
+    Object? sourceTemplateId = freezed,
     Object? deadline = freezed,
     Object? notes = freezed,
     Object? proofImageUrl = freezed,
@@ -484,6 +527,18 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
             ? _value.shift
             : shift // ignore: cast_nullable_to_non_nullable
                   as ScheduleShift?,
+        assignmentType: null == assignmentType
+            ? _value.assignmentType
+            : assignmentType // ignore: cast_nullable_to_non_nullable
+                  as TaskAssignmentType,
+        instanceDate: freezed == instanceDate
+            ? _value.instanceDate
+            : instanceDate // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
+        sourceTemplateId: freezed == sourceTemplateId
+            ? _value.sourceTemplateId
+            : sourceTemplateId // ignore: cast_nullable_to_non_nullable
+                  as String?,
         deadline: freezed == deadline
             ? _value.deadline
             : deadline // ignore: cast_nullable_to_non_nullable
@@ -574,6 +629,9 @@ class _$TaskEntityImpl extends _TaskEntity {
     this.createdBy,
     this.assignedShiftId,
     this.shift,
+    this.assignmentType = TaskAssignmentType.individual,
+    this.instanceDate,
+    this.sourceTemplateId,
     this.deadline,
     this.notes,
     this.proofImageUrl,
@@ -675,9 +733,32 @@ class _$TaskEntityImpl extends _TaskEntity {
   /// The operational shift this task belongs to (Branch Operations) —
   /// `morning` / `night`, or **null** when the task is not shift-specific
   /// ("any", applies under every shift filter). Drives the Branch Operations
-  /// shift filter; supersedes the unused legacy [assignedShiftId] string.
+  /// shift filter; supersedes the unused legacy [assignedShiftId] string. When
+  /// [assignmentType] is [TaskAssignmentType.shift] this is also the actual
+  /// assignment target (see `canUserAccessTask`), not just a filter tag.
   @override
   final ScheduleShift? shift;
+
+  /// How this task is assigned. `individual`/`team` both read [assigneeIds];
+  /// `shift` leaves [assigneeIds] empty and targets whoever is rostered on
+  /// [shift] for [instanceDate] instead. Missing on any task written before
+  /// this field existed → [TaskAssignmentType.individual] (no migration
+  /// needed; see `TaskModel.fromMap`).
+  @override
+  @JsonKey()
+  final TaskAssignmentType assignmentType;
+
+  /// The calendar day a shift-assigned instance is *for* — distinct from
+  /// [deadline] (which may carry a specific time of day). Null for
+  /// individual/team tasks and for any task predating shift assignment.
+  @override
+  final DateTime? instanceDate;
+
+  /// Links a shift instance back to the [RecurringTaskTemplateEntity] that
+  /// generated it (`generateShiftTaskInstances` Cloud Function). Null for
+  /// one-off tasks and for every task predating recurring shift templates.
+  @override
+  final String? sourceTemplateId;
   @override
   final DateTime? deadline;
 
@@ -756,7 +837,7 @@ class _$TaskEntityImpl extends _TaskEntity {
 
   @override
   String toString() {
-    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, referenceAttachments: $referenceAttachments, createdBy: $createdBy, assignedShiftId: $assignedShiftId, shift: $shift, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, revisionNumber: $revisionNumber, requiresRework: $requiresRework, rejectionReason: $rejectionReason, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, referenceAttachments: $referenceAttachments, createdBy: $createdBy, assignedShiftId: $assignedShiftId, shift: $shift, assignmentType: $assignmentType, instanceDate: $instanceDate, sourceTemplateId: $sourceTemplateId, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, revisionNumber: $revisionNumber, requiresRework: $requiresRework, rejectionReason: $rejectionReason, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -791,6 +872,12 @@ class _$TaskEntityImpl extends _TaskEntity {
             (identical(other.assignedShiftId, assignedShiftId) ||
                 other.assignedShiftId == assignedShiftId) &&
             (identical(other.shift, shift) || other.shift == shift) &&
+            (identical(other.assignmentType, assignmentType) ||
+                other.assignmentType == assignmentType) &&
+            (identical(other.instanceDate, instanceDate) ||
+                other.instanceDate == instanceDate) &&
+            (identical(other.sourceTemplateId, sourceTemplateId) ||
+                other.sourceTemplateId == sourceTemplateId) &&
             (identical(other.deadline, deadline) ||
                 other.deadline == deadline) &&
             (identical(other.notes, notes) || other.notes == notes) &&
@@ -844,6 +931,9 @@ class _$TaskEntityImpl extends _TaskEntity {
     createdBy,
     assignedShiftId,
     shift,
+    assignmentType,
+    instanceDate,
+    sourceTemplateId,
     deadline,
     notes,
     proofImageUrl,
@@ -887,6 +977,9 @@ abstract class _TaskEntity extends TaskEntity {
     final String? createdBy,
     final String? assignedShiftId,
     final ScheduleShift? shift,
+    final TaskAssignmentType assignmentType,
+    final DateTime? instanceDate,
+    final String? sourceTemplateId,
     final DateTime? deadline,
     final String? notes,
     final String? proofImageUrl,
@@ -952,9 +1045,31 @@ abstract class _TaskEntity extends TaskEntity {
   /// The operational shift this task belongs to (Branch Operations) —
   /// `morning` / `night`, or **null** when the task is not shift-specific
   /// ("any", applies under every shift filter). Drives the Branch Operations
-  /// shift filter; supersedes the unused legacy [assignedShiftId] string.
+  /// shift filter; supersedes the unused legacy [assignedShiftId] string. When
+  /// [assignmentType] is [TaskAssignmentType.shift] this is also the actual
+  /// assignment target (see `canUserAccessTask`), not just a filter tag.
   @override
   ScheduleShift? get shift;
+
+  /// How this task is assigned. `individual`/`team` both read [assigneeIds];
+  /// `shift` leaves [assigneeIds] empty and targets whoever is rostered on
+  /// [shift] for [instanceDate] instead. Missing on any task written before
+  /// this field existed → [TaskAssignmentType.individual] (no migration
+  /// needed; see `TaskModel.fromMap`).
+  @override
+  TaskAssignmentType get assignmentType;
+
+  /// The calendar day a shift-assigned instance is *for* — distinct from
+  /// [deadline] (which may carry a specific time of day). Null for
+  /// individual/team tasks and for any task predating shift assignment.
+  @override
+  DateTime? get instanceDate;
+
+  /// Links a shift instance back to the [RecurringTaskTemplateEntity] that
+  /// generated it (`generateShiftTaskInstances` Cloud Function). Null for
+  /// one-off tasks and for every task predating recurring shift templates.
+  @override
+  String? get sourceTemplateId;
   @override
   DateTime? get deadline;
 

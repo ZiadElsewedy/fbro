@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
@@ -30,8 +31,6 @@ class MyScheduleScreen extends StatefulWidget {
 }
 
 class _MyScheduleScreenState extends State<MyScheduleScreen> {
-  UserEntity? _user;
-
   @override
   void initState() {
     super.initState();
@@ -41,7 +40,6 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
   void _load() {
     final user = context.currentUser;
     if (user == null) return;
-    _user = user;
     context.read<ScheduleCubit>().load(branchId: user.branchId ?? '');
     context.read<ShiftSwapCubit>().loadMine(user.uid);
   }
@@ -50,43 +48,38 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        backgroundColor: AppColors.darkBg,
-        appBar: AppBar(
-          backgroundColor: AppColors.darkBg,
-          elevation: 0,
-          surfaceTintColor: Colors.transparent,
-          title: Text('My Schedule', style: AppTypography.h3),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh_rounded,
-                  color: AppColors.textSecondary),
-              tooltip: 'Refresh',
-              onPressed: _load,
-            ),
-            IconButton(
-              icon: const Icon(Icons.notifications_none_rounded,
-                  color: AppColors.textSecondary),
-              tooltip: 'Notifications',
-              onPressed: () {},
-            ),
-          ],
-          bottom: const TabBar(
-            labelColor: AppColors.textPrimary,
-            unselectedLabelColor: AppColors.textTertiary,
-            indicatorColor: AppColors.primary,
-            indicatorSize: TabBarIndicatorSize.label,
-            indicatorWeight: 2,
-            tabs: [
-              Tab(text: 'My Week'),
-              Tab(text: 'Swaps'),
-            ],
+      child: AdaptiveScaffold(
+        title: 'My Schedule',
+        subtitle: 'Your week and shift swaps',
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded,
+                color: AppColors.textSecondary),
+            tooltip: 'Refresh',
+            onPressed: _load,
           ),
+        ],
+        bottom: const TabBar(
+          labelColor: AppColors.textPrimary,
+          unselectedLabelColor: AppColors.textTertiary,
+          indicatorColor: AppColors.primary,
+          indicatorSize: TabBarIndicatorSize.label,
+          indicatorWeight: 2,
+          tabs: [
+            Tab(text: 'My Week'),
+            Tab(text: 'Swaps'),
+          ],
         ),
         body: TabBarView(
           children: [
             _MyWeekTab(),
-            SwapListView(isManager: false, currentUid: _user?.uid ?? ''),
+            // Resolve the uid at build time — caching it from the post-frame
+            // _load() without setState left it '' until an incidental rebuild,
+            // hiding every Accept/Decline/Cancel action on the Swaps tab.
+            SwapListView(
+              isManager: false,
+              currentUid: context.currentUser?.uid ?? '',
+            ),
           ],
         ),
       ),
@@ -112,6 +105,17 @@ class _MyWeekTabState extends State<_MyWeekTab>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
+    // TabBarView disposes this tab whenever the user visits Swaps and
+    // recreates it on return — with the cubit still `loaded`, so the listener
+    // below (which only fires on a state CHANGE) never plays the entrance
+    // animation and the whole week renders at opacity 0. If the data is
+    // already there at mount, show it immediately; the stagger remains for
+    // real load/refresh cycles.
+    final alreadyLoaded = context.read<ScheduleCubit>().state.maybeWhen(
+          loaded: (_, _, _, _, _) => true,
+          orElse: () => false,
+        );
+    if (alreadyLoaded) _ctrl.value = 1.0;
   }
 
   @override

@@ -46,4 +46,15 @@ abstract class UserAdminRepository {
 
   /// Set the HR employment label (`active` / `suspended` / `terminated`).
   Future<void> changeUserEmploymentStatus(String uid, String status);
+
+  /// Set the user's compensation record (admin-only fields). Unlike
+  /// [updateUserDetails], all four keys are ALWAYS written — null clears a
+  /// field — so the sheet's empty inputs reliably remove stale values.
+  Future<void> updateUserCompensation(
+    String uid, {
+    required double? salaryAmount,
+    required String? salaryType,
+    required String? paymentMethod,
+    required String? paymentNumber,
+  });
 }

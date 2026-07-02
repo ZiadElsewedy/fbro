@@ -9,6 +9,7 @@ import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_search_field.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
@@ -272,29 +273,25 @@ class _ComposeBroadcastScreenState extends State<ComposeBroadcastScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: Text('New Broadcast', style: AppTypography.h3),
-        actions: [
-          IconButton(
-            tooltip: 'Schedule for later',
-            onPressed: _canSend ? _scheduleSend : null,
-            icon: Icon(Icons.schedule_rounded,
-                color: _canSend ? AppColors.primary : AppColors.textTertiary),
-          ),
-          TextButton.icon(
-            onPressed: _useTemplate,
-            icon: const Icon(Icons.dashboard_customize_outlined,
-                size: 18, color: AppColors.primary),
-            label: Text('Templates',
-                style: AppTypography.label.copyWith(color: AppColors.primary)),
-          ),
-        ],
-      ),
-      bottomNavigationBar: _SendBar(
+    return AdaptiveScaffold(
+      title: 'New Broadcast',
+      subtitle: 'Send a message to your team',
+      actions: [
+        IconButton(
+          tooltip: 'Schedule for later',
+          onPressed: _canSend ? _scheduleSend : null,
+          icon: Icon(Icons.schedule_rounded,
+              color: _canSend ? AppColors.primary : AppColors.textTertiary),
+        ),
+        TextButton.icon(
+          onPressed: _useTemplate,
+          icon: const Icon(Icons.dashboard_customize_outlined,
+              size: 18, color: AppColors.primary),
+          label: Text('Templates',
+              style: AppTypography.label.copyWith(color: AppColors.primary)),
+        ),
+      ],
+      bottomBar: _SendBar(
         enabled: _canSend && !_submitting,
         loading: _submitting,
         onSend: _send,

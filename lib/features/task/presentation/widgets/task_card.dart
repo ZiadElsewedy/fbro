@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:drop/core/enums/task_assignment_type.dart';
 import 'package:drop/core/enums/task_priority.dart';
 import 'package:drop/core/enums/task_status.dart';
 import 'package:drop/core/enums/user_role.dart';
@@ -458,7 +459,24 @@ class _AssigneeFooter extends StatelessWidget {
 
     final Widget leading;
     final String primary;
-    if (total == 0) {
+    if (task.assignmentType == TaskAssignmentType.shift) {
+      // Shift Assignment feature: no named assignee — the task targets
+      // whoever is rostered on `task.shift`, so show that instead of the
+      // otherwise-misleading "Unassigned" (assigneeIds is always empty here).
+      leading = Container(
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.darkSurfaceElevated,
+          border: Border.all(color: AppColors.darkBorder),
+        ),
+        child: const Icon(Icons.schedule_rounded,
+            size: 14, color: AppColors.textTertiary),
+      );
+      primary =
+          task.shift == null ? 'Shift task' : '${task.shift!.label} Shift';
+    } else if (total == 0) {
       leading = Container(
         width: 26,
         height: 26,

@@ -141,6 +141,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: _showArchived ? 'Archived' : 'Notifications',
+      contentMaxWidth: 760, // a chronological inbox reads best in a narrow column
       actions: [
         if (_showArchived)
           TextButton(

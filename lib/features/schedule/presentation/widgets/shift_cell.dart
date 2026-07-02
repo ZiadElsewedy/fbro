@@ -1,128 +1,227 @@
 import 'package:flutter/material.dart';
+import 'package:drop/core/enums/schedule_day.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
-import 'package:drop/core/widgets/user_avatar.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
-import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
+import 'package:drop/features/schedule/presentation/widgets/assignment_chip.dart';
 
-/// One shift slot in the weekly grid — a tappable cell that shows **who** is on
-/// the shift (faces + names), not just a number. A staffed slot reads as a
-/// premium elevated card with an avatar stack; an empty slot is a muted,
-/// dashed placeholder ("No one"); today's column gets a white ring; a broken
-/// reference is flagged. Strictly monochrome — no staffing target/quota is ever
-/// implied, the admin assigns by judgment.
-class ShiftCell extends StatelessWidget {
+/// One shift slot in the weekly grid. Every assigned person renders as an
+/// [AssignmentChip] — an individual click / drag / right-click target — so the
+/// cell is a workspace, not a summary. The cell itself is a [DragTarget]: on
+/// desktop a chip dragged from another slot can be dropped here to move the
+/// person. An empty slot is a muted dashed placeholder; today's column gets a
+/// white ring; a broken reference is flagged; a cell outside the active
+/// insight highlight dims. Strictly monochrome — red appears only on a real
+/// double-booking.
+class ShiftCell extends StatefulWidget {
   const ShiftCell({
     super.key,
     required this.users,
+    required this.day,
+    required this.shift,
     required this.isToday,
     required this.hasOrphan,
     required this.width,
     required this.height,
     required this.onTap,
+    this.canEdit = false,
+    this.dimmed = false,
+    this.conflictedUids = const {},
+    this.oppositeUids = const {},
+    this.onDropChip,
+    this.onRemoveUid,
+    this.onMoveUidToOpposite,
+    this.onSwapChip,
   });
 
-  /// The currently-assigned (resolvable) employees on this slot.
   final List<UserEntity> users;
+  final ScheduleDay day;
+  final ScheduleShift shift;
   final bool isToday;
   final bool hasOrphan;
   final double width;
   final double height;
   final VoidCallback onTap;
 
-  static const double _radius = 16;
+  final bool canEdit;
+
+  /// True when an insight chip is active and this slot is NOT part of it —
+  /// the cell fades back so the highlighted slots pop.
+  final bool dimmed;
+
+  /// People double-booked on this day (chip shows the red conflict cue).
+  final Set<String> conflictedUids;
+
+  /// Who's already on this day's opposite shift — gates the chip's
+  /// "move to …" action so it can't create a double-booking.
+  final Set<String> oppositeUids;
+
+  /// A chip from another slot was dropped here (desktop drag-to-move).
+  final void Function(ChipDragData data)? onDropChip;
+  final void Function(String uid)? onRemoveUid;
+  final void Function(String uid)? onMoveUidToOpposite;
+
+  /// A chip was dropped ON a person in this cell (desktop drag-to-switch):
+  /// [data] is the dragged person, `withUid` the person they land on.
+  final void Function(ChipDragData data, String withUid)? onSwapChip;
+
+  static const double radius = 14;
+
+  /// How many chips render before collapsing into a "+N" pill.
+  static const int maxChips = 3;
+
+  @override
+  State<ShiftCell> createState() => _ShiftCellState();
+}
+
+class _ShiftCellState extends State<ShiftCell> {
+  bool _hovered = false;
+
+  bool get _empty => widget.users.isEmpty;
 
   @override
   Widget build(BuildContext context) {
-    final empty = users.isEmpty;
-    final dashed = empty && !isToday;
-    final content = empty ? _empty() : _staffed();
-
     return SizedBox(
-      width: width,
-      height: height,
+      width: widget.width,
+      height: widget.height,
       child: Padding(
         padding: const EdgeInsets.all(4),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(_radius),
-            child: dashed
-                ? CustomPaint(
-                    painter: _DashedBorderPainter(
-                        color: AppColors.darkBorder, radius: _radius),
-                    child: content,
-                  )
-                : Ink(
-                    decoration: BoxDecoration(
-                      // Staffed slots get a subtle top-lit sheen; empty-but-today
-                      // stays flat with just the ring.
-                      gradient: empty
-                          ? null
-                          : const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                AppColors.darkSurfaceElevated,
-                                AppColors.darkSurface,
-                              ],
+        child: DragTarget<ChipDragData>(
+          onWillAcceptWithDetails: (d) =>
+              widget.canEdit &&
+              widget.onDropChip != null &&
+              !(d.data.day == widget.day && d.data.shift == widget.shift) &&
+              !widget.users.any((u) => u.uid == d.data.uid),
+          onAcceptWithDetails: (d) => widget.onDropChip?.call(d.data),
+          builder: (context, candidates, _) {
+            final targeted = candidates.isNotEmpty;
+            return MouseRegion(
+              onEnter: (_) => setState(() => _hovered = true),
+              onExit: (_) => setState(() => _hovered = false),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity: widget.dimmed && !targeted ? 0.35 : 1,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: widget.onTap,
+                    borderRadius: BorderRadius.circular(ShiftCell.radius),
+                    child: _empty && !targeted && !widget.isToday
+                        ? CustomPaint(
+                            painter: _DashedBorderPainter(
+                              color: _hovered
+                                  ? AppColors.textTertiary
+                                  : AppColors.darkBorder,
+                              radius: ShiftCell.radius,
                             ),
-                      color: empty ? AppColors.darkBg : null,
-                      borderRadius: BorderRadius.circular(_radius),
-                      border: Border.all(
-                        color: isToday
-                            ? AppColors.primary.withAlpha(160)
-                            : AppColors.darkBorder,
-                        width: isToday ? 1.4 : 1,
-                      ),
-                    ),
-                    child: content,
+                            child: _emptyBody(targeted),
+                          )
+                        : AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            curve: Curves.easeOut,
+                            decoration: BoxDecoration(
+                              color: targeted
+                                  ? AppColors.darkSurfaceElevated
+                                  : _empty
+                                      ? AppColors.darkBg
+                                      : AppColors.darkSurface,
+                              borderRadius:
+                                  BorderRadius.circular(ShiftCell.radius),
+                              border: Border.all(
+                                color: targeted
+                                    ? AppColors.primary
+                                    : widget.isToday
+                                        ? AppColors.primary.withAlpha(160)
+                                        : _hovered
+                                            ? AppColors.accentBorder
+                                            : AppColors.darkBorder,
+                                width: targeted || widget.isToday ? 1.4 : 1,
+                              ),
+                            ),
+                            child: _empty
+                                ? _emptyBody(targeted)
+                                : _chips(targeted),
+                          ),
                   ),
-          ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _staffed() {
-    final names = users.take(2).toList();
-    final extra = users.length - names.length;
+  Widget _chips(bool targeted) {
+    final visible = widget.users.take(ShiftCell.maxChips).toList();
+    final extra = widget.users.length - visible.length;
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.all(7),
+          child: Wrap(
+            spacing: 4,
+            runSpacing: 4,
             children: [
-              AvatarStack(users: users, max: 3, size: 26),
-              const SizedBox(height: 9),
-              for (var i = 0; i < names.length; i++)
-                Padding(
-                  padding: EdgeInsets.only(top: i == 0 ? 0 : 2),
+              for (final user in visible)
+                AssignmentChip(
+                  user: user,
+                  day: widget.day,
+                  shift: widget.shift,
+                  canEdit: widget.canEdit,
+                  conflicted: widget.conflictedUids.contains(user.uid),
+                  canMoveToOpposite: !widget.oppositeUids.contains(user.uid),
+                  onRemove: () => widget.onRemoveUid?.call(user.uid),
+                  onMoveToOpposite: () =>
+                      widget.onMoveUidToOpposite?.call(user.uid),
+                  onSwapDrop: widget.onSwapChip == null
+                      ? null
+                      : (data) => widget.onSwapChip!(data, user.uid),
+                ),
+              if (extra > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: AppColors.darkBorder),
+                  ),
                   child: Text(
-                    shortName(names[i]),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: i == 0
-                          ? AppColors.textPrimary
-                          : AppColors.textSecondary,
-                      fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w500,
-                      height: 1.15,
+                    '+$extra',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
                     ),
                   ),
                 ),
-              if (extra > 0)
-                Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Text('+$extra more',
-                      style: AppTypography.caption.copyWith(height: 1)),
+              // Quiet inline add affordance on hover (desktop) — one click
+              // fewer than going through the cell sheet's Assign button.
+              if (widget.canEdit && _hovered && extra == 0)
+                GestureDetector(
+                  onTap: widget.onTap,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(color: AppColors.darkBorder),
+                    ),
+                    child: Text(
+                      '+',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w700,
+                        height: 1,
+                      ),
+                    ),
+                  ),
                 ),
             ],
           ),
         ),
-        if (hasOrphan)
+        if (widget.hasOrphan)
           const Positioned(
             top: 6,
             right: 6,
@@ -133,17 +232,32 @@ class ShiftCell extends StatelessWidget {
     );
   }
 
-  Widget _empty() {
+  Widget _emptyBody(bool targeted) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.person_add_alt_1_outlined,
-              size: 22, color: AppColors.textTertiary),
-          const SizedBox(height: 7),
-          Text('No one',
-              style: AppTypography.labelSmall
-                  .copyWith(color: AppColors.textTertiary)),
+          Icon(
+            targeted
+                ? Icons.download_rounded
+                : Icons.person_add_alt_1_outlined,
+            size: 20,
+            color: targeted ? AppColors.primary : AppColors.textTertiary,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            targeted
+                ? 'Drop here'
+                : (widget.canEdit && _hovered ? '+ Assign' : 'No one'),
+            style: AppTypography.caption.copyWith(
+              color: targeted
+                  ? AppColors.primary
+                  : (widget.canEdit && _hovered
+                      ? AppColors.textSecondary
+                      : AppColors.textTertiary),
+              fontWeight: targeted ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );

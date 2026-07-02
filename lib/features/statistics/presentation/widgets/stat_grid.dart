@@ -13,7 +13,12 @@ class StatItem {
   const StatItem(this.label, this.value, this.icon);
 }
 
-/// Two-column grid of operational metric cards (shared by all three dashboards).
+/// Width-aware grid of operational metric cards (shared by all three
+/// dashboards): 2 columns on mobile, 3–4 compact tiles on desktop so the metric
+/// cards stay a premium size instead of two over-wide cards.
+int statGridColumns(double maxWidth) =>
+    (maxWidth / 280).round().clamp(2, 4);
+
 class StatGrid extends StatelessWidget {
   const StatGrid({super.key, required this.items});
 
@@ -24,7 +29,8 @@ class StatGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, c) {
         const gap = AppSpacing.md;
-        final w = (c.maxWidth - gap) / 2;
+        final cols = statGridColumns(c.maxWidth);
+        final w = (c.maxWidth - gap * (cols - 1)) / cols;
         return Wrap(
           spacing: gap,
           runSpacing: gap,
@@ -52,7 +58,8 @@ class StatGridSkeleton extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, c) {
         const gap = AppSpacing.md;
-        final w = (c.maxWidth - gap) / 2;
+        final cols = statGridColumns(c.maxWidth);
+        final w = (c.maxWidth - gap * (cols - 1)) / cols;
         return Wrap(
           spacing: gap,
           runSpacing: gap,

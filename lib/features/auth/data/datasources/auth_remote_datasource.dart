@@ -104,6 +104,15 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       case 'operation-not-allowed':
         return 'Email/password sign-in is disabled for this project. '
             'Contact your administrator.';
+      case 'keychain-error':
+        // FirebaseAuth could not read/write the macOS login keychain while
+        // persisting the session. On macOS this is an entitlement problem, not a
+        // wrong password: the build needs the `keychain-access-groups`
+        // entitlement (Keychain Sharing) in the entitlements file used by the
+        // running configuration (DebugProfile.entitlements for `flutter run`).
+        return 'Could not access the keychain to save your session. '
+            'The app needs the Keychain Sharing entitlement on this build. '
+            'Contact your administrator / rebuild after enabling it.';
       case 'api-key-not-valid':
       case 'invalid-api-key':
         return 'The app is misconfigured (invalid Firebase API key). '
