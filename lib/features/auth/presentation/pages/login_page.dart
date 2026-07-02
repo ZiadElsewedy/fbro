@@ -9,7 +9,7 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/drop_auth_mark.dart';
-import 'package:drop/core/widgets/drop_logo.dart';
+import 'package:drop/core/widgets/animated_drop_logo.dart';
 import 'package:drop/features/auth/presentation/animations/fade_slide_transition.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_state.dart';
@@ -178,8 +178,9 @@ class _LoginPageState extends State<LoginPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // The DROP brand logo artwork (assets/drop_logo.png), tinted white.
-            const DropLogo(height: 88),
+            // The DROP brand logo artwork (assets/drop_logo.png), tinted
+            // white, with the shimmer sweep — the brand hero of the panel.
+            const AnimatedDropLogo(height: 88),
             const SizedBox(height: AppSpacing.lg),
             Text(
               'Operations Management System',

@@ -8,7 +8,9 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
+import 'package:drop/core/widgets/drop_empty_state.dart';
 import 'package:drop/core/widgets/drop_loading_state.dart';
+import 'package:drop/core/widgets/drop_logo.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
@@ -377,8 +379,10 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
     List<UserEntity> members,
   ) {
     if (branchId.isEmpty) {
-      return _centeredMessage(Icons.store_mall_directory_outlined,
-          'Select a branch to view its schedule.');
+      return const DropEmptyState(
+        title: 'Pick a branch',
+        message: 'Select a branch to view its schedule.',
+      );
     }
     if (schedule == null) return _emptySchedule();
 
@@ -414,6 +418,15 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         uid: data.uid,
       ),
       onRemoveChip: (day, shift, uid) => cubit.remove(day, shift, uid),
+      // Drop a person ON another person → the two trade slots.
+      onSwapChip: (data, toDay, toShift, withUid) => cubit.exchange(
+        dayA: data.day,
+        shiftA: data.shift,
+        uidA: data.uid,
+        dayB: toDay,
+        shiftB: toShift,
+        uidB: withUid,
+      ),
     );
 
     return ListView(
@@ -437,12 +450,12 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
     );
   }
 
-  /// One-line affordance hint under the grid — drag / right-click / tap are
-  /// invisible until named.
+  /// One-line affordance hint under the grid — drag / switch / right-click /
+  /// tap are invisible until named. Signed off with a quiet DROP mark.
   Widget _gridHint() {
     final hint = context.isDesktop
-        ? 'Drag people between shifts · right-click a person for actions · '
-            'click a cell for details'
+        ? 'Drag people between shifts · drop a person on another to switch '
+            'them · right-click for actions · click a cell for details'
         : 'Tap a shift to manage · long-press a person for actions · '
             'swipe for more days';
     return Row(
@@ -456,6 +469,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis),
         ),
+        const SizedBox(width: 12),
+        const DropLogo(height: 13, color: AppColors.textTertiary),
       ],
     );
   }
@@ -614,49 +629,22 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   }
 
   // ── Empty / placeholder states ─────────────────────────────────
+  // Brand-led (§9b): the DROP mark leads the empty moments instead of a
+  // generic grey glyph.
   Widget _emptySchedule() {
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.pagePadding),
-      children: [
-        const SizedBox(height: AppSpacing.xxxl),
-        const Icon(Icons.event_note_outlined,
-            size: 56, color: AppColors.textTertiary),
-        const SizedBox(height: AppSpacing.lg),
-        Text('No schedule for this week yet.',
-            textAlign: TextAlign.center, style: AppTypography.label),
-        const SizedBox(height: AppSpacing.xs),
-        Text('Create one to start assigning shifts.',
-            textAlign: TextAlign.center, style: AppTypography.bodySmall),
-        const SizedBox(height: AppSpacing.xl),
-        Center(
-          child: FilledButton.icon(
-            onPressed: () => context
-                .read<ScheduleCubit>()
-                .createSchedule(createdBy: _user?.uid),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-            ),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Create Schedule'),
-          ),
+    return DropEmptyState(
+      title: 'No schedule for this week yet',
+      message: 'Create one to start assigning shifts.',
+      action: FilledButton.icon(
+        onPressed: () =>
+            context.read<ScheduleCubit>().createSchedule(createdBy: _user?.uid),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.onPrimary,
         ),
-      ],
-    );
-  }
-
-  Widget _centeredMessage(IconData icon, String message) {
-    return ListView(
-      children: [
-        const SizedBox(height: AppSpacing.xxxl * 2),
-        Icon(icon, size: 56, color: AppColors.textTertiary),
-        const SizedBox(height: AppSpacing.lg),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-          child: Text(message,
-              textAlign: TextAlign.center, style: AppTypography.bodySmall),
-        ),
-      ],
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Create Schedule'),
+      ),
     );
   }
 }

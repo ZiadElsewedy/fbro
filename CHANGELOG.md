@@ -12,6 +12,80 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed (2026-07-02 — admin Pending Actions swap row now opens the queue)
+
+Owner report: clicking "N Swap Requests" on the admin home pushed the
+Schedule screen with **no branch selected** — the admin then had to pick the
+branch and hunt for the swap chip. The row's whole point is one-tap access.
+
+- `admin_dashboard_screen.dart` `onSwaps` now opens **`showSwapQueueSheet`**
+  directly (all-branches, actionable approve/reject — the same sheet the
+  schedule strip chip opens). The dashboard already streams
+  `ShiftSwapCubit.loadAll()`, so the sheet is live the moment it opens.
+  Reviews/Overdue rows keep their existing (correct) deep-links.
+- Deliberately did NOT add a swaps entry to the ⌘K palette — palette entries
+  are route-based and swaps live in a sheet; wiring a callback kind for one
+  entry is machinery the lean ruling rejects. The Pending Actions row is the
+  canonical entry point.
+
+`flutter analyze` clean (7 pre-existing infos); **268 tests pass**.
+
+### Added (2026-07-02 — macOS app icon + animated brand logo)
+
+Owner request: brand the macOS app icon (Dock/Finder) with the DROP artwork
+and make the in-app logo animated.
+
+- **macOS app icon:** new Big Sur-style icon — Apple-grid squircle (824pt,
+  r 185) with a dark monochrome gradient, hairline border, and the white
+  DROP wordmark centered — composed from `assets/drop_logo.png` by a Swift
+  script (AppKit, high-interpolation tint+composite). Master committed at
+  `assets/icon/app_icon_macos.png` (1024²); all 7 sizes regenerated into
+  `macos/Runner/Assets.xcassets/AppIcon.appiconset/` via `sips`. The
+  `flutter_launcher_icons` pubspec config gained a `macos:` block pointing
+  at the master for reproducibility (Android/iOS config untouched).
+  **Verified in the built bundle** — `DROP.app/Contents/Resources/
+  AppIcon.icns` carries the new artwork (macOS debug build green).
+- **`AnimatedDropLogo`** (`core/widgets/animated_drop_logo.dart`): the
+  wordmark sits at ~88% white and a soft **diagonal band of light sweeps
+  across it** once per ~3.2s cycle (ShaderMask `srcATop`, eased, rests
+  between passes — a beam, not a strobe; strictly monochrome). Wired where
+  the brand is the hero: the **Splash** lockup (on top of its existing
+  entrance fade/scale) and the **Login desktop brand panel**. Quiet chrome
+  marks stay static.
+
+`flutter analyze` clean (7 pre-existing infos); **268 tests pass** (+1
+AnimatedDropLogo loop test in `brand_chrome_test.dart`).
+⚠️ If the Dock still shows the old icon after installing, macOS icon cache
+may need a nudge (`killall Dock`).
+
+### Added (2026-07-02 — Schedule 3.1: drag-to-switch + brand polish)
+
+Owner request on the Branch Schedules surface: premium polish, the DROP logo
+on the screen, and person-onto-person drag ("drag Ziad onto Richard and they
+switch shifts").
+
+- **Drag-to-switch (exchange):** new `ScheduleCubit.exchange` — two people
+  trade slots in a single busy cycle, same safety ordering as `move` (both
+  assigned to their NEW slots first, then released from the old ones, so a
+  failed write never strands anyone off the schedule; self-swap and
+  same-slot trades are no-ops). `AssignmentChip` is now itself a
+  `DragTarget`: hovering a dragged person over another chip shows a primary
+  ring + ⇄ cue; dropping fires the exchange. The chip target sits inside the
+  cell target so it wins the hit test — dropping on a **person** = switch,
+  dropping on the cell's **empty space** = the existing move. Threaded
+  `onSwapChip` through `ShiftCell` → `ScheduleGrid` →
+  `manager_schedule_view` (admin + manager both get it). Desktop-only, like
+  all chip dragging; the grid hint now names the gesture.
+- **Brand on the schedule surface:** quiet `DropLogo` signature at the right
+  end of the grid-hint row; the two plain empty states ("Select a branch",
+  "No schedule for this week") upgraded to the brand-led `DropEmptyState`
+  (faded DROP mark + action), per the §9b empty-state convention.
+
+New `test/schedule_exchange_test.dart` (4 tests: exchange call ordering ·
+self-swap no-op · same-slot no-op · a real drag of one chip onto another
+fires `onSwapChip` and never the cell move). `flutter analyze` clean (7
+pre-existing infos); **267 tests pass** (+4).
+
 ### Added (2026-07-02 — DROP logo rollout across the app chrome)
 
 Owner request: use the real DROP logo (`assets/drop_logo.png`) on the homepage

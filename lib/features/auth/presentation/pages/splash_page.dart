@@ -5,7 +5,7 @@ import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
-import 'package:drop/core/widgets/drop_logo.dart';
+import 'package:drop/core/widgets/animated_drop_logo.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 
 class SplashPage extends StatefulWidget {
@@ -125,7 +125,8 @@ class _SplashPageState extends State<SplashPage>
                     opacity: _logoOpacity,
                     child: ScaleTransition(
                       scale: _logoScale,
-                      child: const DropLogo(height: 92),
+                      // Shimmer sweep on top of the entrance fade/scale.
+                      child: const AnimatedDropLogo(height: 92),
                     ),
                   ),
                   const SizedBox(height: 14),

@@ -22,6 +22,8 @@ import 'package:drop/features/admin/presentation/widgets/pending_actions.dart';
 import 'package:drop/features/auth/presentation/widgets/app_button.dart';
 import 'package:drop/features/schedule/presentation/cubit/shift_swap_cubit.dart';
 import 'package:drop/features/schedule/presentation/cubit/shift_swap_state.dart';
+import 'package:drop/features/schedule/presentation/widgets/swap_alert_card.dart'
+    show showSwapQueueSheet;
 import 'package:drop/features/statistics/domain/entities/statistics_entity.dart';
 import 'package:drop/features/statistics/presentation/cubit/statistics_cubit.dart';
 import 'package:drop/features/statistics/presentation/cubit/statistics_state.dart';
@@ -118,7 +120,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             swaps: swaps,
             reviews: reviews,
             overdue: overdue,
-            onSwaps: () => context.push(RouteNames.adminSchedule),
+            // Straight to the actionable all-branches queue — the cubit is
+            // already streaming loadAll() here. (Pushing the Schedule screen
+            // landed on "Pick a branch" and made the admin hunt for the swap.)
+            onSwaps: () => showSwapQueueSheet(
+              context: context,
+              currentUid: context.currentUser?.uid ?? '',
+              showBranch: true,
+            ),
             onReviews: () => context.push(RouteNames.adminReview),
             onOverdue: () => context.push(RouteNames.adminTasks),
           ));

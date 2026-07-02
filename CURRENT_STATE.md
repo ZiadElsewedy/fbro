@@ -11,8 +11,58 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-02 (DROP logo chrome rollout + mobile blank-My-Week fix)
+**Last updated:** 2026-07-02 (swap-queue one-tap access + macOS icon + Schedule 3.1)
 **Version:** 1.0.0+1 · **Branch:** `feature/macos-desktop` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Admin swap requests — one tap from Pending Actions (2026-07-02)
+
+The admin home's "N Swap Requests" row used to push `/admin/schedule`, which
+lands on "Pick a branch" — the admin had to select the branch and find the
+swap chip manually. It now opens **`showSwapQueueSheet`** directly (the
+all-branches actionable queue; `ShiftSwapCubit.loadAll()` is already live on
+the dashboard, and approve/reject work in-sheet). Manager/employee paths were
+already direct (fixed-branch strip chip / inline Home section). A ⌘K palette
+swaps entry was deliberately skipped (palette is route-based; one-off callback
+machinery = over-engineering). `flutter analyze` clean · **268 tests pass**.
+
+---
+
+## ✅ macOS app icon + animated brand logo (2026-07-02)
+
+**Dock/Finder icon is now the DROP brand:** Big Sur squircle (dark monochrome
+gradient + hairline border + white wordmark), composed from
+`assets/drop_logo.png` by a Swift/AppKit script → master at
+`assets/icon/app_icon_macos.png` (1024²), all 7 sizes written into
+`macos/Runner/Assets.xcassets/AppIcon.appiconset/`; `flutter_launcher_icons`
+config gained a `macos:` block pointing at the master (Android/iOS untouched).
+**Verified inside the built `DROP.app` bundle** (`AppIcon.icns` extracted and
+inspected; macOS debug build green). If the Dock caches the old icon:
+`killall Dock`. **Animated logo:** new **`AnimatedDropLogo`**
+(`core/widgets/animated_drop_logo.dart`) — a soft diagonal light band sweeps
+the ~88%-white wordmark once per ~3.2s (ShaderMask srcATop, rests between
+passes, strictly monochrome). Live on the **Splash** lockup (under its
+entrance fade/scale) and the **Login desktop brand panel**; chrome marks stay
+static. `flutter analyze` clean · **268 tests pass** (+1).
+
+---
+
+## ✅ Schedule 3.1 — drag-to-switch + brand polish (2026-07-02)
+
+Owner extended the Schedule 3.0 drag scope: dropping a dragged person **onto
+another person's chip** now trades their slots (drag Ziad onto Richard → they
+switch shifts). New **`ScheduleCubit.exchange`** (single busy cycle,
+assign-both-first-then-release ordering — a failed write never strands anyone;
+self-swap / same-slot = no-op); `AssignmentChip` doubles as a `DragTarget`
+(primary ring + ⇄ cue when targeted) that wins the hit test over its host
+cell, so chip-drop = switch while empty-cell-drop stays the existing move.
+Wired via `onSwapChip` through `ShiftCell` → `ScheduleGrid` →
+`manager_schedule_view` (admin + manager). Grid hint names the gesture. Brand:
+quiet `DropLogo` signature on the hint row + both schedule empty states now
+brand-led `DropEmptyState`. Covered by `test/schedule_exchange_test.dart`
+(incl. a real chip-onto-chip drag). `flutter analyze` clean · **267 tests
+pass** (+4). ⚠️ On-device QA: real-trackpad chip-onto-chip drop on the Mac.
 
 ---
 

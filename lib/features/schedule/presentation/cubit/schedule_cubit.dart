@@ -107,6 +107,35 @@ class ScheduleCubit extends Cubit<ScheduleState> {
     });
   }
 
+  /// Chip-onto-chip drag (Schedule 3.1): two people trade slots in a single
+  /// busy cycle — [uidA] (from A's slot) takes B's slot and [uidB] takes A's.
+  /// Same safety order as [move]: both are assigned to their NEW slots first,
+  /// then released from the old ones — a failed assign never strands anyone
+  /// off the schedule.
+  Future<void> exchange({
+    required ScheduleDay dayA,
+    required ScheduleShift shiftA,
+    required String uidA,
+    required ScheduleDay dayB,
+    required ScheduleShift shiftB,
+    required String uidB,
+  }) {
+    // Self-swaps and same-slot trades are no-ops, not errors.
+    if (uidA == uidB) return Future.value();
+    if (dayA == dayB && shiftA == shiftB) return Future.value();
+    final scheduleId = ScheduleWeek.docId(_branchId, _weekStart);
+    return _mutate(() async {
+      await _repository.assignEmployee(
+          scheduleId: scheduleId, day: dayB, shift: shiftB, employeeId: uidA);
+      await _repository.assignEmployee(
+          scheduleId: scheduleId, day: dayA, shift: shiftA, employeeId: uidB);
+      await _repository.removeEmployee(
+          scheduleId: scheduleId, day: dayA, shift: shiftA, employeeId: uidA);
+      await _repository.removeEmployee(
+          scheduleId: scheduleId, day: dayB, shift: shiftB, employeeId: uidB);
+    });
+  }
+
   // ── Internals ──────────────────────────────────────────────────
   Future<void> _emitLoaded() async {
     try {

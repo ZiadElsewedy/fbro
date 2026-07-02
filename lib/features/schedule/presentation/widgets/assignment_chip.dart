@@ -25,7 +25,9 @@ class ChipDragData {
 
 /// One person on a shift — the atomic unit of the schedule grid. Each chip is
 /// a click target (cell details), a drag handle (desktop: move between slots),
-/// and a context-menu anchor (right-click on desktop, long-press on touch).
+/// a context-menu anchor (right-click on desktop, long-press on touch), and —
+/// when [onSwapDrop] is set — a **drop target**: dropping another person onto
+/// this chip trades their slots (drag Ziad onto Richard → they switch shifts).
 /// A double-booked person carries a red hairline + dot; strictly monochrome
 /// otherwise.
 class AssignmentChip extends StatefulWidget {
@@ -39,6 +41,7 @@ class AssignmentChip extends StatefulWidget {
     this.canMoveToOpposite = true,
     this.onRemove,
     this.onMoveToOpposite,
+    this.onSwapDrop,
   });
 
   final UserEntity user;
@@ -56,6 +59,11 @@ class AssignmentChip extends StatefulWidget {
 
   final VoidCallback? onRemove;
   final VoidCallback? onMoveToOpposite;
+
+  /// Another chip was dropped onto this one (desktop): trade the two slots.
+  /// The payload is the dragged person; this chip's (user, day, shift) is the
+  /// other side of the exchange.
+  final void Function(ChipDragData data)? onSwapDrop;
 
   @override
   State<AssignmentChip> createState() => _AssignmentChipState();
@@ -88,22 +96,26 @@ class _AssignmentChipState extends State<AssignmentChip> {
     );
   }
 
-  Widget _visual({required bool hovered, bool dragging = false}) {
+  Widget _visual(
+      {required bool hovered, bool dragging = false, bool swapTarget = false}) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
       padding: const EdgeInsets.fromLTRB(3, 3, 8, 3),
       decoration: BoxDecoration(
-        color: hovered || dragging
+        color: hovered || dragging || swapTarget
             ? const Color(0xFF232327)
             : AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(99),
         border: Border.all(
-          color: widget.conflicted
-              ? AppColors.error.withAlpha(190)
-              : hovered
-                  ? AppColors.accentBorder
-                  : AppColors.darkBorder,
+          color: swapTarget
+              ? AppColors.primary
+              : widget.conflicted
+                  ? AppColors.error.withAlpha(190)
+                  : hovered
+                      ? AppColors.accentBorder
+                      : AppColors.darkBorder,
+          width: swapTarget ? 1.4 : 1,
         ),
         boxShadow: dragging
             ? [
@@ -132,7 +144,12 @@ class _AssignmentChipState extends State<AssignmentChip> {
               ),
             ),
           ),
-          if (widget.conflicted) ...[
+          // Hovering a dragged person over this chip → "drop to switch" cue.
+          if (swapTarget) ...[
+            const SizedBox(width: 5),
+            const Icon(Icons.swap_horiz_rounded,
+                size: 12, color: AppColors.primary),
+          ] else if (widget.conflicted) ...[
             const SizedBox(width: 5),
             Container(
               width: 5,
@@ -152,22 +169,40 @@ class _AssignmentChipState extends State<AssignmentChip> {
   Widget build(BuildContext context) {
     final isDesktop = context.isDesktop;
 
-    Widget chip = MouseRegion(
-      cursor: widget.canEdit && isDesktop
-          ? SystemMouseCursors.grab
-          : MouseCursor.defer,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onSecondaryTapDown:
-            widget.canEdit ? (d) => _showMenu(d.globalPosition) : null,
-        // Touch fallback for the same actions (no right-click on mobile).
-        onLongPressStart: widget.canEdit && !isDesktop
-            ? (d) => _showMenu(d.globalPosition)
-            : null,
-        child: _visual(hovered: _hovered),
-      ),
-    );
+    Widget content({bool swapTarget = false}) => MouseRegion(
+          cursor: widget.canEdit && isDesktop
+              ? SystemMouseCursors.grab
+              : MouseCursor.defer,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            onSecondaryTapDown:
+                widget.canEdit ? (d) => _showMenu(d.globalPosition) : null,
+            // Touch fallback for the same actions (no right-click on mobile).
+            onLongPressStart: widget.canEdit && !isDesktop
+                ? (d) => _showMenu(d.globalPosition)
+                : null,
+            child: _visual(hovered: _hovered, swapTarget: swapTarget),
+          ),
+        );
+
+    Widget chip = content();
+
+    // Person-onto-person drop = trade slots. The chip target sits INSIDE the
+    // cell's DragTarget, so it wins the hit test when hovered directly; the
+    // cell's empty space still means "move here".
+    if (widget.canEdit && isDesktop && widget.onSwapDrop != null) {
+      chip = DragTarget<ChipDragData>(
+        onWillAcceptWithDetails: (d) =>
+            d.data.uid != widget.user.uid &&
+            // Trading places inside the SAME slot changes nothing — reject so
+            // the drop doesn't pretend to do something.
+            !(d.data.day == widget.day && d.data.shift == widget.shift),
+        onAcceptWithDetails: (d) => widget.onSwapDrop!(d.data),
+        builder: (context, candidates, _) =>
+            content(swapTarget: candidates.isNotEmpty),
+      );
+    }
 
     // Drag-to-move is a desktop affordance; on touch the cell sheet handles
     // assignment, so chips stay plain tappable content there.

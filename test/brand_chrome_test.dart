@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/animated_drop_logo.dart';
 import 'package:drop/core/widgets/app_sidebar.dart';
 import 'package:drop/core/widgets/drop_logo.dart';
 import 'package:drop/core/widgets/role_scaffold.dart';
@@ -88,6 +89,21 @@ void main() {
     ));
 
     expect(find.byType(DropLogo), findsOneWidget);
+  });
+
+  testWidgets('AnimatedDropLogo renders the artwork and loops without error',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(body: Center(child: AnimatedDropLogo(height: 60))),
+    ));
+
+    expect(find.byType(DropLogo), findsOneWidget);
+    // The shimmer repeats forever (pumpAndSettle would hang) — step through
+    // more than one full 3200ms cycle to prove the loop is well-behaved.
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump(const Duration(milliseconds: 3300));
+    expect(find.byType(AnimatedDropLogo), findsOneWidget);
   });
 
   testWidgets('RoleScaffold home app bar leads with the DROP lockup',

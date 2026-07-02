@@ -32,6 +32,7 @@ class ShiftCell extends StatefulWidget {
     this.onDropChip,
     this.onRemoveUid,
     this.onMoveUidToOpposite,
+    this.onSwapChip,
   });
 
   final List<UserEntity> users;
@@ -60,6 +61,10 @@ class ShiftCell extends StatefulWidget {
   final void Function(ChipDragData data)? onDropChip;
   final void Function(String uid)? onRemoveUid;
   final void Function(String uid)? onMoveUidToOpposite;
+
+  /// A chip was dropped ON a person in this cell (desktop drag-to-switch):
+  /// [data] is the dragged person, `withUid` the person they land on.
+  final void Function(ChipDragData data, String withUid)? onSwapChip;
 
   static const double radius = 14;
 
@@ -170,6 +175,9 @@ class _ShiftCellState extends State<ShiftCell> {
                   onRemove: () => widget.onRemoveUid?.call(user.uid),
                   onMoveToOpposite: () =>
                       widget.onMoveUidToOpposite?.call(user.uid),
+                  onSwapDrop: widget.onSwapChip == null
+                      ? null
+                      : (data) => widget.onSwapChip!(data, user.uid),
                 ),
               if (extra > 0)
                 Container(
