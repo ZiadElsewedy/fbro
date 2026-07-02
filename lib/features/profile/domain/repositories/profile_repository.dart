@@ -23,6 +23,7 @@ abstract class ProfileRepository {
     String? coverImage,
     String? emergencyContact,
     String? address,
+    String? paymentNumber,
   });
 
   Future<String> uploadProfileImage(String uid, File file,

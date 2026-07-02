@@ -9,6 +9,7 @@ import 'package:drop/features/auth/presentation/widgets/app_button.dart';
 import 'package:drop/features/auth/presentation/widgets/app_text_field.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
 import 'package:drop/features/admin/presentation/cubit/admin_users_cubit.dart';
+import 'package:drop/features/admin/presentation/widgets/compensation_fields.dart';
 
 Future<void> showResetAccountSheet({
   required BuildContext context,
@@ -388,6 +389,17 @@ class _EditDetailsSheetState extends State<_EditDetailsSheet> {
   late final _address = TextEditingController(text: widget.user.address ?? '');
   late final _emergency =
       TextEditingController(text: widget.user.emergencyContact ?? '');
+  late final _salaryAmount = TextEditingController(
+      text: widget.user.salaryAmount == null
+          ? ''
+          : (widget.user.salaryAmount ==
+                  widget.user.salaryAmount!.roundToDouble()
+              ? widget.user.salaryAmount!.toStringAsFixed(0)
+              : widget.user.salaryAmount.toString()));
+  late final _paymentNumber =
+      TextEditingController(text: widget.user.paymentNumber ?? '');
+  late String? _salaryType = widget.user.salaryType;
+  late String? _paymentMethod = widget.user.paymentMethod;
 
   @override
   void dispose() {
@@ -395,6 +407,8 @@ class _EditDetailsSheetState extends State<_EditDetailsSheet> {
     _phone.dispose();
     _address.dispose();
     _emergency.dispose();
+    _salaryAmount.dispose();
+    _paymentNumber.dispose();
     super.dispose();
   }
 
@@ -402,12 +416,18 @@ class _EditDetailsSheetState extends State<_EditDetailsSheet> {
     // Fields are optional here (empty intentionally clears), but a non-empty
     // value is format-checked — a phone stays a number, a name stays letters.
     if (!_formKey.currentState!.validate()) return;
+    final paymentNumber = _paymentNumber.text.trim();
     widget.cubit.updateDetails(
       widget.user,
       displayName: _name.text.trim(),
       phoneNumber: _phone.text.trim(),
       address: _address.text.trim(),
       emergencyContact: _emergency.text.trim(),
+      writeCompensation: true,
+      salaryAmount: double.tryParse(_salaryAmount.text.trim()),
+      salaryType: _salaryType,
+      paymentMethod: _paymentMethod,
+      paymentNumber: paymentNumber.isEmpty ? null : paymentNumber,
     );
     Navigator.of(context).pop();
   }
@@ -460,6 +480,25 @@ class _EditDetailsSheetState extends State<_EditDetailsSheet> {
               hint: 'Name · phone',
               prefixIcon: Icons.emergency_outlined,
               validator: (v) => Validators.emergencyContact(v, required: false),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text('COMPENSATION',
+                style: AppTypography.caption.copyWith(letterSpacing: 1)),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Salary and where it is sent. Only the payment number is '
+              'visible to the employee (they can update it themselves).',
+              style: AppTypography.caption
+                  .copyWith(color: AppColors.textTertiary),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            CompensationFields(
+              amount: _salaryAmount,
+              paymentNumber: _paymentNumber,
+              salaryType: _salaryType,
+              paymentMethod: _paymentMethod,
+              onSalaryType: (v) => setState(() => _salaryType = v),
+              onPaymentMethod: (v) => setState(() => _paymentMethod = v),
             ),
             const SizedBox(height: AppSpacing.xl),
             AppButton(label: 'Save details', onPressed: _save),

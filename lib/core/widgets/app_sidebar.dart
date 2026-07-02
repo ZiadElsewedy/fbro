@@ -68,6 +68,9 @@ class AppSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final active = _activeRoute;
+    // Flat destination order — matches the AppShell ⌘1…⌘9 shortcut bindings,
+    // so each row can hint its own shortcut on hover.
+    final flat = [for (final s in sections) ...s.items];
     return Container(
       width: Breakpoints.sidebarWidth,
       decoration: const BoxDecoration(
@@ -121,6 +124,9 @@ class AppSidebar extends StatelessWidget {
                       _SidebarRow(
                         item: item,
                         selected: item.route == active,
+                        shortcutHint: flat.indexOf(item) < 9
+                            ? '⌘${flat.indexOf(item) + 1}'
+                            : null,
                         onTap: () => onSelect(item.route),
                       ),
                   ],
@@ -143,11 +149,15 @@ class _SidebarRow extends StatefulWidget {
     required this.item,
     required this.selected,
     required this.onTap,
+    this.shortcutHint,
   });
 
   final SidebarItem item;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Keyboard shortcut label (e.g. "⌘1"), revealed on hover.
+  final String? shortcutHint;
 
   @override
   State<_SidebarRow> createState() => _SidebarRowState();
@@ -216,6 +226,18 @@ class _SidebarRowState extends State<_SidebarRow> {
                     ),
                   ),
                 ),
+                if (widget.shortcutHint != null)
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 150),
+                    opacity: _hovered ? 1 : 0,
+                    child: Text(
+                      widget.shortcutHint!,
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textTertiary,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

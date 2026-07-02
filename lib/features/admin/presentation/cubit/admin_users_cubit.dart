@@ -97,21 +97,59 @@ class AdminUsersCubit extends Cubit<AdminUsersState> {
       _mutate(() => _users.changeUserPosition(user.uid, position));
 
   /// Edit the user's contact details (name / phone / address / emergency
-  /// contact). Only non-null fields are written.
+  /// contact). Only non-null contact fields are written. When
+  /// [writeCompensation] is set, the four compensation fields are ALSO written
+  /// (all four keys, null clears) in the same busy cycle — the Edit Info sheet
+  /// saves both blocks with one action.
   Future<void> updateDetails(
     UserEntity user, {
     String? displayName,
     String? phoneNumber,
     String? address,
     String? emergencyContact,
+    bool writeCompensation = false,
+    double? salaryAmount,
+    String? salaryType,
+    String? paymentMethod,
+    String? paymentNumber,
   }) =>
-      _mutate(() => _users.updateUserDetails(
+      _mutate(() async {
+        await _users.updateUserDetails(
+          user.uid,
+          displayName: displayName,
+          phoneNumber: phoneNumber,
+          address: address,
+          emergencyContact: emergencyContact,
+        );
+        if (writeCompensation) {
+          await _users.updateUserCompensation(
             user.uid,
-            displayName: displayName,
-            phoneNumber: phoneNumber,
-            address: address,
-            emergencyContact: emergencyContact,
-          ));
+            salaryAmount: salaryAmount,
+            salaryType: salaryType,
+            paymentMethod: paymentMethod,
+            paymentNumber: paymentNumber,
+          );
+        }
+      });
+
+  /// Compensation write for a just-provisioned account (Create Account flow).
+  /// Bypasses [_mutate] — no user list is loaded on that screen, so there is
+  /// nothing to refresh. Throws a [Failure] so the screen can warn without
+  /// blocking the credentials hand-off (the account itself already exists).
+  Future<void> setCompensation(
+    String uid, {
+    required double? salaryAmount,
+    required String? salaryType,
+    required String? paymentMethod,
+    required String? paymentNumber,
+  }) =>
+      _users.updateUserCompensation(
+        uid,
+        salaryAmount: salaryAmount,
+        salaryType: salaryType,
+        paymentMethod: paymentMethod,
+        paymentNumber: paymentNumber,
+      );
 
   /// Set the HR employment label (active / suspended / terminated).
   Future<void> changeEmploymentStatus(UserEntity user, String status) =>

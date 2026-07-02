@@ -100,6 +100,23 @@ class UserAdminRepositoryImpl implements UserAdminRepository {
   Future<void> changeUserEmploymentStatus(String uid, String status) =>
       _run(() => _remote.updateUser(uid, {'employmentStatus': status}));
 
+  @override
+  Future<void> updateUserCompensation(
+    String uid, {
+    required double? salaryAmount,
+    required String? salaryType,
+    required String? paymentMethod,
+    required String? paymentNumber,
+  }) =>
+      // All four keys written unconditionally — null clears (the sheet's empty
+      // inputs must remove stale values, unlike the skip-null contact map).
+      _run(() => _remote.updateUser(uid, {
+            'salaryAmount': salaryAmount,
+            'salaryType': salaryType,
+            'paymentMethod': paymentMethod,
+            'paymentNumber': paymentNumber,
+          }));
+
   Future<void> _run(Future<void> Function() action) async {
     try {
       await action();

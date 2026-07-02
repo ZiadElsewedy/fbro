@@ -51,9 +51,12 @@ service cloud.firestore {
 
       // Admin: full control.
       // Self: profile fields + the first-login flags (mustChangePassword,
-      //   isProfileCompleted) + non-privileged fields (fcmToken). All PRIVILEGED
-      //   fields stay frozen: role, isActive, branchId, assignedShift, position,
-      //   employmentStatus, createdBy.
+      //   isProfileCompleted) + non-privileged fields (fcmToken, and
+      //   paymentNumber — the employee's own salary-receiving number). All
+      //   PRIVILEGED fields stay frozen: role, isActive, branchId,
+      //   assignedShift, position, employmentStatus, createdBy, and the
+      //   admin-set compensation fields (salaryAmount, salaryType,
+      //   paymentMethod).
       // Managers do NOT write user docs (they manage branch operations only).
       allow update: if isAdmin()
         || (isOwner(uid)
@@ -70,7 +73,13 @@ service cloud.firestore {
             && request.resource.data.get('employmentStatus', 'active')
                  == resource.data.get('employmentStatus', 'active')
             && request.resource.data.get('createdBy', '')
-                 == resource.data.get('createdBy', ''));
+                 == resource.data.get('createdBy', '')
+            && request.resource.data.get('salaryAmount', 0)
+                 == resource.data.get('salaryAmount', 0)
+            && request.resource.data.get('salaryType', '')
+                 == resource.data.get('salaryType', '')
+            && request.resource.data.get('paymentMethod', '')
+                 == resource.data.get('paymentMethod', ''));
 
       // Deactivate via isActive (an admin update), never a hard delete; document
       // cleanup on account removal belongs to a Cloud Function.

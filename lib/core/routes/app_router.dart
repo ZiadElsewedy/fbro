@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/core/widgets/app_shell.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:drop/features/auth/presentation/pages/splash_page.dart';
@@ -40,76 +41,13 @@ GoRouter createRouter(AuthCubit authCubit) {
   return GoRouter(
     initialLocation: RouteNames.splash,
     refreshListenable: _AuthStateNotifier(authCubit),
+    observers: [LoggingNavigatorObserver('root')],
     redirect: (BuildContext context, GoRouterState state) {
-      final loc = state.matchedLocation;
-
-      if (loc == RouteNames.splash) return null;
-
-      final authState = authCubit.state;
-
-      final user = authState.maybeWhen(
-        authenticated: (u) => u,
-        orElse: () => null,
-      );
-
-      final isOnAuthFlow =
-          loc == RouteNames.login || loc == RouteNames.forgotPassword;
-
-      if (user != null) {
-        // ── First-login gate (admin-provisioned accounts) ──
-        // 1) Force the admin-issued temp password to be changed.
-        if (user.mustChangePassword) {
-          return loc == RouteNames.forcePasswordChange
-              ? null
-              : RouteNames.forcePasswordChange;
-        }
-        // 2) Then require profile completion.
-        if (!user.isProfileCompleted) {
-          return loc == RouteNames.profileCompletion
-              ? null
-              : RouteNames.profileCompletion;
-        }
-
-        final roleHome = RouteNames.homeForRole(user.role);
-
-        // Role guard. Admin ⊇ manager: admin areas are admin-only, but manager
-        // areas admit admins too. The employee home (/) is employee-only.
-        // Shared routes (/profile, /settings) stay open to all roles.
-        if (_isAdminArea(loc) && !user.role.isAdmin) return roleHome;
-        if (_isManagerArea(loc) && !(user.role.isManager || user.role.isAdmin)) {
-          return roleHome;
-        }
-        // Communications Center is admin + manager only; employees are bounced.
-        if (_isCommunicationsArea(loc) && user.role.isEmployee) {
-          return roleHome;
-        }
-        if (loc == RouteNames.home && !user.role.isEmployee) {
-          return roleHome;
-        }
-
-        // A fully onboarded user never sees the auth / onboarding screens.
-        if (isOnAuthFlow ||
-            loc == RouteNames.forcePasswordChange ||
-            loc == RouteNames.profileCompletion) {
-          return roleHome;
-        }
-
-        return null;
+      final target = _redirect(authCubit, state);
+      if (target != null) {
+        AppLog.route('redirect ${state.matchedLocation} → $target');
       }
-
-      // Only an EXPLICITLY unauthenticated session is bounced to Login —
-      // transient cubit states (loading / passwordChanged / passwordResetSent /
-      // error / initial) must NOT redirect, so an in-flight action (e.g. the
-      // forced password change) never flickers the user out to Login.
-      final isUnauthenticated = authState.maybeWhen(
-        unauthenticated: () => true,
-        orElse: () => false,
-      );
-      if (isUnauthenticated && !isOnAuthFlow) {
-        return RouteNames.login;
-      }
-
-      return null;
+      return target;
     },
     routes: [
       // ─── Outside the app shell: splash + auth + first-login onboarding ──
@@ -150,6 +88,7 @@ GoRouter createRouter(AuthCubit authCubit) {
       ),
       // ─── App shell: persistent desktop sidebar across every route below ──
       ShellRoute(
+        observers: [LoggingNavigatorObserver('shell')],
         builder: (context, state, child) =>
             AppShell(location: state.matchedLocation, child: child),
         routes: [
@@ -368,12 +307,89 @@ GoRouter createRouter(AuthCubit authCubit) {
   );
 }
 
+/// The auth / first-login / role redirect gate. Pure and synchronous — a
+/// redirect must NEVER await (a blocked redirect stalls all navigation).
+/// Extracted so the router can log the decision in one place.
+String? _redirect(AuthCubit authCubit, GoRouterState state) {
+  final loc = state.matchedLocation;
+
+  if (loc == RouteNames.splash) return null;
+
+  final authState = authCubit.state;
+
+  final user = authState.maybeWhen(
+    authenticated: (u) => u,
+    orElse: () => null,
+  );
+
+  final isOnAuthFlow =
+      loc == RouteNames.login || loc == RouteNames.forgotPassword;
+
+  if (user != null) {
+    // ── First-login gate (admin-provisioned accounts) ──
+    // 1) Force the admin-issued temp password to be changed.
+    if (user.mustChangePassword) {
+      return loc == RouteNames.forcePasswordChange
+          ? null
+          : RouteNames.forcePasswordChange;
+    }
+    // 2) Then require profile completion.
+    if (!user.isProfileCompleted) {
+      return loc == RouteNames.profileCompletion
+          ? null
+          : RouteNames.profileCompletion;
+    }
+
+    final roleHome = RouteNames.homeForRole(user.role);
+
+    // Role guard. Admin ⊇ manager: admin areas are admin-only, but manager
+    // areas admit admins too. The employee home (/) is employee-only.
+    // Shared routes (/profile, /settings) stay open to all roles.
+    if (_isAdminArea(loc) && !user.role.isAdmin) return roleHome;
+    if (_isManagerArea(loc) && !(user.role.isManager || user.role.isAdmin)) {
+      return roleHome;
+    }
+    // Communications Center is admin + manager only; employees are bounced.
+    if (_isCommunicationsArea(loc) && user.role.isEmployee) {
+      return roleHome;
+    }
+    if (loc == RouteNames.home && !user.role.isEmployee) {
+      return roleHome;
+    }
+
+    // A fully onboarded user never sees the auth / onboarding screens.
+    if (isOnAuthFlow ||
+        loc == RouteNames.forcePasswordChange ||
+        loc == RouteNames.profileCompletion) {
+      return roleHome;
+    }
+
+    return null;
+  }
+
+  // Only an EXPLICITLY unauthenticated session is bounced to Login —
+  // transient cubit states (loading / passwordChanged / passwordResetSent /
+  // error / initial) must NOT redirect, so an in-flight action (e.g. the
+  // forced password change) never flickers the user out to Login.
+  final isUnauthenticated = authState.maybeWhen(
+    unauthenticated: () => true,
+    orElse: () => false,
+  );
+  if (isUnauthenticated && !isOnAuthFlow) {
+    return RouteNames.login;
+  }
+
+  return null;
+}
+
 CustomTransitionPage<void> _fadeTransition(
   GoRouterState state,
   Widget child,
 ) =>
     CustomTransitionPage<void>(
       key: state.pageKey,
+      // Real path in the page's RouteSettings so navigation logs name routes.
+      name: state.uri.toString(),
       child: child,
       transitionDuration: const Duration(milliseconds: 180),
       transitionsBuilder: (context, animation, secondaryAnimation, child) =>
@@ -389,6 +405,8 @@ CustomTransitionPage<void> _slideTransition(
 ) =>
     CustomTransitionPage<void>(
       key: state.pageKey,
+      // Real path in the page's RouteSettings so navigation logs name routes.
+      name: state.uri.toString(),
       // Desktop reads the fade band (≈160ms of the 320ms window); mobile uses
       // the full window for the slide.
       transitionDuration: const Duration(milliseconds: 320),

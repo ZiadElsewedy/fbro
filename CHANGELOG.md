@@ -12,6 +12,155 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed (2026-07-02 — macOS navigation freeze + APNS warning; global debug logging)
+
+Root-cause investigation of the reported macOS freeze ("clicking Tasks /
+Notifications sometimes freezes the UI") — full report delivered before any
+code change.
+
+- **CRITICAL — navigation freeze fixed.** Phase 2's `AppShell` wrapped the
+  `ShellRoute` child in an `AnimatedSwitcher` keyed by the active sidebar
+  destination. That child is **go_router's shell `Navigator` — one widget
+  holding a `GlobalKey`** — so the cross-fade mounted the same GlobalKey twice
+  mid-transition → "Duplicate GlobalKey detected" → corrupted element tree →
+  the shell navigator stopped responding to clicks. Desktop-only (mobile
+  passes through) and only on cross-destination navigation — matching the
+  symptoms exactly. **Fix: the wrapper is removed** (with a guard comment);
+  the intended desktop fade already exists at the page level (every shell
+  route's `CustomTransitionPage` fades on ≥1024pt), so nothing is visually
+  lost. Audited the rest of the navigation flow: redirect is loop-free and
+  fully synchronous, guards consistent, splash awaits `mounted`-guarded,
+  palette/inspector overlays live on the root navigator — no other defects.
+- **APNS warning fixed at the source.** `registerToken` fired
+  `FirebaseMessaging.getToken()` the instant sign-in completed, on a platform
+  (macOS) whose Runner has **no `aps-environment` entitlement** — the APNS
+  token can never arrive, so every sign-in logged "APNS token has not been
+  set…". New `supportsPushNotifications` /
+  `requiresApnsToken` gates in `platform_capabilities.dart`:
+  `NotificationService.init`/`registerToken` now skip cleanly on non-push
+  platforms (no permission prompt on desktop), and on Apple platforms
+  `getAPNSToken()` is checked (and aborted on null) **before** `getToken()`
+  — fixing the too-early call on iOS as well; `onTokenRefresh` re-registers
+  when a token appears later. Not the freeze (the call was fire-and-forget),
+  but it was real noise + a dead-end prompt.
+- **Global debug logging system** (`core/utils/app_logger.dart`, debug builds
+  only): **`AppLog`** — yellow `call()` function-entry logs, green
+  `success()`, red `error()`, cyan `route()`, and `time()` (async operation
+  timing: yellow start → green with elapsed ms → red + rethrow).
+  **`AppBlocObserver`** (wired in `main`) logs every cubit's
+  create/state-change/error/close. **`LoggingNavigatorObserver`** on BOTH the
+  root router and the shell navigator logs push/pop/replace with real paths
+  (transition pages now carry `name: state.uri`); the router redirect logs
+  every redirect decision (`redirect /a → /b`). Instrumented: Firebase boot,
+  session restore, FCM permission/token flow.
+
+`flutter analyze` clean (7 pre-existing infos); **251 tests pass**; macOS debug
+build green. ⚠️ Needs an on-Mac click-through of Tasks/Notifications to confirm
+the freeze is gone (this session verified the mechanism, not the running GUI).
+
+### Changed (2026-07-02 — Phase 2 premium desktop UX: Schedule 3.0 · executive dashboard · person inspector · ⌘K)
+
+Owner-approved visual/UX overhaul (mock-first: three approved wireframes;
+scope decisions locked as move-only drag & drop, full ⌘K palette, fact-chips
+without percentages). **Presentation layer only** — every interaction lands on
+writes the cubits already had; no schema/rules/repository change, no deploy.
+
+- **Schedule 3.0 (the priority screen).** Every assigned person is now an
+  individual **`AssignmentChip`** (avatar + name) — a click target, a desktop
+  **drag handle** (`Draggable`/`DragTarget`; drop on another cell = move via
+  new single-busy-cycle `ScheduleCubit.move`, assign-before-remove so a failed
+  write never strands anyone), and a **context-menu anchor** (right-click on
+  desktop, long-press on touch: move to opposite shift — disabled when it
+  would double-book — and remove). Cells rebuilt (`ShiftCell` → stateful):
+  hover border + inline "+ add", drop-target highlight, dashed empties, today
+  ring kept. New pure **`schedule_insights.dart`** derives week facts — open
+  shifts, one-person shifts, **double-booked people** (the new conflict
+  indicator: red hairline + dot on the chip, both slots of the day flagged) —
+  rendered as a clickable **insight strip** that *highlights* the matching
+  cells (rest of the grid dims 35%); all-clear collapses to one quiet line.
+  The old coverage %-bar card is gone (percentages re-read as quotas — a
+  settled rejection); the floating swap footer became a **"N swaps waiting"
+  chip** on the same strip → existing swap queue sheet. Tests:
+  `schedule_insights_test.dart` (4).
+- **macOS interaction layer (built once, reused).**
+  **`core/widgets/app_context_menu.dart`** (the app-wide right-click menu),
+  **`core/widgets/command_palette.dart`** — **⌘K** opens Go-to (sidebar
+  destinations with their ⌘n hints) · role-gated Actions · People (from the
+  warm task directory), keyboard-first (↑↓/↵/esc, prefix-ranked matching);
+  bound in `AppShell` next to ⌘1–⌘9 (`AppShell.sectionsForRole` now public so
+  palette and sidebar share one source). **`core/widgets/hover_lift.dart`**
+  (reusable hover rise+shadow). Sidebar navigation now **cross-fades the
+  content pane** (180 ms, keyed by active destination so intra-section pushes
+  never double-animate).
+- **Admin dashboard — executive two-column (desktop).** Wide main column tells
+  the operational story: greeting + **"Search or run a command ⌘K" pill** →
+  pulse hero → metric grid → new **Live activity feed** (newest
+  `ActivityEntry`s across all branches, actor · action · task · time-ago, via
+  the existing `activity_format` helpers). Fixed 330px right rail keeps the
+  queues in view: Pending Actions, quick actions + manage (compact 2-up), and
+  a new **Branch pulse** (per-branch open/review counts from the live stream).
+  The Phase D rebuild-scoping (`_StatsSection`/`_DynamicSection`/
+  `_PendingSection`) is preserved; mobile layout unchanged.
+- **Employee management.** The Details dialog is replaced on desktop by a
+  **person inspector** (`user_inspector_panel.dart`) — a 380px right
+  slide-over (260 ms) with header + inline actions (Edit info · Reset ·
+  De/Activate), Contact / Work / Compensation sections (empty rows collapse),
+  and this-week metric chips (`computeEmployeeMetrics`). **Right-click on any
+  employee card** opens the full action menu (Details / Edit info / Change
+  branch / Set position / Reset / Deactivate). **Create Account** on desktop
+  is a **2×2 of section cards** (Identity · Access · Work · Compensation) at
+  960px instead of one long column; mobile keeps the single column.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **251 tests pass** (+4);
+macOS debug build green.
+
+### Added (2026-07-02 — UI/UX audit pass: compensation record, self-service profile, ⌘ navigation)
+
+Full-app UI/UX audit against the "premium macOS app" brief (report:
+[UI_UX_AUDIT_2026-07-02.md](UI_UX_AUDIT_2026-07-02.md)). The audit **verified as
+already-done**: the DROP branding sweep (every user-visible surface — window
+title, Info.plists, Android label, web manifest, in-app brand primitives — was
+already DROP; the only `fbro` remnants are the registered Firebase iOS bundle id
+and the repo folder name, which must not change), the monochrome design system +
+desktop shell, the branded splash, and the schedule insights (coverage summary ·
+broken-assignment banner · pending-swap alert). Two owner rulings were applied
+over the brief: **no indigo** (strictly monochrome) and **lean, not enterprise**.
+Three real gaps were implemented:
+
+- **Compensation record (admin)** — `UserEntity`/`UserModel` gain
+  `salaryAmount` (double), `salaryType` (`monthly`/`weekly`/`daily`),
+  `paymentMethod` (`cash`/`bank`/`wallet`/`instapay`), and `paymentNumber` (the
+  wallet/account number salary is transferred to). `UserModel.toMap` excludes
+  all four (a routine write can never clobber them). New
+  `UserAdminRepository.updateUserCompensation` (always writes all four keys —
+  null clears); `AdminUsersCubit.updateDetails` gains a `writeCompensation`
+  block (one busy cycle for the Edit Info sheet) and `setCompensation(uid)`
+  serves the Create Account flow (a failed compensation write warns but never
+  blocks the credentials hand-off). New shared
+  `admin/presentation/widgets/compensation_fields.dart` (`CompensationFields` +
+  canonical option maps + `salarySummary`) renders the section on **Create
+  Account** and the **Edit Info** sheet; the employee **Details** dialog shows
+  Salary / Paid via / Payment no. **`firestore.rules`:** the `users` self-update
+  rule now freezes `salaryAmount`/`salaryType`/`paymentMethod` (admin-only);
+  `paymentNumber` stays self-editable. ⚠️ **Deploy required:**
+  `firebase deploy --only firestore:rules`.
+- **Self-service profile (employee)** — `ProfileEntity` gains `address`,
+  `emergencyContact`, `paymentNumber` (read side; the write pipeline already
+  supported the first two since onboarding), threaded `paymentNumber` through
+  `editMap` → datasource → repository → `UpdateProfile` → `ProfileCubit.save`.
+  **Edit Profile** gains validated "Contact details" (phone · address ·
+  emergency contact) and "Salary payment number" sections; the **Profile** page
+  displays them. Employees can now correct their own contact/payment data any
+  time — no admin relay, no stale copy (same `users/{uid}` doc the admin reads).
+- **⌘1–⌘9 sidebar navigation (macOS/desktop)** — `AppShell` binds meta+digit
+  shortcuts to the role's sidebar destinations (`CallbackShortcuts` +
+  autofocused `FocusScope`); `AppSidebar` rows reveal their `⌘n` hint on hover
+  for discoverability.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **247 tests pass** (+7 in
+new `test/user_compensation_test.dart`); freezed regenerated; macOS debug build
+green.
+
 ### Added (2026-07-01 — Shift Assignment feature: assign a task to a shift, not a person)
 
 A task can now be assigned to **a shift** (Morning/Night) instead of named

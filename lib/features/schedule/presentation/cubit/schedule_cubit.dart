@@ -78,6 +78,34 @@ class ScheduleCubit extends Cubit<ScheduleState> {
             employeeId: uid,
           ));
 
+  /// Drag-to-move (Schedule 3.0): reassign [uid] from one slot to another in
+  /// a single busy cycle. Assign to the target FIRST, then release the source
+  /// — if the assign fails the person never leaves their original shift.
+  Future<void> move({
+    required ScheduleDay fromDay,
+    required ScheduleShift fromShift,
+    required ScheduleDay toDay,
+    required ScheduleShift toShift,
+    required String uid,
+  }) {
+    if (fromDay == toDay && fromShift == toShift) return Future.value();
+    final scheduleId = ScheduleWeek.docId(_branchId, _weekStart);
+    return _mutate(() async {
+      await _repository.assignEmployee(
+        scheduleId: scheduleId,
+        day: toDay,
+        shift: toShift,
+        employeeId: uid,
+      );
+      await _repository.removeEmployee(
+        scheduleId: scheduleId,
+        day: fromDay,
+        shift: fromShift,
+        employeeId: uid,
+      );
+    });
+  }
+
   // ── Internals ──────────────────────────────────────────────────
   Future<void> _emitLoaded() async {
     try {

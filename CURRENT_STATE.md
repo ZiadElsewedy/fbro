@@ -11,8 +11,120 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-01 (macOS photo upload fixed — missing sandbox entitlement; dead-end camera options hidden on desktop)
+**Last updated:** 2026-07-02 (macOS freeze root-caused + fixed; APNS gating; global debug logging)
 **Version:** 1.0.0+1 · **Branch:** `feature/macos-desktop` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ macOS navigation freeze — root-caused and fixed (2026-07-02)
+
+**The freeze** (clicking Tasks/Notifications sometimes locked the UI) was
+Phase 2's `AppShell` `AnimatedSwitcher` around the `ShellRoute` child — that
+child is go_router's shell **Navigator with a GlobalKey**, and the cross-fade
+mounted it twice → duplicate-GlobalKey exception → corrupted element tree →
+dead navigation. Desktop-only, cross-destination-only — matched the symptoms
+exactly. **Fixed by removing the wrapper** (guard comment left in
+`app_shell.dart`); the desktop fade already exists per-page, so no visual
+change. **RULE: never wrap the ShellRoute child in anything that can mount it
+twice (AnimatedSwitcher / keyed swaps / cross-fades).**
+
+**The "Please ensure an APNS token is available" warning**: `registerToken`
+called `getToken()` at sign-in on macOS, which has **no `aps-environment`
+entitlement** (APNS token can never arrive). `NotificationService` is now
+gated on new `supportsPushNotifications` (Android/iOS only — desktop skips
+permission prompt + registration entirely) and checks `getAPNSToken()` before
+`getToken()` on Apple platforms (fixes the same too-early race on iOS).
+
+**Global debug logging** (debug builds only): `core/utils/app_logger.dart` —
+`AppLog.call` (yellow) / `.success` (green) / `.error` (red) / `.route`
+(cyan) / `.time` (async ms timing); `AppBlocObserver` (all cubit lifecycles +
+state transitions, wired in `main`); `LoggingNavigatorObserver` on root +
+shell navigators (pages now carry real path names); redirect decisions logged.
+
+`flutter analyze` clean · **251 tests pass** · macOS debug build green.
+⚠️ Owner: click through Tasks/Notifications on the Mac to confirm; `flutter
+run -d macos` now shows the colored nav/cubit/timing logs.
+
+---
+
+## ✅ Phase 2 — premium desktop UX (2026-07-02)
+
+Owner-approved visual overhaul (mock-first; approved scope: move-only
+drag & drop · full ⌘K palette · fact-chips, no percentages). **Presentation
+layer only — nothing to deploy.**
+
+1. **Schedule 3.0** — people are individual **chips** in the grid cells
+   (drag-to-move between slots on desktop via new `ScheduleCubit.move`;
+   right-click/long-press menu: move-to-opposite-shift [double-booking-safe]
+   · remove). New pure `schedule_insights.dart` + a clickable **insight
+   strip** (open shifts · one-person shifts · **double-booked** conflicts —
+   red dot on the chip) that highlights matching cells and dims the rest;
+   swap queue is now a strip chip (floating footer removed); the coverage
+   %-bar card is gone (quota framing — settled rejection).
+2. **macOS layer** — `app_context_menu.dart` (app-wide right-click),
+   `command_palette.dart` (**⌘K**: go-to + role actions + people, keyboard
+   navigable), `hover_lift.dart`, and a 180 ms content cross-fade on sidebar
+   navigation (`AppShell`, keyed by destination).
+3. **Admin dashboard (desktop)** — executive two-column: main column =
+   greeting + ⌘K pill → pulse hero → metrics → **Live activity feed** (from
+   task `activityLog`s); 330px right rail = Pending Actions · quick
+   actions/manage (2-up) · **Branch pulse** (per-branch open/review from the
+   live stream). Rebuild-scoping preserved; mobile unchanged.
+4. **Employee management** — desktop Details is a **person inspector**
+   slide-over (contact/work/compensation + this-week chips + inline actions);
+   **right-click on employee cards** = full action menu; **Create Account**
+   desktop = 2×2 section cards (Identity · Access · Work · Compensation).
+
+`flutter analyze` clean (7 pre-existing infos) · **251 tests pass** (+4
+`schedule_insights_test.dart`) · macOS debug build green (`DROP.app`).
+⚠️ On-device QA suggested: chip drag on a real trackpad, palette focus
+behavior, inspector over the sheets.
+
+---
+
+## ✅ UI/UX audit pass (2026-07-02)
+
+Full-app audit against the "premium macOS app" brief — report in
+[UI_UX_AUDIT_2026-07-02.md](UI_UX_AUDIT_2026-07-02.md). **Verdict: the branding
+sweep, monochrome design system, desktop shell, branded splash, and schedule
+insights were already complete** (verified in code, not just docs). The only
+`fbro` remnants are the registered Firebase iOS bundle id (`com.example.fbro`)
+and the repo folder name — both intentionally untouched (changing the bundle id
+detaches the app from Firebase). Two owner rulings were applied over the brief:
+**strictly monochrome (no indigo)** and **lean, not enterprise**. Three real
+gaps were closed:
+
+1. **Compensation record** (`users/{uid}`): new `salaryAmount` / `salaryType`
+   (`monthly`/`weekly`/`daily`) / `paymentMethod`
+   (`cash`/`bank`/`wallet`/`instapay`) / `paymentNumber` fields on
+   `UserEntity`/`UserModel` (excluded from `toMap`). Admin edits them in
+   **Create Account** (Compensation section; post-create `setCompensation`
+   write that warns-but-never-blocks the credentials dialog) and the **Edit
+   Info** sheet (single busy-cycle via `updateDetails(writeCompensation:
+   true)` → new `UserAdminRepository.updateUserCompensation`, all four keys
+   written, null clears); the employee **Details** dialog shows Salary / Paid
+   via / Payment no. Shared UI in
+   `admin/presentation/widgets/compensation_fields.dart`.
+2. **Employee self-service profile**: `ProfileEntity` now carries `address` /
+   `emergencyContact` / `paymentNumber`; **Edit Profile** exposes validated
+   Contact details + Salary payment number sections (previously name/bio/photos
+   only — contact data was write-once at onboarding); the **Profile** page
+   displays them. `paymentNumber` threaded through the full profile chain
+   (editMap → datasource → repo → `UpdateProfile` → `ProfileCubit.save`).
+3. **⌘1–⌘9 sidebar navigation** on desktop (`AppShell` `CallbackShortcuts` +
+   autofocused `FocusScope`; `AppSidebar` rows hint `⌘n` on hover).
+
+**Permissions model:** the `users` self-update rule freezes
+`salaryAmount`/`salaryType`/`paymentMethod` (admin-only); `paymentNumber` is the
+one compensation field the employee may write (their own receiving number).
+
+⚠️ **Deploy required:** `firebase deploy --only firestore:rules` — until then an
+employee's paymentNumber self-write is still allowed by the old rule (fine) but
+the salary-field freeze is not enforced server-side.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new) · **247 tests pass** (+7
+`user_compensation_test.dart`) · freezed regenerated · **macOS debug build
+green** (`✓ Built build/macos/Build/Products/Debug/DROP.app`).
 
 ---
 

@@ -3,12 +3,14 @@ import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drop/core/di/injection.dart';
 import 'package:drop/core/routes/app_router.dart';
 import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/core/theme/app_theme.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_state.dart';
@@ -29,7 +31,15 @@ late final GoRouter _router;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Global debug logging (debug builds only): cubit lifecycle + state changes
+  // via the observer; navigation via the router observers; function/timing
+  // logs via AppLog at call sites.
+  if (kDebugMode) Bloc.observer = AppBlocObserver();
+  await AppLog.time(
+      'boot',
+      'Firebase.initializeApp',
+      () => Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform));
 
   // Offline-first: enable Firestore local persistence with an unlimited cache so
   // the app survives unstable connections — cached reads, queued writes that

@@ -29,6 +29,16 @@ class ProfileEntity with _$ProfileEntity {
     String? city,
     String? website,
 
+    // ─── Contact & payroll (operations — stored on the same users doc) ──
+    /// Home / mailing address. Self-editable.
+    String? address,
+    /// Emergency contact (name · phone). Self-editable.
+    String? emergencyContact,
+    /// The phone / wallet / account number the salary is sent to — the one
+    /// compensation field the employee edits themselves. The admin-only salary
+    /// fields (amount / type / method) are NOT part of the profile contract.
+    String? paymentNumber,
+
     // ─── Account ────────────────────────────────────────────────
     @Default(false) bool isVerified,
     @Default('active') String accountStatus,
