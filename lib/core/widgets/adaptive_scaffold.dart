@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/drop_logo.dart';
 
 /// A scaffold that adapts its chrome to the platform width.
 ///
@@ -30,6 +31,7 @@ class AdaptiveScaffold extends StatelessWidget {
     this.constrainContent = true,
     this.contentMaxWidth,
     this.scrollableHeaderActions = false,
+    this.showBrandMark = true,
   });
 
   final String title;
@@ -68,6 +70,11 @@ class AdaptiveScaffold extends StatelessWidget {
   /// a screen has many actions on a narrow desktop window).
   final bool scrollableHeaderActions;
 
+  /// Quiet DROP brand mark at the trailing edge of the **mobile** app bar
+  /// (desktop is already branded by the persistent [AppSidebar] lockup).
+  /// Non-interactive and tinted tertiary so it never competes with actions.
+  final bool showBrandMark;
+
   @override
   Widget build(BuildContext context) {
     if (!context.isDesktop) {
@@ -78,7 +85,10 @@ class AdaptiveScaffold extends StatelessWidget {
           elevation: 0,
           title: titleWidget ?? Text(title, style: AppTypography.h3),
           leading: leading,
-          actions: actions,
+          actions: [
+            ...actions,
+            if (showBrandMark) const _AppBarBrandMark(),
+          ],
           bottom: bottom,
         ),
         body: body,
@@ -118,6 +128,22 @@ class AdaptiveScaffold extends StatelessWidget {
           ],
           Expanded(child: content),
         ],
+      ),
+    );
+  }
+}
+
+/// The quiet DROP mark closing every mobile app bar — brand presence on all
+/// migrated screens without competing with the actionable icons beside it.
+class _AppBarBrandMark extends StatelessWidget {
+  const _AppBarBrandMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(left: 6, right: 16),
+      child: Center(
+        child: DropLogo(height: 16, color: AppColors.textTertiary),
       ),
     );
   }

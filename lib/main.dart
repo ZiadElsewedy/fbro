@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,11 +6,14 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drop/core/di/injection.dart';
+import 'package:drop/core/observability/crash_reporter.dart';
 import 'package:drop/core/routes/app_router.dart';
 import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/core/theme/app_theme.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
@@ -29,11 +33,22 @@ final GlobalKey<ScaffoldMessengerState> _messengerKey =
 /// The app router, created once so the FCM tap handler can navigate.
 late final GoRouter _router;
 
-void main() async {
+void main() {
+  // Everything — including ensureInitialized and runApp — lives inside ONE
+  // guarded zone, so a zone-level uncaught error is always captured (4th
+  // crash funnel, alongside FlutterError.onError / PlatformDispatcher.onError
+  // / the isolate listener installed below).
+  runZonedGuarded<Future<void>>(_bootstrap, CrashReporter.recordZoneError);
+}
+
+Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Crash capture FIRST — everything after this line is covered.
+  CrashReporter.install();
   // Global debug logging (debug builds only): cubit lifecycle + state changes
   // via the observer; navigation via the router observers; function/timing
-  // logs via AppLog at call sites.
+  // logs via AppLog at call sites. (Breadcrumbs + crash persistence stay on
+  // in release.)
   if (kDebugMode) Bloc.observer = AppBlocObserver();
   await AppLog.time(
       'boot',
@@ -85,6 +100,60 @@ void main() async {
     ..init();
 
   runApp(const App());
+
+  // If the previous session crashed, surface the persisted report for export
+  // (fire-and-forget — never delays startup).
+  unawaited(_surfacePendingCrashReport());
+}
+
+/// Next-launch crash detection (Part 6): when a persisted crash report exists,
+/// show a banner offering to copy the full report to the clipboard. Both
+/// actions clear the file so the banner appears once per crash.
+Future<void> _surfacePendingCrashReport() async {
+  final report = await CrashReporter.pendingReport();
+  if (report == null) return;
+  AppLog.warning('crash', 'previous session crashed — report pending export');
+
+  // Wait for the app's ScaffoldMessenger to mount (first frames).
+  ScaffoldMessengerState? messenger;
+  for (var i = 0; i < 20 && messenger == null; i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    messenger = _messengerKey.currentState;
+  }
+  if (messenger == null) return;
+
+  messenger.showMaterialBanner(
+    MaterialBanner(
+      backgroundColor: AppColors.darkSurfaceElevated,
+      leading:
+          const Icon(Icons.bug_report_outlined, color: AppColors.error),
+      content: const Text(
+        'DROP quit unexpectedly last time. You can export the crash report '
+        'for debugging.',
+        style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: report));
+            messenger!
+              ..hideCurrentMaterialBanner()
+              ..showSnackBar(const SnackBar(
+                  content: Text('Crash report copied to clipboard')));
+            await CrashReporter.clearPendingReport();
+          },
+          child: const Text('Copy report'),
+        ),
+        TextButton(
+          onPressed: () async {
+            messenger!.hideCurrentMaterialBanner();
+            await CrashReporter.clearPendingReport();
+          },
+          child: const Text('Dismiss'),
+        ),
+      ],
+    ),
+  );
 }
 
 class App extends StatelessWidget {
@@ -113,6 +182,9 @@ class App extends StatelessWidget {
         listener: (context, state) {
           state.maybeWhen(
             authenticated: (u) {
+              // Crash-report context: who was signed in when it crashed.
+              CrashContext.userId = u.uid;
+              CrashContext.userRole = u.role.value;
               AppDependencies.notificationService.registerToken(u.uid);
               AppDependencies.notificationCubit.load(u.uid);
               // Phase C warm-start: preload the home-critical cubits the moment
@@ -133,6 +205,8 @@ class App extends StatelessWidget {
               }
             },
             unauthenticated: () {
+              CrashContext.userId = null;
+              CrashContext.userRole = null;
               AppDependencies.notificationService.forgetUser();
               AppDependencies.notificationCubit.clear();
             },

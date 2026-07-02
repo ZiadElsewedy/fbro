@@ -1,30 +1,51 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:drop/core/observability/crash_reporter.dart';
 
-/// Global debug logging for DROP. Colour-coded, zero-cost in release builds
-/// (every method no-ops unless [enabled]).
+/// Global structured logging for DROP — the single entry point for every log
+/// line in the app (no scattered `print`s).
 ///
-/// Conventions:
-/// - **yellow** — a function/flow was entered ([call], and the start line of
-///   [time]);
-/// - **green** — it finished successfully ([success], [time]'s end line);
-/// - **red** — it failed ([error]);
-/// - **cyan** — navigation ([route]) and cubit state changes.
+/// Categories:
+/// - 🟡 **CALL** — a function/flow was entered ([call], the start of [time]);
+/// - 🟢 **SUCCESS** — it completed ([success], [time]'s fast completions);
+/// - 🔵 **ROUTE** — navigation ([route]: pushes/pops/redirects);
+/// - 🟣 **STATE** — cubit state transitions ([state], via [AppBlocObserver]);
+/// - 🟠 **WARNING** — suspicious behaviour ([warning], slow ops from [time]);
+/// - 🔴 **ERROR** — failures ([error]).
 ///
-/// ANSI colours render in `flutter run` terminals and VS Code's debug console;
-/// on consoles that strip ANSI (Xcode) the text degrades to plain lines.
+/// Every line carries a timestamp + module scope + message + optional
+/// `meta` map (rendered `k=v`). Console output is **debug-only** ([enabled]);
+/// every line is ALSO recorded into a bounded in-memory [breadcrumbs] ring —
+/// always, including release — so a crash report can show the lead-up.
+/// ANSI colours render in `flutter run` terminals; consoles that strip ANSI
+/// (Xcode) still show the emoji.
 class AppLog {
   AppLog._();
 
-  /// Master switch — debug builds only by default. Flip off for a quiet run.
+  /// Console switch — debug builds only by default. Breadcrumb recording is
+  /// independent of this (always on, bounded, negligible).
   static bool enabled = kDebugMode;
+
+  /// Async operations slower than this are logged as 🟠 WARNING, not 🟢.
+  static const Duration slowThreshold = Duration(milliseconds: 1000);
 
   static const _yellow = '\x1B[33m';
   static const _green = '\x1B[32m';
   static const _red = '\x1B[31m';
   static const _cyan = '\x1B[36m';
+  static const _magenta = '\x1B[35m';
+  static const _orange = '\x1B[38;5;208m';
   static const _reset = '\x1B[0m';
+
+  // ── Breadcrumbs (crash-report context) ─────────────────────────
+  static const int _maxBreadcrumbs = 30;
+  static final Queue<String> _breadcrumbs = Queue<String>();
+
+  /// The most recent log lines (oldest first) — attached to crash reports.
+  static List<String> get breadcrumbs => List.unmodifiable(_breadcrumbs);
 
   static String _stamp() {
     final n = DateTime.now();
@@ -32,35 +53,63 @@ class AppLog {
     return '${p(n.hour)}:${p(n.minute)}:${p(n.second)}.${p(n.millisecond, 3)}';
   }
 
-  // Emoji markers ride along with the ANSI colours: terminals render both,
-  // but consoles that strip ANSI (Xcode) still show the emoji, so a log line
-  // is level-readable everywhere.
-  static void _print(String color, String emoji, String scope, String message) {
-    if (!enabled) return;
-    debugPrint('$color$emoji [${_stamp()}][$scope] $message$_reset');
+  static String _meta(Map<String, Object?>? meta) => meta == null ||
+          meta.isEmpty
+      ? ''
+      : ' {${meta.entries.map((e) => '${e.key}=${e.value}').join(' ')}}';
+
+  static void _emit(
+    String color,
+    String emoji,
+    String category,
+    String scope,
+    String message,
+  ) {
+    final line = '$emoji [${_stamp()}][$category][$scope] $message';
+    _breadcrumbs.addLast(line);
+    if (_breadcrumbs.length > _maxBreadcrumbs) _breadcrumbs.removeFirst();
+    if (enabled) debugPrint('$color$line$_reset');
   }
 
-  /// Yellow — a function/flow was entered.
-  static void call(String scope, String fn, [String? details]) =>
-      _print(_yellow, '🟡', scope,
-          '→ $fn${details == null ? '' : ' ($details)'}');
+  /// 🟡 CALL — a function/flow was entered. Also records the "last action"
+  /// on [CrashContext], so a crash report names what was running.
+  static void call(String scope, String fn,
+      {String? details, Map<String, Object?>? meta}) {
+    CrashContext.lastAction = '$scope.$fn';
+    _emit(_yellow, '🟡', 'CALL', scope,
+        '$fn${details == null ? '' : ' ($details)'}${_meta(meta)}');
+  }
 
-  /// Green — an operation completed.
-  static void success(String scope, String message) =>
-      _print(_green, '🟢', scope, '✓ $message');
+  /// 🟢 SUCCESS — an operation completed.
+  static void success(String scope, String message,
+          {Map<String, Object?>? meta}) =>
+      _emit(_green, '🟢', 'SUCCESS', scope, '$message${_meta(meta)}');
 
-  /// Red — an operation failed.
+  /// 🔵 ROUTE — navigation events (pushes/pops/redirect decisions).
+  static void route(String message, {Map<String, Object?>? meta}) =>
+      _emit(_cyan, '🔵', 'ROUTE', 'nav', '$message${_meta(meta)}');
+
+  /// 🟣 STATE — cubit/BLoC state transitions.
+  static void state(String scope, String message,
+          {Map<String, Object?>? meta}) =>
+      _emit(_magenta, '🟣', 'STATE', scope, '$message${_meta(meta)}');
+
+  /// 🟠 WARNING — suspicious but non-fatal behaviour.
+  static void warning(String scope, String message,
+          {Map<String, Object?>? meta}) =>
+      _emit(_orange, '🟠', 'WARNING', scope, '$message${_meta(meta)}');
+
+  /// 🔴 ERROR — a failure.
   static void error(String scope, String message,
       [Object? err, StackTrace? stack]) {
-    _print(_red, '🔴', scope, '✗ $message${err == null ? '' : ' — $err'}');
+    _emit(_red, '🔴', 'ERROR', scope,
+        '$message${err == null ? '' : ' — $err'}');
     if (stack != null && enabled) debugPrint('$_red$stack$_reset');
   }
 
-  /// Cyan — navigation events (route pushes/pops, redirect decisions).
-  static void route(String message) => _print(_cyan, '🔵', 'nav', message);
-
-  /// Times an async [operation]: yellow on entry, green with the elapsed
-  /// milliseconds on completion, red (and rethrow) on failure.
+  /// Times an async [operation]: 🟡 on entry; on completion
+  /// `⏱ label finished in Nms` — 🟢 when fast, escalated to 🟠 WARNING past
+  /// [slowThreshold]; 🔴 + rethrow on failure.
   static Future<T> time<T>(
     String scope,
     String label,
@@ -70,20 +119,34 @@ class AppLog {
     final sw = Stopwatch()..start();
     try {
       final result = await operation();
-      success(scope, '$label (${sw.elapsedMilliseconds}ms)');
+      final ms = sw.elapsedMilliseconds;
+      final message = '⏱ $label finished in ${ms}ms';
+      if (sw.elapsed >= slowThreshold) {
+        warning(scope, '$message (slow)');
+      } else {
+        success(scope, message);
+      }
       return result;
     } catch (e) {
-      error(scope, '$label failed after ${sw.elapsedMilliseconds}ms', e);
+      error(scope, '⏱ $label failed after ${sw.elapsedMilliseconds}ms', e);
       rethrow;
     }
   }
 }
 
 /// Cubit lifecycle logging for every cubit in the app — wire once in `main`:
-/// `Bloc.observer = AppBlocObserver();`. Create/close are yellow flow marks,
-/// state changes are cyan (state runtimeType only — never payloads, which can
-/// carry PII and flood the console), errors are red.
+/// `Bloc.observer = AppBlocObserver();`. Transitions log the state
+/// runtimeType only — never payloads, which can carry PII and flood the
+/// console. Cubit errors are ALSO recorded as crash-context breadcrumbs.
 class AppBlocObserver extends BlocObserver {
+  /// `_Loaded` / `TaskLoaded` → `loaded` — the spec's readable short form.
+  static String _short(Object? state) {
+    var name = state.runtimeType.toString();
+    if (name.startsWith('_')) name = name.substring(1);
+    if (name.startsWith(r'$')) name = name.substring(1);
+    return name.isEmpty ? '?' : name[0].toLowerCase() + name.substring(1);
+  }
+
   @override
   void onCreate(BlocBase<dynamic> bloc) {
     super.onCreate(bloc);
@@ -93,11 +156,8 @@ class AppBlocObserver extends BlocObserver {
   @override
   void onChange(BlocBase<dynamic> bloc, Change<dynamic> change) {
     super.onChange(bloc, change);
-    if (AppLog.enabled) {
-      AppLog.route(
-          '${bloc.runtimeType}: ${change.currentState.runtimeType} → '
-          '${change.nextState.runtimeType}');
-    }
+    AppLog.state('${bloc.runtimeType}',
+        '${_short(change.currentState)} → ${_short(change.nextState)}');
   }
 
   @override
@@ -113,9 +173,10 @@ class AppBlocObserver extends BlocObserver {
   }
 }
 
-/// Route logging for a [Navigator] — attach to GoRouter's `observers` (root
-/// navigator) AND the ShellRoute's `observers` (the shell navigator, where all
-/// in-shell page swaps happen).
+/// Route logging for a [Navigator] — attached to GoRouter's `observers`
+/// (root navigator) AND the ShellRoute's `observers` (the shell navigator,
+/// where all in-shell page swaps happen). Every event also updates
+/// [CrashContext] so crash reports carry the exact screen/route.
 class LoggingNavigatorObserver extends NavigatorObserver {
   LoggingNavigatorObserver(this.label);
 
@@ -127,17 +188,29 @@ class LoggingNavigatorObserver extends NavigatorObserver {
       route?.settings.runtimeType.toString() ??
       'unknown';
 
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      AppLog.route('[$label] push ${_name(route)} (from ${_name(previousRoute)})');
+  void _setContext(Route<dynamic>? route) {
+    final name = route?.settings.name;
+    if (name != null) CrashContext.route = name;
+  }
 
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      AppLog.route('[$label] pop ${_name(route)} (to ${_name(previousRoute)})');
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _setContext(route);
+    AppLog.route(
+        '[$label] push ${_name(route)} (from ${_name(previousRoute)})');
+  }
 
   @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
-      AppLog.route('[$label] replace ${_name(oldRoute)} → ${_name(newRoute)}');
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _setContext(previousRoute);
+    AppLog.route('[$label] pop ${_name(route)} (to ${_name(previousRoute)})');
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _setContext(newRoute);
+    AppLog.route('[$label] replace ${_name(oldRoute)} → ${_name(newRoute)}');
+  }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>

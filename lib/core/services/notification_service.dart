@@ -102,7 +102,7 @@ class NotificationService {
     // the prior owner. (L1 client gap behind the EXCLUSIVE-ownership guarantee.)
     if (_uid != uid) _currentToken = null;
     _uid = uid;
-    AppLog.call('fcm', 'registerToken', 'uid=$uid');
+    AppLog.call('fcm', 'registerToken', details: 'uid=$uid');
     if (!supportsPushNotifications) {
       AppLog.success(
           'fcm', 'registerToken skipped — push not supported on this platform');

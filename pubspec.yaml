@@ -54,6 +54,8 @@ dependencies:
 
   # Storage
   flutter_secure_storage: ^9.2.2
+  # Observability — crash-report persistence (Application Support dir).
+  path_provider: ^2.1.4
 
   # Code Generation (annotations only at runtime)
   freezed_annotation: ^2.4.4

@@ -12,6 +12,105 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-07-02 — DROP logo rollout across the app chrome)
+
+Owner request: use the real DROP logo (`assets/drop_logo.png`) on the homepage
+and all important screens. Applied through the three shared chrome widgets so
+every screen is covered without per-screen edits, staying monochrome/lean:
+
+- **Role homes (mobile):** `RoleScaffold`'s app bar title is now a brand
+  lockup — `DropLogo` (22px, full white) + the dashboard title — on the
+  admin, manager, and employee homepages.
+- **Desktop (every screen):** the persistent `AppSidebar` brand header now
+  renders the real artwork (`DropLogo` 30px) instead of the typographic
+  `DropWordmark` (which remains in use by `BrandWatermark`).
+- **All migrated mobile screens:** `AdaptiveScaffold` gains
+  **`showBrandMark`** (default **on**) — a quiet, non-interactive tertiary
+  `DropLogo` (16px) closes every mobile app bar (tasks, schedule,
+  notifications, profile, settings, comms, admin screens…). Desktop skips it
+  (the sidebar already brands the window).
+- Refreshed `DropLogo`'s stale doc comment (still cited the removed
+  register/pending-approval pages).
+
+New `test/brand_chrome_test.dart` (4 tests: role-home lockup · sidebar
+artwork · mobile mark present · opt-out). `flutter analyze` clean (7
+pre-existing infos); **263 tests pass** (+4).
+
+### Fixed (2026-07-02 — mobile blank "My Week" after visiting the Swaps tab)
+
+Owner report: on mobile, Schedule → My Week rendered fine initially, but after
+opening the Swaps tab and returning, the week went blank (or only reappeared
+after a manual refresh). Reproduced first in a widget test, then fixed.
+
+- **Root cause (rendering, not data):** `TabBarView` disposes the My Week tab
+  when the user visits Swaps and recreates it on return. `_MyWeekTabState`'s
+  900 ms entrance `AnimationController` starts at 0.0 and was only ever played
+  from the `BlocConsumer` **listener** — which fires on state *changes* only.
+  On return the `ScheduleCubit` is still `loaded` and emits nothing new, so
+  the animation never ran and every section rendered at **opacity 0** (the
+  data was there, invisible). A manual refresh "fixed" it because the
+  loading → loaded transition finally fired the listener. Fix: on mount, if
+  the cubit is already `loaded`, snap the controller to 1.0 (content shows
+  instantly, no gratuitous replay); the entrance stagger still plays for real
+  load/refresh cycles. The Swaps flow itself was audited clean — it never
+  touches `ScheduleState`.
+- **Also fixed in the same screen:** `_load()` cached the current user into a
+  field **without `setState`**, so `SwapListView` was built with
+  `currentUid: ''` until an incidental rebuild — with an empty uid a swap
+  card matches neither requester nor target and renders **no
+  Accept/Decline/Cancel actions**. The uid is now resolved at build time
+  (`context.currentUser`), and the dead field is gone.
+- New regression test [`my_schedule_tab_test.dart`](test/my_schedule_tab_test.dart)
+  drives the real `MyScheduleScreen` through the tab round-trip and asserts
+  the week content is at full opacity after returning.
+
+`flutter analyze` clean (7 pre-existing infos); **259 tests pass** (+1).
+
+### Added (2026-07-02 — Phase 3: crash monitoring + production-grade observability)
+
+Product-hardening pass: complete crash capture + structured logging
+infrastructure, built on (and extending) the existing `AppLog` from the
+freeze-fix session — one centralized system, no scattered prints.
+
+- **Global crash capture** (new
+  [`core/observability/crash_reporter.dart`](lib/core/observability/crash_reporter.dart)):
+  four funnels converge on one structured report — `FlutterError.onError`
+  (framework errors; debug keeps the red-screen behaviour),
+  `PlatformDispatcher.instance.onError` (platform/engine + uncaught async;
+  returns true so a handled error can't kill the app), `runZonedGuarded`
+  (whole `main` bootstrap runs inside the guarded zone), and
+  `Isolate.current.addErrorListener`. Every crash produces the structured
+  🔴 CRASH block: timestamp · source · **screen · route · current user ·
+  role** (from `CrashContext`, fed passively by the navigator observers +
+  the auth listener) · error · **full stacktrace** · **last action** (the
+  last 🟡 CALL) · the last **30 log breadcrumbs**.
+- **Persistent crash log + export (Part 6):** the report is written to
+  `Application Support/last_crash.log` (path_provider, promoted to a direct
+  dependency) — **even in release**; the write path is re-entrancy-guarded
+  and exception-swallowing so the crash handler can never crash. On the next
+  launch a MaterialBanner offers **Copy report** (clipboard) / **Dismiss**;
+  both clear the file.
+- **`AppLog` extended to the full category set:** 🟡 CALL · 🟢 SUCCESS ·
+  🔵 ROUTE · **🟣 STATE** (new; `AppBlocObserver` transitions moved onto it,
+  formatted `loading → loaded`) · **🟠 WARNING** (new) · 🔴 ERROR. Every
+  method takes optional **`meta`** (rendered `{k=v …}`); every line =
+  timestamp + category + module + message. **Breadcrumb ring buffer**
+  (last 30 lines, all categories) records ALWAYS — including release, where
+  console output stays off — so crash reports carry the lead-up.
+- **Async performance timing:** `AppLog.time` now logs
+  `⏱ label finished in Nms` and **escalates >1000 ms to 🟠 WARNING**.
+  Instrumented hot spots: Firebase boot, session restore, FCM
+  permission/token, **schedule load** (`getSchedule` + `getUsersByBranch`),
+  **statistics load** (per-role), **notifications** (time-to-first-snapshot
+  on the stream).
+- Navigation logging (root + shell observers, exact paths, redirect
+  decisions) and cubit lifecycle logging were already live from the
+  freeze-fix session and are unchanged apart from the 🟣 recategorisation.
+
+`flutter analyze` clean (7 pre-existing infos); **258 tests pass** (+7
+`observability_test.dart`); macOS debug build green. New dependency:
+`path_provider ^2.1.4` (already in the lock transitively).
+
 ### Fixed (2026-07-02 — macOS navigation freeze + APNS warning; global debug logging)
 
 Root-cause investigation of the reported macOS freeze ("clicking Tasks /

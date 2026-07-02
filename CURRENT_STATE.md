@@ -11,8 +11,75 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-02 (macOS freeze root-caused + fixed; APNS gating; global debug logging)
+**Last updated:** 2026-07-02 (DROP logo chrome rollout + mobile blank-My-Week fix)
 **Version:** 1.0.0+1 · **Branch:** `feature/macos-desktop` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ DROP logo rollout across the app chrome (2026-07-02)
+
+Owner request: the real logo (`assets/drop_logo.png`) on the homepage and all
+important screens. Done via the three shared chrome widgets (no per-screen
+edits, strictly monochrome): **`RoleScaffold`** mobile app bar leads with a
+`DropLogo` (22px) + title lockup on all three role homes; **`AppSidebar`**'s
+desktop brand header now renders the real artwork (30px) instead of the
+typographic `DropWordmark` (still used by `BrandWatermark`); and
+**`AdaptiveScaffold`** gains `showBrandMark` (default on) — a quiet
+non-interactive tertiary `DropLogo` (16px) closing every **mobile** app bar
+(desktop is already branded by the persistent sidebar). Covered by
+`test/brand_chrome_test.dart`. `flutter analyze` clean · **263 tests pass**
+(+4). ⚠️ Visual QA suggested on a phone + the Mac (lockup sizing/spacing).
+
+---
+
+## ✅ Mobile blank "My Week" after Swaps tab — root-caused and fixed (2026-07-02)
+
+Owner report: on mobile, Schedule → My Week rendered initially but went blank
+after visiting the Swaps tab and returning (recovered only on manual refresh).
+**Not a data/cubit bug** — `TabBarView` disposes the My Week tab on switch and
+recreates it on return; its entrance `AnimationController` (starts at 0.0) was
+only played from the `BlocConsumer` **listener**, which never fires because the
+`ScheduleCubit` is still `loaded` with no new emission → the whole tab rendered
+at **opacity 0**. Fixed in `my_schedule_screen.dart`: on mount, an
+already-loaded cubit snaps the controller to 1.0 (stagger still plays on real
+load/refresh). Also fixed there: `SwapListView` got `currentUid: ''` (user was
+cached without `setState`) which hid all swap card actions — the uid is now
+read at build time. Reproduced + guarded by `test/my_schedule_tab_test.dart`.
+**Pattern rule: never gate an entrance animation solely on a bloc state
+transition — sync it with the current state at mount (TabBarView recreates
+tabs).** `flutter analyze` clean · **259 tests pass** (+1).
+
+---
+
+## ✅ Phase 3 — crash & logging infrastructure (2026-07-02)
+
+Production-grade observability, centralized in two files:
+
+- **[`core/observability/crash_reporter.dart`](lib/core/observability/crash_reporter.dart)**
+  — global crash capture via 4 funnels (`FlutterError.onError` ·
+  `PlatformDispatcher.onError` · `runZonedGuarded` around the whole bootstrap
+  · isolate listener). Structured 🔴 CRASH report: timestamp / screen / route /
+  user / role / error / full stacktrace / last action / last-30 breadcrumbs.
+  **Persisted to `Application Support/last_crash.log` even in release**;
+  next launch shows a banner → Copy report (clipboard) / Dismiss.
+  `CrashContext` is fed passively (navigator observers → route; auth listener
+  → user/role; `AppLog.call` → last action).
+- **`core/utils/app_logger.dart`** — full category set: 🟡 CALL / 🟢 SUCCESS /
+  🔵 ROUTE / 🟣 STATE (cubit transitions, via `AppBlocObserver`) / 🟠 WARNING /
+  🔴 ERROR; optional `meta` map on every line; breadcrumb ring (always on,
+  bounded 30); `time()` prints `⏱ … finished in Nms` and escalates **>1000 ms
+  → 🟠 WARNING**. Console output is debug-only; breadcrumbs + crash file are
+  release-active with negligible overhead.
+- **Instrumented:** Firebase boot · session restore · FCM permission/token ·
+  schedule load · per-role statistics load · notifications first-snapshot.
+  Navigation (root + shell + redirects) and all cubit lifecycles were already
+  auto-logged.
+- New direct dependency: `path_provider ^2.1.4`.
+
+`flutter analyze` clean · **258 tests pass** (+7 `observability_test.dart`) ·
+macOS debug build green. To sanity-check on the Mac: run, then `⌘K` around the
+app and watch the 🔵/🟣/⏱ stream; force a test crash if desired and relaunch to
+see the export banner.
 
 ---
 

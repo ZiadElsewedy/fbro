@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/errors/failures.dart';
+import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/auth/domain/usecases/get_users_by_branch.dart';
 import 'package:drop/features/schedule/domain/repositories/schedule_repository.dart';
@@ -111,9 +112,12 @@ class ScheduleCubit extends Cubit<ScheduleState> {
     try {
       final schedule = _branchId.isEmpty
           ? null
-          : await _repository.getSchedule(_branchId, _weekStart);
-      final members =
-          _branchId.isEmpty ? const <UserEntity>[] : await _getUsersByBranch(_branchId);
+          : await AppLog.time('schedule', 'getSchedule',
+              () => _repository.getSchedule(_branchId, _weekStart));
+      final members = _branchId.isEmpty
+          ? const <UserEntity>[]
+          : await AppLog.time(
+              'schedule', 'getUsersByBranch', () => _getUsersByBranch(_branchId));
       emit(ScheduleState.loaded(
         branchId: _branchId,
         weekStart: _weekStart,

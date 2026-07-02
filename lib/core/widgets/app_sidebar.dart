@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
-import 'package:drop/core/widgets/drop_wordmark.dart';
+import 'package:drop/core/widgets/drop_logo.dart';
 
 /// A single navigable destination in the [AppSidebar].
 class SidebarItem {
@@ -82,15 +82,16 @@ class AppSidebar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Brand header.
+            // Brand header — the real DROP artwork (assets/drop_logo.png).
             Padding(
-              padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
+              padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const DropWordmark(fontSize: 23),
+                  const DropLogo(height: 30),
                   const SizedBox(width: 8),
                   Padding(
-                    padding: const EdgeInsets.only(top: 5),
+                    padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
                       'OPERATIONS',
                       style: AppTypography.caption.copyWith(

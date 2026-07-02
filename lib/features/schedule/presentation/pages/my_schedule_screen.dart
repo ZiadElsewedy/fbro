@@ -31,8 +31,6 @@ class MyScheduleScreen extends StatefulWidget {
 }
 
 class _MyScheduleScreenState extends State<MyScheduleScreen> {
-  UserEntity? _user;
-
   @override
   void initState() {
     super.initState();
@@ -42,7 +40,6 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
   void _load() {
     final user = context.currentUser;
     if (user == null) return;
-    _user = user;
     context.read<ScheduleCubit>().load(branchId: user.branchId ?? '');
     context.read<ShiftSwapCubit>().loadMine(user.uid);
   }
@@ -76,7 +73,13 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
         body: TabBarView(
           children: [
             _MyWeekTab(),
-            SwapListView(isManager: false, currentUid: _user?.uid ?? ''),
+            // Resolve the uid at build time — caching it from the post-frame
+            // _load() without setState left it '' until an incidental rebuild,
+            // hiding every Accept/Decline/Cancel action on the Swaps tab.
+            SwapListView(
+              isManager: false,
+              currentUid: context.currentUser?.uid ?? '',
+            ),
           ],
         ),
       ),
@@ -102,6 +105,17 @@ class _MyWeekTabState extends State<_MyWeekTab>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
+    // TabBarView disposes this tab whenever the user visits Swaps and
+    // recreates it on return — with the cubit still `loaded`, so the listener
+    // below (which only fires on a state CHANGE) never plays the entrance
+    // animation and the whole week renders at opacity 0. If the data is
+    // already there at mount, show it immediately; the stagger remains for
+    // real load/refresh cycles.
+    final alreadyLoaded = context.read<ScheduleCubit>().state.maybeWhen(
+          loaded: (_, _, _, _, _) => true,
+          orElse: () => false,
+        );
+    if (alreadyLoaded) _ctrl.value = 1.0;
   }
 
   @override
