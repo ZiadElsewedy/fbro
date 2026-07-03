@@ -959,6 +959,108 @@ exports.claimFcmToken = onDocumentUpdated(`${USERS}/{uid}`, async (event) => {
   }
 });
 
+/**
+ * The ONLY path a client has for creating in-app notifications (M2 fix,
+ * 2026-07-03). Direct `notifications/{id}` creates are denied by rules —
+ * every notification doc a client produces goes through this callable, which
+ * validates before writing (the docs then flow to `onNotificationCreated`
+ * for push, unchanged):
+ *   - the caller must be signed in, exist, and be active;
+ *   - `type` must be one of the CLIENT-legit types (task lifecycle + swap
+ *     workflow — reminder/broadcast types are produced server-side only);
+ *   - every recipient must exist and be REACHABLE by the caller: an admin
+ *     reaches anyone; everyone else only their own branch (covers all real
+ *     flows: coworker swaps, employee→manager review pings, manager→staff
+ *     assignments);
+ *   - title/body are length-capped; the payload is reduced to known keys;
+ *   - `senderUid` is SERVER-STAMPED from auth — never forgeable.
+ */
+const CLIENT_NOTIFICATION_TYPES = new Set([
+  "taskAssigned", "taskRework", "taskSubmitted", "taskApproved", "taskRejected",
+  "swapRequested", "swapAccepted", "swapApproved", "swapRejected",
+]);
+const NOTIFICATION_PAYLOAD_KEYS = ["taskId", "route", "revisionNumber", "swapId"];
+
+exports.sendNotification = onCall(async (request) => {
+  const auth = request.auth;
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Please sign in.");
+  }
+  const callerSnap = await db.collection(USERS).doc(auth.uid).get();
+  if (!callerSnap.exists) {
+    throw new HttpsError("permission-denied", "Your account profile was not found.");
+  }
+  const caller = callerSnap.data() || {};
+  if (caller.isActive === false) {
+    throw new HttpsError("permission-denied", "This account is disabled.");
+  }
+  const callerIsAdmin = (caller.role || "employee") === "admin";
+  const callerBranch = String(caller.branchId || "");
+
+  const items = Array.isArray(request.data && request.data.notifications)
+    ? request.data.notifications
+    : [];
+  if (items.length === 0 || items.length > 50) {
+    throw new HttpsError("invalid-argument", "Send between 1 and 50 notifications.");
+  }
+
+  const batch = db.batch();
+  let queued = 0;
+  for (const raw of items) {
+    const recipientUid = String((raw && raw.recipientUid) || "").trim();
+    const type = String((raw && raw.type) || "").trim();
+    const title = String((raw && raw.title) || "").trim().slice(0, 120);
+    const body = String((raw && raw.body) || "").trim().slice(0, 500);
+    if (!recipientUid || (!title && !body)) {
+      throw new HttpsError("invalid-argument", "Each notification needs a recipient and content.");
+    }
+    if (!CLIENT_NOTIFICATION_TYPES.has(type)) {
+      throw new HttpsError("invalid-argument", `"${type}" is not a client notification type.`);
+    }
+
+    // Reachability: admin → anyone; others → own branch only.
+    const recipientSnap = await db.collection(USERS).doc(recipientUid).get();
+    if (!recipientSnap.exists) continue; // stale recipient — skip, not fatal
+    const recipientBranch = String((recipientSnap.data() || {}).branchId || "");
+    const reachable = callerIsAdmin
+      || (callerBranch !== "" && recipientBranch === callerBranch);
+    if (!reachable) {
+      throw new HttpsError(
+        "permission-denied",
+        "You can only notify people in your own branch.",
+      );
+    }
+
+    // Sanitized payload — only the keys the tap handler understands.
+    const rawPayload = (raw && raw.payload) || {};
+    const payload = {};
+    for (const k of NOTIFICATION_PAYLOAD_KEYS) {
+      if (rawPayload[k] !== undefined && rawPayload[k] !== null) {
+        payload[k] = typeof rawPayload[k] === "number"
+          ? rawPayload[k]
+          : String(rawPayload[k]);
+      }
+    }
+
+    const ref = db.collection(NOTIFICATIONS).doc();
+    batch.set(ref, {
+      id: ref.id,
+      recipientUid,
+      senderUid: auth.uid, // server-stamped — the client cannot forge this
+      type,
+      title,
+      body,
+      readAt: null,
+      payload,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    queued++;
+  }
+
+  if (queued > 0) await batch.commit();
+  return { created: queued };
+});
+
 exports.onNotificationCreated = onDocumentCreated(
   `${NOTIFICATIONS}/{id}`,
   async (event) => {

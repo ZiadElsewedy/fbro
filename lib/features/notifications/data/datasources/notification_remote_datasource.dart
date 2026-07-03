@@ -1,9 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:drop/core/constants/app_constants.dart';
 import 'package:drop/core/errors/exceptions.dart';
 import 'package:drop/features/notifications/data/models/notification_model.dart';
 
 abstract class NotificationRemoteDataSource {
+  /// Creates notifications via the validated `sendNotification` callable
+  /// (M2 fix, 2026-07-03) — direct `notifications/{id}` writes are denied by
+  /// rules, so type whitelist / branch-scoped recipients / length caps /
+  /// server-stamped senderUid are enforced for every client-produced doc.
   Future<void> create(NotificationModel notification);
   Future<void> createMany(List<NotificationModel> notifications);
 
@@ -26,42 +31,38 @@ abstract class NotificationRemoteDataSource {
 
 class NotificationRemoteDataSourceImpl implements NotificationRemoteDataSource {
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
 
-  NotificationRemoteDataSourceImpl(this._firestore);
+  NotificationRemoteDataSourceImpl(this._firestore, this._functions);
 
   CollectionReference<Map<String, dynamic>> get _notifications =>
       _firestore.collection(AppConstants.notificationsCollection);
 
   @override
-  Future<void> create(NotificationModel notification) async {
-    try {
-      final ref = _notifications.doc();
-      await ref.set({
-        ...notification.toMap(),
-        'id': ref.id,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    } on FirebaseException catch (e) {
-      throw ServerException(e.message ?? 'Failed to create notification.');
-    }
-  }
+  Future<void> create(NotificationModel notification) =>
+      createMany([notification]);
 
   @override
   Future<void> createMany(List<NotificationModel> notifications) async {
     if (notifications.isEmpty) return;
     try {
-      final batch = _firestore.batch();
-      for (final n in notifications) {
-        final ref = _notifications.doc();
-        batch.set(ref, {
-          ...n.toMap(),
-          'id': ref.id,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-      await batch.commit();
-    } on FirebaseException catch (e) {
-      throw ServerException(e.message ?? 'Failed to create notifications.');
+      // The callable validates + writes with the Admin SDK; `senderUid` is
+      // server-stamped from the caller's auth, so it is not sent here.
+      final callable = _functions.httpsCallable('sendNotification');
+      await callable.call<Map<String, dynamic>>({
+        'notifications': [
+          for (final n in notifications)
+            {
+              'recipientUid': n.recipientUid,
+              'type': n.type.value,
+              'title': n.title,
+              'body': n.body,
+              'payload': n.payload,
+            },
+        ],
+      });
+    } on FirebaseFunctionsException catch (e) {
+      throw ServerException(e.message ?? 'Failed to send notifications.');
     }
   }
 

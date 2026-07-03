@@ -142,7 +142,8 @@ class AppDependencies {
     // NotifyTaskEvent use case for its automatic task-event notifications.
     final NotificationRepository notificationRepository =
         NotificationRepositoryImpl(
-      NotificationRemoteDataSourceImpl(FirebaseFirestore.instance),
+      NotificationRemoteDataSourceImpl(
+          FirebaseFirestore.instance, FirebaseFunctions.instance),
     );
 
     authCubit = AuthCubit(
