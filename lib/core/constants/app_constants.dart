@@ -12,6 +12,10 @@ class AppConstants {
   static const String broadcastsCollection = 'broadcasts';
   static const String notificationsCollection = 'notifications';
 
+  /// Reports Center (Reports / Escalation System). The reporter's identity lives
+  /// in the private subcollection `reports/{id}/reporter/identity`.
+  static const String reportsCollection = 'reports';
+
   // ─── Communications Center — Phase 2 ──────────────────────────
   static const String broadcastTemplatesCollection = 'broadcastTemplates';
   static const String broadcastSchedulesCollection = 'broadcastSchedules';

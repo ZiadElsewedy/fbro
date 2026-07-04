@@ -12,6 +12,105 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed (2026-07-04 — employee Reports "Failed to load your reports")
+
+Root-caused the employee mobile Reports failure (admin desktop worked). The
+`collectionGroup('reporter').where('createdByUserId'==uid)` "My Reports" query
+was denied because its Firestore rule was **nested** under
+`match /reports/{reportId}` — a path-scoped rule does NOT authorize a
+collection-group query (documented Firestore behavior), so the query returned
+**`permission-denied`** even with the index present. **Fix:** promoted the rule
+to a collection-group rule with the recursive wildcard —
+`match /{path=**}/reporter/{docId}` (top-level sibling of the reports match;
+identical read/create/deny conditions). Also surfaced the exact Firestore error:
+`report_remote_datasource.getMyReports` was swallowing `e.code` — it now logs
+`[REPORTS]` query/code/message/stack and keeps the code in the thrown message.
+⚠️ **Redeploy `firebase deploy --only firestore:rules`.** (The admin list uses a
+plain `reports` orderBy → auto-indexed → unaffected; only employees hit the
+collection-group query.)
+
+### Changed (2026-07-04 — Reports simplified: escalation messages, not tasks)
+
+Owner feedback: Reports felt too task-like. Stripped the Task-borrowed machinery
+down to a lightweight escalation-message system with a **chat/support** feel:
+
+- **Anonymous privacy removed** — privacy is now just **normal / confidential**.
+- **Categories reduced 12 → 5**: **Sales · Inventory · Staff · Security ·
+  Operations** (Security → admin by default; the rest → manager).
+- **Lifecycle reduced** to **New → Under Review → Waiting Reply → Resolved**
+  (dropped acknowledged / inProgress / closed / rejected).
+- **Ownership removed** — no `assignedTo` / `resolvedBy` / "Assign to me" /
+  "Owned by". Recipients just move the status.
+- **Detail UI is now a premium conversation** — message-first opening card + a
+  chat **reply thread** (`report_thread.dart`, left/right bubbles + quiet status
+  markers) + a compact recipient status bar + a pinned reply composer. The
+  task-style `report_timeline.dart` was deleted.
+- **Notification types trimmed** to `reportSubmitted` / `reportUpdated` /
+  `reportResolved` / `reportCommented`; `onReportUpdated` maps the new statuses
+  and no longer handles assignment.
+- Rules: dropped `assignedTo`/`resolvedBy` from the reporter-update freeze.
+- `flutter analyze` clean (0 new) · **368 tests pass** · `node --check` OK ·
+  freezed regenerated. Filing rules unchanged (admin can't file; manager →
+  admin-only; employee → manager/admin/both).
+
+### Added (2026-07-03 — Reports Center / Escalation System)
+
+A first-class, branch-scoped internal **Reports Center** (Reports / Escalation
+System) — any employee files a categorized, severity-rated report, routes it to
+their manager and/or admin (optionally **confidential / anonymous**), and the
+recipient acknowledges → works → resolves it, with a full audit **timeline +
+discussion thread** and **attachments**. Replaces WhatsApp/verbal complaints.
+Built as a full Clean-Architecture slice modeled on the Task feature.
+
+- **Enums** (`core/enums/`): `ReportCategory` (12, + `label`/`hint`/smart
+  `defaultRecipient`), `ReportRecipient` (manager/admin/both, `includesManager`
+  → `visibleToManager`), `ReportPrivacy` (normal/confidential/anonymous),
+  `ReportSeverity` (+ SLA window), `ReportStatus` (open→acknowledged→inProgress→
+  resolved→closed, +rejected, `canTransitionTo`).
+- **Domain** (`features/reports/domain/`): `ReportEntity` (freezed; reuses task
+  `ActivityEntry` + `TaskAttachment`; a comment = an activity entry with
+  `status:'comment'`), `ReportIdentity` (private reporter value object),
+  `report_urgency.dart` (pure client-side SLA/urgency + ranking — **no cron**),
+  `ReportRepository` + `CreateReport`/`UpdateReport`/`UploadReportAttachment`.
+- **Data**: `ReportModel` (+ reporter-subdoc (de)serialization),
+  `ReportRemoteDataSource` (batched report+identity create, collectionGroup
+  `reporter` "My Reports", Storage `reports/{id}/attachments/`),
+  `ReportRepositoryImpl`.
+- **Presentation**: app-wide `ReportCubit`/`ReportState`; `ReportsCenterScreen`
+  (role-scoped list + filters + search), `CreateReportScreen` (≤30s flow),
+  `ReportDetailsScreen` (record + action panel + reveal + discussion + timeline);
+  `report_card`/`report_timeline`/`report_format` widgets. Strictly monochrome.
+- **Privacy split (rule-enforced):** the report doc carries **no creator uid**;
+  the reporter identity lives in the private subdoc
+  `reports/{id}/reporter/identity` (owner + admin only) — mirrors the
+  compensation subdoc. `reporterDisplayName` rides the doc only when privacy is
+  `normal`; managers see "Confidential Sender" / "Anonymous". Reporter-authored
+  timeline entries are de-identified on confidential/anonymous reports.
+- **Notifications (server-side):** 6 `report*` `NotificationType`s + a Reports
+  inbox category; **`onReportCreated` / `onReportUpdated`** Cloud Functions fan
+  out per-recipient notification docs via the Admin SDK (a manager can't read a
+  confidential reporter to notify them client-side); `onNotificationCreated`
+  now carries `reportId` in the push data; tap → `/report/:id`.
+- **Rules / storage / indexes:** `reports/{id}` + `reporter/{docId}` Firestore
+  rules (`isReportReporter` get-helper; `visibleToManager` manager gate);
+  `reports/**` create-only Storage; collection-group `reporter` field index.
+- **Wiring / nav:** DI + provider; routes `/reports`, `/reports/create`,
+  `/report/:reportId`; Reports destination in the desktop sidebar (all roles) +
+  a mobile app-bar action.
+- **Role-based filing (2026-07-04 owner feedback):** admins **can't file**
+  (receive/manage only — FAB hidden + create screen bounces them); a **manager
+  files → routed to admin only** (escalation up; recipient locked with an
+  "Escalated to the Admin" note); an **employee files → manager / admin / both**.
+- **Tests:** `report_urgency_test`, `report_routing_test`, `report_model_test`
+  (+23). `flutter analyze` clean (7 pre-existing infos, 0 new); **366 tests
+  pass**; `node --check` OK; freezed regenerated.
+- ⚠️ **Deploy:** `firebase deploy --only firestore:rules`, `--only storage`,
+  `--only firestore:indexes`, and
+  `--only functions:onReportCreated,functions:onReportUpdated,functions:onNotificationCreated`.
+- **Deferred** (owner-selected out; model leaves room): manager→admin
+  re-escalation action, admin/manager dashboard count widgets, SLA push
+  reminders.
+
 ### Added (2026-07-03 — note categories + feed telemetry; Smart Queue opt-in)
 
 - **Smart Queue is opt-in again** — default sort reverted to **Due date

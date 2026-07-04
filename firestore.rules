@@ -28,6 +28,20 @@ service cloud.firestore {
       return isAdmin() || (isManager() && branch == selfBranch());
     }
 
+    // Reports Center: the reporter's uid is NOT on the report doc (privacy
+    // split — it lives in the private `reports/{id}/reporter/identity` subdoc,
+    // readable only by the reporter + an admin). This resolves whether the
+    // caller is the reporter of [reportId], for the owner's own-report reads +
+    // comment writes. Two reads (exists + get); Firestore caches per request.
+    // Only used on SINGLE-doc gets — the manager/admin list queries are proven
+    // safe by the pure `visibleToManager` field check, never this get().
+    function isReportReporter(reportId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/reports/$(reportId)/reporter/identity)
+        && get(/databases/$(database)/documents/reports/$(reportId)/reporter/identity)
+             .data.get('createdByUserId', '') == request.auth.uid;
+    }
+
     // ── Users ──────────────────────────────────────────────────────
     // DROP is ADMIN-PROVISIONED — there is no public registration. Accounts are
     // created server-side by the `createUserAccount` Cloud Function (Admin SDK,
@@ -431,6 +445,71 @@ service cloud.firestore {
       allow create: if false;
       allow update: if isOwner(resource.data.get('recipientUid', ''));
       allow delete: if isOwner(resource.data.get('recipientUid', '')) || isAdmin();
+    }
+
+    // ── Reports Center (Reports / Escalation System) ───────────────
+    // A branch-scoped internal report / escalation. The report doc is readable
+    // by the branch manager (only when routed to them — `visibleToManager`),
+    // any admin, and the reporter — and it deliberately carries NO creator uid.
+    // The reporter's identity is isolated in the private `reporter/identity`
+    // subdoc below (owner + admin only), so a same-branch manager can never
+    // resolve a confidential/anonymous sender from the report itself.
+    //   read   — admin (all) · own-branch manager (visibleToManager only) ·
+    //            the reporter (via the identity subdoc).
+    //   create — any branch member, for a report in their OWN branch (admin: any).
+    //   update — admin / own-branch manager drive the workflow (status, assign,
+    //            resolve); the reporter may append comments/attachments but the
+    //            privileged fields (status, recipient, privacy, visibleToManager,
+    //            branchId, assignedTo, resolvedBy) stay frozen for them.
+    //   delete — admin only (reports are records).
+    match /reports/{reportId} {
+      allow read: if isAdmin()
+        || (isManager()
+            && resource.data.get('branchId', '') == selfBranch()
+            && resource.data.get('visibleToManager', true) == true)
+        || isReportReporter(reportId);
+
+      allow create: if isAdmin()
+        || (isSignedIn()
+            && request.resource.data.get('branchId', '') == selfBranch());
+
+      allow update: if isAdmin()
+        || (isManager()
+            && resource.data.get('branchId', '') == selfBranch()
+            && resource.data.get('visibleToManager', true) == true)
+        || (isReportReporter(reportId)
+            && request.resource.data.get('status', 'newReport')
+                 == resource.data.get('status', 'newReport')
+            && request.resource.data.get('recipient', '')
+                 == resource.data.get('recipient', '')
+            && request.resource.data.get('privacy', '')
+                 == resource.data.get('privacy', '')
+            && request.resource.data.get('visibleToManager', true)
+                 == resource.data.get('visibleToManager', true)
+            && request.resource.data.get('branchId', '')
+                 == resource.data.get('branchId', ''));
+
+      allow delete: if isAdmin();
+    }
+
+    // ── Private reporter identity (COLLECTION-GROUP rule) ─────────────
+    // `reports/{id}/reporter/identity` holds the creator uid/name. This MUST be a
+    // collection-group rule (the recursive `{path=**}` wildcard): a nested
+    // `match /reports/{id}/reporter/{doc}` rule secures direct-path reads but does
+    // NOT authorize the owner's `collectionGroup('reporter')` "My Reports" query —
+    // documented Firestore behavior, so that query returns permission-denied even
+    // with the index present. Read: the reporter (own list + admin reveal) + an
+    // admin ONLY — never a manager (keeps confidential senders hidden); the query
+    // is proven safe by the createdByUserId equality. Created once with the report
+    // (self-claim); immutable thereafter. `reporter` exists only under `reports/`,
+    // so the wildcard can't leak to another collection.
+    match /{path=**}/reporter/{docId} {
+      allow read: if isAdmin()
+        || resource.data.get('createdByUserId', '') == request.auth.uid;
+      allow create: if isSignedIn()
+        && docId == 'identity'
+        && request.resource.data.get('createdByUserId', '') == request.auth.uid;
+      allow update, delete: if false;
     }
 
     // ── Feed usage telemetry (Home Dashboard redesign) ──

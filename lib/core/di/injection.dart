@@ -71,6 +71,13 @@ import 'package:drop/features/notifications/domain/usecases/mark_notification_re
 import 'package:drop/features/notifications/domain/usecases/notify_swap_event.dart';
 import 'package:drop/features/notifications/domain/usecases/notify_task_event.dart';
 import 'package:drop/features/notifications/presentation/cubit/notification_cubit.dart';
+import 'package:drop/features/reports/data/datasources/report_remote_datasource.dart';
+import 'package:drop/features/reports/data/repositories/report_repository_impl.dart';
+import 'package:drop/features/reports/domain/repositories/report_repository.dart';
+import 'package:drop/features/reports/domain/usecases/create_report.dart';
+import 'package:drop/features/reports/domain/usecases/update_report.dart';
+import 'package:drop/features/reports/domain/usecases/upload_report_attachment.dart';
+import 'package:drop/features/reports/presentation/cubit/report_cubit.dart';
 
 class AppDependencies {
   AppDependencies._();
@@ -107,6 +114,9 @@ class AppDependencies {
 
   /// FCM foundation (Phase 6) — token registration + foreground handling.
   static late final NotificationService notificationService;
+
+  /// Reports Center (Reports / Escalation System).
+  static late final ReportCubit reportCubit;
 
   /// Phase 3 task foundation, activated by the Phase 4 [taskCubit] + use cases.
   static late final TaskRepository taskRepository;
@@ -190,6 +200,26 @@ class AppDependencies {
       uploadTaskAttachment: UploadTaskAttachment(taskRepository),
       getUsersByBranch: GetUsersByBranch(authRepository),
       notifyTaskEvent: NotifyTaskEvent(notificationRepository),
+    );
+
+    // ─── Reports Center (Reports / Escalation System) ─────────
+    // Hybrid cubit (like TaskCubit): use cases for writes, repository directly
+    // for the role-scoped realtime/one-shot report lists. Reuses branchRepository
+    // (branch names) + GetUsersByBranch (assignee directory). Report
+    // notifications are produced server-side, so no notification use case here.
+    final ReportRepository reportRepository = ReportRepositoryImpl(
+      ReportRemoteDataSourceImpl(
+        FirebaseFirestore.instance,
+        FirebaseStorage.instance,
+      ),
+    );
+    reportCubit = ReportCubit(
+      repository: reportRepository,
+      branchRepository: branchRepository,
+      createReport: CreateReport(reportRepository),
+      updateReport: UpdateReport(reportRepository),
+      uploadReportAttachment: UploadReportAttachment(reportRepository),
+      getUsersByBranch: GetUsersByBranch(authRepository),
     );
 
     // ─── Admin module (Phase 5) ───────────────────────────────

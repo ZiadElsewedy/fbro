@@ -40,14 +40,20 @@ NotificationPriority notificationPriority(NotificationType type) =>
       NotificationType.taskRejected ||
       NotificationType.taskRework ||
       NotificationType.taskSubmitted ||
-      NotificationType.swapRequested =>
+      NotificationType.swapRequested ||
+      // A new report needs a recipient to act; a new reply is the other party's
+      // move.
+      NotificationType.reportSubmitted ||
+      NotificationType.reportCommented =>
         NotificationPriority.high,
       NotificationType.taskApproved ||
       NotificationType.taskReminder ||
       NotificationType.broadcastReminder ||
       NotificationType.broadcastAnnouncement ||
       NotificationType.swapApproved ||
-      NotificationType.swapRejected =>
+      NotificationType.swapRejected ||
+      NotificationType.reportUpdated ||
+      NotificationType.reportResolved =>
         NotificationPriority.normal,
     };
 
@@ -59,6 +65,7 @@ enum NotificationCategory {
   all,
   tasks,
   reviews,
+  reports,
   schedule,
   broadcast;
 
@@ -66,6 +73,7 @@ enum NotificationCategory {
         NotificationCategory.all => 'All',
         NotificationCategory.tasks => 'Tasks',
         NotificationCategory.reviews => 'Reviews',
+        NotificationCategory.reports => 'Reports',
         NotificationCategory.schedule => 'Schedule',
         NotificationCategory.broadcast => 'Broadcast',
       };
@@ -95,6 +103,11 @@ NotificationCategory categoryOf(NotificationType type) => switch (type) {
       NotificationType.swapApproved ||
       NotificationType.swapRejected =>
         NotificationCategory.schedule,
+      NotificationType.reportSubmitted ||
+      NotificationType.reportUpdated ||
+      NotificationType.reportResolved ||
+      NotificationType.reportCommented =>
+        NotificationCategory.reports,
     };
 
 // ─── Time grouping ──────────────────────────────────────────────────

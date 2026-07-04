@@ -11,8 +11,93 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-03 (note categories + feed telemetry — Home Dashboard redesign)
-**Version:** 1.0.0+1 · **Branch:** `feature/macos-desktop` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-04 (Reports simplified — escalation messages, not tasks)
+**Version:** 1.0.0+1 · **Branch:** `feature/report-issue` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Reports simplified — escalation messages, not tasks (2026-07-04)
+
+Owner feedback: Reports felt too task-like. Trimmed to a lightweight escalation
+system with a **chat/support** feel (see the Reports Center section below for the
+architecture, which still applies):
+
+- **Anonymous removed** — privacy is **normal / confidential** only.
+- **Categories 12 → 5:** Sales · Inventory · Staff · Security · Operations
+  (Security → admin default; rest → manager).
+- **Lifecycle:** **New → Under Review → Waiting Reply → Resolved** (no
+  acknowledged / inProgress / closed / rejected).
+- **Ownership removed** — no `assignedTo` / `resolvedBy` / assign-to-me.
+- **Detail = premium conversation:** message-first opening card + chat reply
+  thread (`report_thread.dart` bubbles + status markers) + compact recipient
+  status bar + pinned composer; task-style `report_timeline.dart` deleted.
+- **Notification types trimmed** to `reportSubmitted` / `reportUpdated` /
+  `reportResolved` / `reportCommented`.
+- `flutter analyze` clean (0 new) · **368 tests pass** · `node --check` OK.
+  Filing rules unchanged (admin can't file; manager → admin-only; employee →
+  manager/admin/both). Same deploy set as below.
+
+---
+
+## ✅ Reports Center — Reports / Escalation System (2026-07-03)
+
+A first-class, branch-scoped internal **Reports Center**: any employee files a
+categorized, severity-rated report, routes it to their manager and/or admin
+(optionally confidential / anonymous), and the recipient acknowledges → works →
+resolves it — with a full audit **timeline + discussion thread** and
+**attachments**. Replaces WhatsApp / verbal complaints. Full Clean-Architecture
+slice (`lib/features/reports/`) modeled on the Task feature; strictly monochrome.
+
+- **Rule-enforced privacy split:** the report doc (`reports/{id}`) carries **no
+  creator uid** — the reporter identity lives in the private subdoc
+  `reports/{id}/reporter/identity` (owner + admin read only), mirroring
+  `users/{uid}/private/compensation`. `reporterDisplayName` is written to the
+  manager-readable doc **only** for a `normal` report; confidential/anonymous
+  render "Confidential Sender" / "Anonymous" and their reporter-authored
+  timeline entries are de-identified. Admin can "Reveal sender".
+- **Routing:** `recipient` (manager / admin / both) + a denormalized
+  `visibleToManager` bool (manager query + rule gate — an admin-routed report is
+  hidden from the manager). Smart default from the category (security /
+  complaint / personal → admin; else → manager), overridable.
+- **Who files (2026-07-04):** **admin does NOT file** (receives/manages only —
+  "New Report" hidden + create screen bounces admins); **a manager files → routed
+  to admin only** (escalation up; recipient locked, "Escalated to the Admin"
+  note); **an employee files → manager / admin / both**.
+- **Lifecycle:** open → acknowledged → inProgress → resolved → closed (+ reject
+  / reopen); each transition is a single write appending an `ActivityEntry`.
+- **Urgency (lean, no cron):** pure `report_urgency.dart` (critical >15m, high
+  >1h, medium >8h) drives SLA badges + list ordering.
+- **Notifications (server-side):** `onReportCreated` / `onReportUpdated` Cloud
+  Functions fan out per-recipient notification docs via the Admin SDK (a manager
+  can't read a confidential reporter to notify them); `onNotificationCreated`
+  now carries `reportId`; tap → `/report/:id`. 6 new `report*` `NotificationType`s
+  + a Reports inbox category.
+
+### Firestore / Storage schema (new)
+- **`reports/{reportId}`** — `branchId`, `title`, `description`, `category`,
+  `recipient`, `privacy`, `severity`, `status`, `visibleToManager` (bool),
+  `reporterDisplayName` (normal only), `attachments[]`, `activityLog[]`
+  (events + comments), `assignedTo?`, `resolvedBy?`, `createdAt`, `updatedAt`,
+  `acknowledgedAt?`, `resolvedAt?`. **No creator uid.**
+- **`reports/{reportId}/reporter/identity`** — `{ reportId, createdByUserId,
+  createdByName, privacy, branchId, createdAt }` (owner + admin read; self-claim
+  create; immutable).
+- **Storage** `reports/{reportId}/attachments/{id}.<ext>` — create-only.
+- **Indexes** — collection-group `reporter (createdByUserId)` field override
+  (My Reports); branch/all report lists use single-field zigzag merge (no
+  composite).
+
+⚠️ **Deploy required:** `firebase deploy --only firestore:rules` · `--only
+storage` · `--only firestore:indexes` · `--only
+functions:onReportCreated,functions:onReportUpdated,functions:onNotificationCreated`.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new) · **366 tests pass** (+23:
+urgency / routing / model) · `node --check` OK · freezed regenerated.
+⚠️ Live QA needs a seeded emulator / device (auth + rules + functions): file a
+confidential report → manager sees "Confidential Sender" + acknowledges →
+reporter is notified (server fan-out) → admin reveals + resolves. **Deferred**
+(owner-selected out; model supports them): manager→admin re-escalation action,
+dashboard count widgets, SLA push reminders.
 
 ---
 

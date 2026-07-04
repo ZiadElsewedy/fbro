@@ -50,6 +50,7 @@ const WEEKLY_SCHEDULES = "weekly_schedules";
 const SHIFT_SWAPS = "shift_swaps";
 const RECURRING_TASK_TEMPLATES = "recurringTaskTemplates";
 const CONFIG = "config";
+const REPORTS = "reports";
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -1101,6 +1102,7 @@ exports.onNotificationCreated = onDocumentCreated(
         // signed-in user (defense-in-depth #3). This path is already per-recipient.
         recipientUid: String(recipientUid),
         taskId: String(payload.taskId || ""),
+        reportId: String(payload.reportId || ""),
         broadcastId: String(payload.broadcastId || ""),
         category: String(payload.category || ""),
         revisionNumber:
@@ -1736,5 +1738,186 @@ exports.taskHousekeeping = onSchedule("every 24 hours", async () => {
   }
 
   logger.info("task housekeeping done", { archived, coldTiered, deleted });
+});
+
+/**
+ * ── Reports Center notification fan-out ──────────────────────────────────────
+ *
+ * Report notifications are produced SERVER-SIDE (not by the client) because a
+ * report's reporter identity lives in the private `reports/{id}/reporter/identity`
+ * subdoc — a manager can't read it, so they can't notify a confidential/anonymous
+ * reporter from their own client. These triggers write per-recipient
+ * `notifications/{id}` docs with the Admin SDK (bypassing the `create: if false`
+ * rule); the existing `onNotificationCreated` trigger then delivers the FCM push
+ * (they intentionally do NOT set `pushedByFunction`). `senderUid` is left empty
+ * (system) so a recipient reading their own notification can never resolve a
+ * confidential reporter from it.
+ */
+
+// Reads the reporter uid from a report's private identity subdoc (best-effort).
+async function reportReporterUid(reportId) {
+  try {
+    const idSnap = await db
+      .collection(REPORTS)
+      .doc(reportId)
+      .collection("reporter")
+      .doc("identity")
+      .get();
+    if (idSnap.exists) return String((idSnap.data() || {}).createdByUserId || "");
+  } catch (e) {
+    logger.warn("report identity read failed", { reportId, error: String(e) });
+  }
+  return "";
+}
+
+// The routed recipients for a report (branch managers and/or admins), minus the
+// reporter. Mirrors the client `ReportRecipient` routing.
+async function resolveReportRecipients(report, excludeUid) {
+  const recipient = String(report.recipient || "manager");
+  const branchId = String(report.branchId || "");
+  const out = new Set();
+  if (recipient === "manager" || recipient === "both") {
+    try {
+      const snap = await db
+        .collection(USERS)
+        .where("branchId", "==", branchId)
+        .where("role", "==", "manager")
+        .get();
+      snap.docs.forEach((d) => {
+        if ((d.data() || {}).isActive !== false) out.add(d.id);
+      });
+    } catch (e) {
+      logger.warn("report manager lookup failed", { error: String(e) });
+    }
+  }
+  if (recipient === "admin" || recipient === "both") {
+    try {
+      const snap = await db.collection(USERS).where("role", "==", "admin").get();
+      snap.docs.forEach((d) => {
+        if ((d.data() || {}).isActive !== false) out.add(d.id);
+      });
+    } catch (e) {
+      logger.warn("report admin lookup failed", { error: String(e) });
+    }
+  }
+  out.delete(excludeUid);
+  out.delete("");
+  return [...out];
+}
+
+// Writes one in-app notification doc per recipient (Admin SDK). onNotificationCreated
+// handles the push. senderUid is intentionally empty (privacy). Best-effort.
+async function writeReportNotifications(recipientUids, { type, title, body, reportId }) {
+  const uids = [...new Set(recipientUids.filter(Boolean))];
+  if (uids.length === 0) return;
+  const payload = { reportId, route: "report_details" };
+  try {
+    for (let i = 0; i < uids.length; i += BATCH_LIMIT) {
+      const slice = uids.slice(i, i + BATCH_LIMIT);
+      const batch = db.batch();
+      for (const uid of slice) {
+        const ref = db.collection(NOTIFICATIONS).doc();
+        batch.set(ref, {
+          id: ref.id,
+          recipientUid: uid,
+          senderUid: "", // system — never leak a confidential reporter
+          type,
+          title: String(title || "").slice(0, 120),
+          body: String(body || "").slice(0, 500),
+          readAt: null,
+          payload,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    logger.warn("failed to persist report notifications", { error: String(err) });
+  }
+}
+
+// A new report → notify the routed recipients (branch managers / admins).
+exports.onReportCreated = onDocumentCreated(`${REPORTS}/{reportId}`, async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const report = snap.data() || {};
+  const reportId = event.params.reportId;
+
+  const reporterUid = await reportReporterUid(reportId);
+  const recipients = await resolveReportRecipients(report, reporterUid);
+  if (recipients.length === 0) return;
+
+  const critical = String(report.severity || "medium") === "critical";
+  await writeReportNotifications(recipients, {
+    type: "reportSubmitted",
+    title: critical ? "New Report • Critical" : "New Report",
+    body: String(report.title || "A new report was filed"),
+    reportId,
+  });
+});
+
+// A report changed → notify the reporter of a status/assignment change, and the
+// other party of a new comment.
+exports.onReportUpdated = onDocumentUpdated(`${REPORTS}/{reportId}`, async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const reportId = event.params.reportId;
+
+  const beforeStatus = String(before.status || "newReport");
+  const afterStatus = String(after.status || "newReport");
+  const beforeLog = Array.isArray(before.activityLog) ? before.activityLog : [];
+  const afterLog = Array.isArray(after.activityLog) ? after.activityLog : [];
+
+  const reporterUid = await reportReporterUid(reportId);
+
+  // 1. Status transition → notify the reporter.
+  if (afterStatus !== beforeStatus && reporterUid) {
+    const typeByStatus = {
+      underReview: "reportUpdated",
+      waitingReply: "reportUpdated",
+      resolved: "reportResolved",
+    };
+    const type = typeByStatus[afterStatus];
+    if (type) {
+      const bodyByStatus = {
+        underReview: "Your report is under review",
+        waitingReply: "A reply is needed on your report",
+        resolved: "Your report was resolved",
+      };
+      await writeReportNotifications([reporterUid], {
+        type,
+        title: type === "reportResolved" ? "Report Resolved" : "Report Update",
+        body: bodyByStatus[afterStatus] || String(after.title || "Report updated"),
+        reportId,
+      });
+    }
+  }
+
+  // 2. New reply → notify the OTHER party (a reporter reply routes to the
+  // recipients; a recipient reply routes to the reporter). A reporter's reply on
+  // a confidential report is de-identified (empty actorId).
+  if (afterLog.length > beforeLog.length) {
+    const last = afterLog[afterLog.length - 1] || {};
+    if (String(last.status || "") === "comment") {
+      const authorId = String(last.actorId || "");
+      const byReporter = authorId === "" || authorId === reporterUid;
+      if (byReporter) {
+        const recips = await resolveReportRecipients(after, reporterUid);
+        await writeReportNotifications(recips, {
+          type: "reportCommented",
+          title: "New Report Reply",
+          body: String(after.title || "New reply on a report"),
+          reportId,
+        });
+      } else if (reporterUid && authorId !== reporterUid) {
+        await writeReportNotifications([reporterUid], {
+          type: "reportCommented",
+          title: "New Report Reply",
+          body: String(after.title || "New reply on your report"),
+          reportId,
+        });
+      }
+    }
+  }
 });
 

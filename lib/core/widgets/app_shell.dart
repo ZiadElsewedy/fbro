@@ -117,6 +117,12 @@ class AppShell extends StatelessWidget {
       label: 'Communications',
       route: RouteNames.communications,
     );
+    const reports = SidebarItem(
+      icon: Icons.flag_outlined,
+      activeIcon: Icons.flag_rounded,
+      label: 'Reports',
+      route: RouteNames.reports,
+    );
 
     switch (role) {
       case UserRole.admin:
@@ -141,6 +147,7 @@ class AppShell extends StatelessWidget {
               route: RouteNames.adminSchedule,
             ),
             communications,
+            reports,
             notifications,
           ]),
           SidebarSection(title: 'Administration', items: [
@@ -192,6 +199,7 @@ class AppShell extends StatelessWidget {
               route: RouteNames.managerSchedule,
             ),
             communications,
+            reports,
             notifications,
           ]),
         ];
@@ -216,6 +224,7 @@ class AppShell extends StatelessWidget {
               label: 'My Schedule',
               route: RouteNames.mySchedule,
             ),
+            reports,
             notifications,
           ]),
         ];

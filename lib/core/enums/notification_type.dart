@@ -30,7 +30,15 @@ enum NotificationType {
   swapRequested, // → the target coworker
   swapAccepted, // → the branch manager/admin (needs review)
   swapApproved, // → both employees (schedule exchanged)
-  swapRejected; // → both employees (declined)
+  swapRejected, // → both employees (declined)
+  // ── Reports Center (server-side `onReportCreated` / `onReportUpdated`) ──
+  // Produced SERVER-SIDE via the Admin SDK (a manager can't read a confidential
+  // reporter's identity to notify them client-side), so these are deliberately
+  // NOT in the client `sendNotification` whitelist.
+  reportSubmitted, // → the routed recipients (branch manager / admin)
+  reportUpdated, // → the reporter (status moved: under review / waiting reply)
+  reportResolved, // → the reporter (resolved)
+  reportCommented; // → the other party (a new reply in the thread)
 
   String get value => name;
 

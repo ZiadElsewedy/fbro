@@ -145,6 +145,12 @@ class NotificationTile extends StatelessWidget {
       case NotificationType.swapApproved:
       case NotificationType.swapRejected:
         return ('Schedule', _accentFor(type));
+      case NotificationType.reportResolved:
+        return ('Report', AppColors.success);
+      case NotificationType.reportSubmitted:
+      case NotificationType.reportUpdated:
+      case NotificationType.reportCommented:
+        return ('Report', AppColors.textSecondary);
     }
   }
 
@@ -177,6 +183,14 @@ class NotificationTile extends StatelessWidget {
         return Icons.check_circle_outline_rounded;
       case NotificationType.swapRejected:
         return Icons.cancel_outlined;
+      case NotificationType.reportSubmitted:
+        return Icons.flag_outlined;
+      case NotificationType.reportUpdated:
+        return Icons.visibility_outlined;
+      case NotificationType.reportResolved:
+        return Icons.check_circle_outline_rounded;
+      case NotificationType.reportCommented:
+        return Icons.chat_bubble_outline_rounded;
     }
   }
 
