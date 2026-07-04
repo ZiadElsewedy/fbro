@@ -50,7 +50,7 @@ const WEEKLY_SCHEDULES = "weekly_schedules";
 const SHIFT_SWAPS = "shift_swaps";
 const RECURRING_TASK_TEMPLATES = "recurringTaskTemplates";
 const CONFIG = "config";
-const REPORTS = "reports";
+const CASES = "cases";
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -1102,7 +1102,7 @@ exports.onNotificationCreated = onDocumentCreated(
         // signed-in user (defense-in-depth #3). This path is already per-recipient.
         recipientUid: String(recipientUid),
         taskId: String(payload.taskId || ""),
-        reportId: String(payload.reportId || ""),
+        caseId: String(payload.caseId || ""),
         broadcastId: String(payload.broadcastId || ""),
         category: String(payload.category || ""),
         revisionNumber:
@@ -1741,40 +1741,41 @@ exports.taskHousekeeping = onSchedule("every 24 hours", async () => {
 });
 
 /**
- * ── Reports Center notification fan-out ──────────────────────────────────────
+ * ── Case Management notification fan-out ─────────────────────────────────────
  *
- * Report notifications are produced SERVER-SIDE (not by the client) because a
- * report's reporter identity lives in the private `reports/{id}/reporter/identity`
- * subdoc — a manager can't read it, so they can't notify a confidential/anonymous
- * reporter from their own client. These triggers write per-recipient
- * `notifications/{id}` docs with the Admin SDK (bypassing the `create: if false`
- * rule); the existing `onNotificationCreated` trigger then delivers the FCM push
- * (they intentionally do NOT set `pushedByFunction`). `senderUid` is left empty
- * (system) so a recipient reading their own notification can never resolve a
- * confidential reporter from it.
+ * Case notifications are produced SERVER-SIDE (not by the client) because a
+ * case's reporter identity lives in the private `cases/{id}/reporter/identity`
+ * subdoc — a manager can't read it, so they can't notify a confidential reporter
+ * from their own client. The Admin SDK also owns the `opening` + `system`
+ * messages (clients can't forge them — see firestore.rules). These triggers
+ * write per-recipient `notifications/{id}` docs with the Admin SDK (bypassing
+ * the `create: if false` rule); `onNotificationCreated` then delivers the FCM
+ * push (they intentionally do NOT set `pushedByFunction`). `senderUid` is left
+ * empty (system) so a recipient reading their own notification can never resolve
+ * a confidential reporter from it.
  */
 
-// Reads the reporter uid from a report's private identity subdoc (best-effort).
-async function reportReporterUid(reportId) {
+// Reads the reporter uid from a case's private identity subdoc (best-effort).
+async function caseReporterUid(caseId) {
   try {
     const idSnap = await db
-      .collection(REPORTS)
-      .doc(reportId)
+      .collection(CASES)
+      .doc(caseId)
       .collection("reporter")
       .doc("identity")
       .get();
     if (idSnap.exists) return String((idSnap.data() || {}).createdByUserId || "");
   } catch (e) {
-    logger.warn("report identity read failed", { reportId, error: String(e) });
+    logger.warn("case identity read failed", { caseId, error: String(e) });
   }
   return "";
 }
 
-// The routed recipients for a report (branch managers and/or admins), minus the
-// reporter. Mirrors the client `ReportRecipient` routing.
-async function resolveReportRecipients(report, excludeUid) {
-  const recipient = String(report.recipient || "manager");
-  const branchId = String(report.branchId || "");
+// The routed recipients for a case (branch managers and/or admins), minus the
+// reporter. Mirrors the client `CaseRecipient` routing.
+async function resolveCaseRecipients(caseData, excludeUid) {
+  const recipient = String(caseData.recipient || "manager");
+  const branchId = String(caseData.branchId || "");
   const out = new Set();
   if (recipient === "manager" || recipient === "both") {
     try {
@@ -1787,7 +1788,7 @@ async function resolveReportRecipients(report, excludeUid) {
         if ((d.data() || {}).isActive !== false) out.add(d.id);
       });
     } catch (e) {
-      logger.warn("report manager lookup failed", { error: String(e) });
+      logger.warn("case manager lookup failed", { error: String(e) });
     }
   }
   if (recipient === "admin" || recipient === "both") {
@@ -1797,7 +1798,7 @@ async function resolveReportRecipients(report, excludeUid) {
         if ((d.data() || {}).isActive !== false) out.add(d.id);
       });
     } catch (e) {
-      logger.warn("report admin lookup failed", { error: String(e) });
+      logger.warn("case admin lookup failed", { error: String(e) });
     }
   }
   out.delete(excludeUid);
@@ -1807,10 +1808,10 @@ async function resolveReportRecipients(report, excludeUid) {
 
 // Writes one in-app notification doc per recipient (Admin SDK). onNotificationCreated
 // handles the push. senderUid is intentionally empty (privacy). Best-effort.
-async function writeReportNotifications(recipientUids, { type, title, body, reportId }) {
+async function writeCaseNotifications(recipientUids, { type, title, body, caseId }) {
   const uids = [...new Set(recipientUids.filter(Boolean))];
   if (uids.length === 0) return;
-  const payload = { reportId, route: "report_details" };
+  const payload = { caseId, route: "case_details" };
   try {
     for (let i = 0; i < uids.length; i += BATCH_LIMIT) {
       const slice = uids.slice(i, i + BATCH_LIMIT);
@@ -1832,92 +1833,189 @@ async function writeReportNotifications(recipientUids, { type, title, body, repo
       await batch.commit();
     }
   } catch (err) {
-    logger.warn("failed to persist report notifications", { error: String(err) });
+    logger.warn("failed to persist case notifications", { error: String(err) });
   }
 }
 
-// A new report → notify the routed recipients (branch managers / admins).
-exports.onReportCreated = onDocumentCreated(`${REPORTS}/{reportId}`, async (event) => {
+// A one-line preview of a message for the inbox row.
+function caseMessagePreview(text, attachments) {
+  const t = String(text || "").trim();
+  if (t) return t.slice(0, 140);
+  if (Array.isArray(attachments) && attachments.length > 0) return "📎 Attachment";
+  return "";
+}
+
+// Human label for a status-change system message.
+function caseStatusSystemLabel(status) {
+  switch (status) {
+    case "inDiscussion": return "Marked In Discussion";
+    case "waitingResponse": return "Waiting for a response";
+    case "closed": return "Case closed";
+    case "open": return "Case reopened";
+    default: return "Status updated";
+  }
+}
+
+// Appends a server-authored message (opening / system) + bumps the parent case.
+// Clients cannot write these kinds (firestore.rules), so they are trusted.
+async function appendServerCaseMessage(caseId, message, preview) {
+  try {
+    const msgRef = db.collection(CASES).doc(caseId).collection("messages").doc();
+    const batch = db.batch();
+    batch.set(msgRef, {
+      ...message,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    batch.update(db.collection(CASES).doc(caseId), {
+      lastMessagePreview: preview,
+      messageCount: admin.firestore.FieldValue.increment(1),
+      lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  } catch (e) {
+    logger.warn("failed to append server case message", { caseId, error: String(e) });
+  }
+}
+
+// A new case → write the opening message (de-identified per privacy) + notify
+// the routed recipients (branch managers / admins).
+exports.onCaseCreated = onDocumentCreated(`${CASES}/{caseId}`, async (event) => {
   const snap = event.data;
   if (!snap) return;
-  const report = snap.data() || {};
-  const reportId = event.params.reportId;
+  const caseData = snap.data() || {};
+  const caseId = event.params.caseId;
 
-  const reporterUid = await reportReporterUid(reportId);
-  const recipients = await resolveReportRecipients(report, reporterUid);
+  const reporterUid = await caseReporterUid(caseId);
+  const confidential = String(caseData.privacy || "normal") !== "normal";
+  const description = String(caseData.description || "");
+  const attachments = Array.isArray(caseData.attachments) ? caseData.attachments : [];
+
+  await appendServerCaseMessage(
+    caseId,
+    {
+      authorId: confidential ? "" : reporterUid,
+      authorName: confidential
+        ? "Confidential Sender"
+        : String(caseData.reporterDisplayName || "Reporter"),
+      authorRole: "reporter",
+      kind: "opening",
+      text: description || null,
+      attachments,
+      systemEvent: null,
+    },
+    caseMessagePreview(description, attachments),
+  );
+
+  const recipients = await resolveCaseRecipients(caseData, reporterUid);
   if (recipients.length === 0) return;
-
-  const critical = String(report.severity || "medium") === "critical";
-  await writeReportNotifications(recipients, {
-    type: "reportSubmitted",
-    title: critical ? "New Report • Critical" : "New Report",
-    body: String(report.title || "A new report was filed"),
-    reportId,
+  const urgent = caseData.urgent === true;
+  await writeCaseNotifications(recipients, {
+    type: "caseOpened",
+    title: urgent ? "New Case • Urgent" : "New Case",
+    body: String(caseData.subject || "A new case was opened"),
+    caseId,
   });
 });
 
-// A report changed → notify the reporter of a status/assignment change, and the
-// other party of a new comment.
-exports.onReportUpdated = onDocumentUpdated(`${REPORTS}/{reportId}`, async (event) => {
+// A case status changed → append a system message + notify the affected party.
+// Only reacts to a real status transition (its own lastMessage* bumps do not
+// change status, so there is no re-fire loop).
+exports.onCaseUpdated = onDocumentUpdated(`${CASES}/{caseId}`, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
-  const reportId = event.params.reportId;
+  const caseId = event.params.caseId;
 
-  const beforeStatus = String(before.status || "newReport");
-  const afterStatus = String(after.status || "newReport");
-  const beforeLog = Array.isArray(before.activityLog) ? before.activityLog : [];
-  const afterLog = Array.isArray(after.activityLog) ? after.activityLog : [];
+  const beforeStatus = String(before.status || "open");
+  const afterStatus = String(after.status || "open");
+  if (beforeStatus === afterStatus) return;
 
-  const reporterUid = await reportReporterUid(reportId);
+  const label = caseStatusSystemLabel(afterStatus);
+  await appendServerCaseMessage(
+    caseId,
+    {
+      authorId: "",
+      authorName: "System",
+      authorRole: "system",
+      kind: "system",
+      text: label,
+      attachments: [],
+      systemEvent: afterStatus,
+    },
+    label,
+  );
 
-  // 1. Status transition → notify the reporter.
-  if (afterStatus !== beforeStatus && reporterUid) {
-    const typeByStatus = {
-      underReview: "reportUpdated",
-      waitingReply: "reportUpdated",
-      resolved: "reportResolved",
+  const reporterUid = await caseReporterUid(caseId);
+  const reopened = beforeStatus === "closed" && afterStatus !== "closed";
+  if (reopened) {
+    const recipients = await resolveCaseRecipients(after, reporterUid);
+    await writeCaseNotifications(recipients, {
+      type: "caseUpdated",
+      title: "Case Reopened",
+      body: String(after.subject || "A case was reopened"),
+      caseId,
+    });
+  } else if (reporterUid) {
+    const closed = afterStatus === "closed";
+    const bodyByStatus = {
+      inDiscussion: "Your case is now in discussion",
+      waitingResponse: "A response is needed on your case",
+      closed: "Your case was closed",
     };
-    const type = typeByStatus[afterStatus];
-    if (type) {
-      const bodyByStatus = {
-        underReview: "Your report is under review",
-        waitingReply: "A reply is needed on your report",
-        resolved: "Your report was resolved",
-      };
-      await writeReportNotifications([reporterUid], {
-        type,
-        title: type === "reportResolved" ? "Report Resolved" : "Report Update",
-        body: bodyByStatus[afterStatus] || String(after.title || "Report updated"),
-        reportId,
-      });
-    }
-  }
-
-  // 2. New reply → notify the OTHER party (a reporter reply routes to the
-  // recipients; a recipient reply routes to the reporter). A reporter's reply on
-  // a confidential report is de-identified (empty actorId).
-  if (afterLog.length > beforeLog.length) {
-    const last = afterLog[afterLog.length - 1] || {};
-    if (String(last.status || "") === "comment") {
-      const authorId = String(last.actorId || "");
-      const byReporter = authorId === "" || authorId === reporterUid;
-      if (byReporter) {
-        const recips = await resolveReportRecipients(after, reporterUid);
-        await writeReportNotifications(recips, {
-          type: "reportCommented",
-          title: "New Report Reply",
-          body: String(after.title || "New reply on a report"),
-          reportId,
-        });
-      } else if (reporterUid && authorId !== reporterUid) {
-        await writeReportNotifications([reporterUid], {
-          type: "reportCommented",
-          title: "New Report Reply",
-          body: String(after.title || "New reply on your report"),
-          reportId,
-        });
-      }
-    }
+    await writeCaseNotifications([reporterUid], {
+      type: closed ? "caseClosed" : "caseUpdated",
+      title: closed ? "Case Closed" : "Case Update",
+      body: bodyByStatus[afterStatus] || String(after.subject || "Case updated"),
+      caseId,
+    });
   }
 });
+
+// A new conversation message → bump the parent case + notify the OTHER party.
+// opening/system messages are handled by their own creators (skipped here).
+exports.onCaseMessageCreated = onDocumentCreated(
+  `${CASES}/{caseId}/messages/{messageId}`,
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const message = snap.data() || {};
+    const caseId = event.params.caseId;
+    if (String(message.kind || "message") !== "message") return;
+
+    const preview = caseMessagePreview(
+      message.text,
+      Array.isArray(message.attachments) ? message.attachments : [],
+    );
+    try {
+      await db.collection(CASES).doc(caseId).update({
+        lastMessagePreview: preview,
+        messageCount: admin.firestore.FieldValue.increment(1),
+        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      logger.warn("failed to bump case on message", { caseId, error: String(e) });
+    }
+
+    const caseSnap = await db.collection(CASES).doc(caseId).get();
+    const caseData = caseSnap.exists ? (caseSnap.data() || {}) : {};
+    const reporterUid = await caseReporterUid(caseId);
+    const authorId = String(message.authorId || "");
+    const byReporter = authorId === "" || authorId === reporterUid;
+    if (byReporter) {
+      const recipients = await resolveCaseRecipients(caseData, reporterUid);
+      await writeCaseNotifications(recipients, {
+        type: "caseReplied",
+        title: "New Case Reply",
+        body: String(caseData.subject || "New reply on a case"),
+        caseId,
+      });
+    } else if (reporterUid && authorId !== reporterUid) {
+      await writeCaseNotifications([reporterUid], {
+        type: "caseReplied",
+        title: "New Case Reply",
+        body: String(caseData.subject || "New reply on your case"),
+        caseId,
+      });
+    }
+  },
+);
 

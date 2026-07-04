@@ -12,6 +12,44 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-07-04 — Case Management System: Reports reframed as private conversations)
+
+Rebuilt the Reports feature from scratch as a **Case Management System** — a
+**Case** is a temporary, private conversation between an employee and a
+manager/admin about a specific issue, kept open until resolution.
+
+- **Renamed** `lib/features/reports/` → `lib/features/cases/`, collection
+  `reports` → `cases`, and all `report*` enums/entities/cubits/routes/functions/
+  rules → `case*`. Routes `/cases`, `/cases/create`, `/case/:caseId`.
+- **Added** a **real chat conversation** on a `cases/{id}/messages` subcollection
+  (streamed in realtime for every role) — `CaseMessage` (opening | message |
+  system) rendered as bubbles + centered system chips + date separators. A reply
+  is a single message `add`.
+- **Fixed** the reply-sending bug **structurally**: the old design rewrote the
+  whole `activityLog` array from a stale client snapshot (lost updates) and gave
+  employees no realtime stream. The subcollection + single-`add` model removes
+  the class of bug; employees now see replies live.
+- **Added** a **desktop split-pane** workspace (inbox pane │ conversation) and
+  removed the old centered-720 detail layout. Mobile keeps list → push.
+- **Moved** the status control into the **top header**; new lifecycle
+  **Open → In Discussion → Waiting Response → Closed**; **closed cases are
+  read-only** (composer disabled + Firestore rule denies message-create on a
+  closed case). Recipients can Reopen.
+- **Replaced** the 4-level severity with a single **`urgent`** flag; **added** a
+  **Personal** category (defaults to Admin · Confidential). Inbox orders active
+  cases first (urgent-first, latest activity) with **Closed** in a collapsed
+  archive.
+- **Rewrote** the Cloud Functions as three single-responsibility triggers —
+  `onCaseCreated` (opening message + notify), `onCaseUpdated` (status system
+  message + notify), `onCaseMessageCreated` (bump `lastMessage*` + notify the
+  other party). Notification types → `caseOpened`/`caseUpdated`/`caseClosed`/
+  `caseReplied`; route `case_details`; inbox category **Cases**.
+- **Migration:** none — Reports was never deployed (rules/functions/indexes deploy
+  was still pending), so this is a clean rename/restructure. `flutter analyze`
+  clean (0 new) · **377 tests pass** (5 new case suites; report suites removed) ·
+  `node --check` OK. Deploy: `firestore:rules` · `storage` · `firestore:indexes` ·
+  `functions:onCaseCreated,onCaseUpdated,onCaseMessageCreated,onNotificationCreated`.
+
 ### Fixed (2026-07-04 — employee Reports "Failed to load your reports")
 
 Root-caused the employee mobile Reports failure (admin desktop worked). The

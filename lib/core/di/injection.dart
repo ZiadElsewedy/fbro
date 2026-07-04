@@ -71,13 +71,16 @@ import 'package:drop/features/notifications/domain/usecases/mark_notification_re
 import 'package:drop/features/notifications/domain/usecases/notify_swap_event.dart';
 import 'package:drop/features/notifications/domain/usecases/notify_task_event.dart';
 import 'package:drop/features/notifications/presentation/cubit/notification_cubit.dart';
-import 'package:drop/features/reports/data/datasources/report_remote_datasource.dart';
-import 'package:drop/features/reports/data/repositories/report_repository_impl.dart';
-import 'package:drop/features/reports/domain/repositories/report_repository.dart';
-import 'package:drop/features/reports/domain/usecases/create_report.dart';
-import 'package:drop/features/reports/domain/usecases/update_report.dart';
-import 'package:drop/features/reports/domain/usecases/upload_report_attachment.dart';
-import 'package:drop/features/reports/presentation/cubit/report_cubit.dart';
+import 'package:drop/features/cases/data/datasources/case_remote_datasource.dart';
+import 'package:drop/features/cases/data/repositories/case_repository_impl.dart';
+import 'package:drop/features/cases/domain/repositories/case_repository.dart';
+import 'package:drop/features/cases/domain/usecases/change_case_status.dart';
+import 'package:drop/features/cases/domain/usecases/create_case.dart';
+import 'package:drop/features/cases/domain/usecases/send_case_message.dart';
+import 'package:drop/features/cases/domain/usecases/upload_case_attachment.dart';
+import 'package:drop/features/cases/presentation/cubit/case_conversation_cubit.dart';
+import 'package:drop/features/cases/presentation/cubit/case_list_cubit.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart' show UserEntity;
 
 class AppDependencies {
   AppDependencies._();
@@ -115,8 +118,30 @@ class AppDependencies {
   /// FCM foundation (Phase 6) — token registration + foreground handling.
   static late final NotificationService notificationService;
 
-  /// Reports Center (Reports / Escalation System).
-  static late final ReportCubit reportCubit;
+  /// Case Management — the inbox list cubit (singleton, app-wide).
+  static late final CaseListCubit caseListCubit;
+
+  // Case Management — repository + write use cases, kept so a fresh per-case
+  // [CaseConversationCubit] can be built on demand (one per opened case).
+  static late final CaseRepository _caseRepository;
+  static late final SendCaseMessage _sendCaseMessage;
+  static late final ChangeCaseStatus _changeCaseStatus;
+  static late final UploadCaseAttachment _uploadCaseAttachment;
+
+  /// Builds a fresh conversation cubit for [caseId] (owned + disposed by its
+  /// `BlocProvider`; re-created when the selected case changes).
+  static CaseConversationCubit createCaseConversationCubit(
+    String caseId,
+    UserEntity? user,
+  ) =>
+      CaseConversationCubit(
+        repository: _caseRepository,
+        sendMessage: _sendCaseMessage,
+        changeStatus: _changeCaseStatus,
+        uploadCaseAttachment: _uploadCaseAttachment,
+        user: user,
+        caseId: caseId,
+      );
 
   /// Phase 3 task foundation, activated by the Phase 4 [taskCubit] + use cases.
   static late final TaskRepository taskRepository;
@@ -202,23 +227,28 @@ class AppDependencies {
       notifyTaskEvent: NotifyTaskEvent(notificationRepository),
     );
 
-    // ─── Reports Center (Reports / Escalation System) ─────────
-    // Hybrid cubit (like TaskCubit): use cases for writes, repository directly
-    // for the role-scoped realtime/one-shot report lists. Reuses branchRepository
-    // (branch names) + GetUsersByBranch (assignee directory). Report
-    // notifications are produced server-side, so no notification use case here.
-    final ReportRepository reportRepository = ReportRepositoryImpl(
-      ReportRemoteDataSourceImpl(
+    // ─── Case Management (private conversation until resolution) ─────────
+    // The list cubit (like TaskCubit): use cases for writes, repository directly
+    // for the role-scoped realtime/one-shot case lists. Reuses branchRepository
+    // (branch names) + GetUsersByBranch (member directory). The per-case
+    // conversation cubit is built on demand via [createCaseConversationCubit].
+    // Case notifications are produced server-side.
+    final CaseRepository caseRepository = CaseRepositoryImpl(
+      CaseRemoteDataSourceImpl(
         FirebaseFirestore.instance,
         FirebaseStorage.instance,
       ),
     );
-    reportCubit = ReportCubit(
-      repository: reportRepository,
+    _caseRepository = caseRepository;
+    final uploadCaseAttachment = UploadCaseAttachment(caseRepository);
+    _uploadCaseAttachment = uploadCaseAttachment;
+    _sendCaseMessage = SendCaseMessage(caseRepository);
+    _changeCaseStatus = ChangeCaseStatus(caseRepository);
+    caseListCubit = CaseListCubit(
+      repository: caseRepository,
       branchRepository: branchRepository,
-      createReport: CreateReport(reportRepository),
-      updateReport: UpdateReport(reportRepository),
-      uploadReportAttachment: UploadReportAttachment(reportRepository),
+      createCase: CreateCase(caseRepository),
+      uploadCaseAttachment: uploadCaseAttachment,
       getUsersByBranch: GetUsersByBranch(authRepository),
     );
 

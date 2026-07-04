@@ -41,10 +41,10 @@ NotificationPriority notificationPriority(NotificationType type) =>
       NotificationType.taskRework ||
       NotificationType.taskSubmitted ||
       NotificationType.swapRequested ||
-      // A new report needs a recipient to act; a new reply is the other party's
+      // A new case needs a recipient to act; a new reply is the other party's
       // move.
-      NotificationType.reportSubmitted ||
-      NotificationType.reportCommented =>
+      NotificationType.caseOpened ||
+      NotificationType.caseReplied =>
         NotificationPriority.high,
       NotificationType.taskApproved ||
       NotificationType.taskReminder ||
@@ -52,8 +52,8 @@ NotificationPriority notificationPriority(NotificationType type) =>
       NotificationType.broadcastAnnouncement ||
       NotificationType.swapApproved ||
       NotificationType.swapRejected ||
-      NotificationType.reportUpdated ||
-      NotificationType.reportResolved =>
+      NotificationType.caseUpdated ||
+      NotificationType.caseClosed =>
         NotificationPriority.normal,
     };
 
@@ -65,7 +65,7 @@ enum NotificationCategory {
   all,
   tasks,
   reviews,
-  reports,
+  cases,
   schedule,
   broadcast;
 
@@ -73,7 +73,7 @@ enum NotificationCategory {
         NotificationCategory.all => 'All',
         NotificationCategory.tasks => 'Tasks',
         NotificationCategory.reviews => 'Reviews',
-        NotificationCategory.reports => 'Reports',
+        NotificationCategory.cases => 'Cases',
         NotificationCategory.schedule => 'Schedule',
         NotificationCategory.broadcast => 'Broadcast',
       };
@@ -103,11 +103,11 @@ NotificationCategory categoryOf(NotificationType type) => switch (type) {
       NotificationType.swapApproved ||
       NotificationType.swapRejected =>
         NotificationCategory.schedule,
-      NotificationType.reportSubmitted ||
-      NotificationType.reportUpdated ||
-      NotificationType.reportResolved ||
-      NotificationType.reportCommented =>
-        NotificationCategory.reports,
+      NotificationType.caseOpened ||
+      NotificationType.caseUpdated ||
+      NotificationType.caseClosed ||
+      NotificationType.caseReplied =>
+        NotificationCategory.cases,
     };
 
 // ─── Time grouping ──────────────────────────────────────────────────

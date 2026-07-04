@@ -25,19 +25,19 @@ class RouteNames {
   /// role.
   static const String notifications = '/notifications';
 
-  // ─── Reports Center (Reports / Escalation System) ───────────────
+  // ─── Case Management (private conversation until resolution) ────
   // Shared by every role (like notifications) — the list self-scopes by role
   // (admin: all · manager: branch · employee: own) and Firestore rules enforce
   // access, so these sit outside the role-area guards.
-  static const String reports = '/reports';
-  static const String reportsCreate = '/reports/create';
+  static const String cases = '/cases';
+  static const String casesCreate = '/cases/create';
 
-  /// The single-report deep-link pattern (`/report/:reportId`) — a report
-  /// notification opens the exact report here, for every role.
-  static const String reportDetailPattern = '/report/:reportId';
+  /// The single-case deep-link pattern (`/case/:caseId`) — a case notification
+  /// opens the exact case here, for every role.
+  static const String caseDetailPattern = '/case/:caseId';
 
-  /// The concrete report-detail path for [reportId].
-  static String reportDetail(String reportId) => '/report/$reportId';
+  /// The concrete case-detail path for [caseId].
+  static String caseDetail(String caseId) => '/case/$caseId';
 
   // ─── Role shells (Phase 1) ──────────────────────────────────
   // The employee role uses [home] ('/') as its landing.

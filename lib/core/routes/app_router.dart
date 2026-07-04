@@ -35,9 +35,9 @@ import 'package:drop/features/communications/presentation/pages/broadcast_detail
 import 'package:drop/features/communications/presentation/pages/broadcast_templates_screen.dart';
 import 'package:drop/features/communications/presentation/pages/broadcast_schedules_screen.dart';
 import 'package:drop/features/notifications/presentation/pages/notifications_screen.dart';
-import 'package:drop/features/reports/presentation/pages/reports_center_screen.dart';
-import 'package:drop/features/reports/presentation/pages/create_report_screen.dart';
-import 'package:drop/features/reports/presentation/pages/report_details_screen.dart';
+import 'package:drop/features/cases/presentation/pages/cases_screen.dart';
+import 'package:drop/features/cases/presentation/pages/create_case_screen.dart';
+import 'package:drop/features/cases/presentation/pages/case_conversation_screen.dart';
 import 'route_names.dart';
 
 GoRouter createRouter(AuthCubit authCubit) {
@@ -276,30 +276,30 @@ GoRouter createRouter(AuthCubit authCubit) {
           const NotificationsScreen(),
         ),
       ),
-      // ─── Reports Center (Reports / Escalation System) ──────────
+      // ─── Case Management (private conversation until resolution) ──────────
       // Shared by every role (like notifications); the list self-scopes by role
-      // and Firestore rules enforce access. The static `/reports/create` route
-      // is declared here; the singular `/report/:reportId` deep-link is a
-      // distinct path, so it never captures `create`.
+      // and Firestore rules enforce access. The static `/cases/create` route is
+      // declared here; the singular `/case/:caseId` deep-link is a distinct path,
+      // so it never captures `create`.
       GoRoute(
-        path: RouteNames.reports,
+        path: RouteNames.cases,
         pageBuilder: (context, state) => _slideTransition(
           state,
-          const ReportsCenterScreen(),
+          const CasesScreen(),
         ),
       ),
       GoRoute(
-        path: RouteNames.reportsCreate,
+        path: RouteNames.casesCreate,
         pageBuilder: (context, state) => _slideTransition(
           state,
-          const CreateReportScreen(),
+          const CreateCaseScreen(),
         ),
       ),
       GoRoute(
-        path: RouteNames.reportDetailPattern,
+        path: RouteNames.caseDetailPattern,
         pageBuilder: (context, state) => _slideTransition(
           state,
-          ReportDetailsScreen(reportId: state.pathParameters['reportId'] ?? ''),
+          CaseConversationScreen(caseId: state.pathParameters['caseId'] ?? ''),
         ),
       ),
       GoRoute(

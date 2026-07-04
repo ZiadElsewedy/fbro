@@ -98,12 +98,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'schedule':
         // Shift-swap notification → the role's schedule (where the swap queue is).
         if (role != null) context.push(RouteNames.scheduleForRole(role));
-      case 'report_details':
-        final id = n.reportId;
+      case 'case_details':
+        final id = n.caseId;
         if (id != null && id.isNotEmpty) {
-          context.push(RouteNames.reportDetail(id));
+          context.push(RouteNames.caseDetail(id));
         } else {
-          context.push(RouteNames.reports);
+          context.push(RouteNames.cases);
         }
     }
   }

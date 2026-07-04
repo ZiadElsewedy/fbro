@@ -11,35 +11,74 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-04 (Reports simplified — escalation messages, not tasks)
+**Last updated:** 2026-07-04 (Case Management System — Reports reframed as private conversations)
 **Version:** 1.0.0+1 · **Branch:** `feature/report-issue` (DROP — monochrome premium desktop UX)
 
 ---
 
-## ✅ Reports simplified — escalation messages, not tasks (2026-07-04)
+## ✅ Case Management System — Reports reframed as private conversations (2026-07-04)
 
-Owner feedback: Reports felt too task-like. Trimmed to a lightweight escalation
-system with a **chat/support** feel (see the Reports Center section below for the
-architecture, which still applies):
+Owner: the Reports feature had grown into an awkward task/chat hybrid and wasn't
+premium on macOS desktop. Rebuilt **from scratch** as a **Case Management
+System** — a **Case** is a temporary, private conversation between an employee
+and a manager/admin about a specific issue, kept open until resolution. The two
+Reports sections below are **superseded** (kept as design history).
 
-- **Anonymous removed** — privacy is **normal / confidential** only.
-- **Categories 12 → 5:** Sales · Inventory · Staff · Security · Operations
-  (Security → admin default; rest → manager).
-- **Lifecycle:** **New → Under Review → Waiting Reply → Resolved** (no
-  acknowledged / inProgress / closed / rejected).
-- **Ownership removed** — no `assignedTo` / `resolvedBy` / assign-to-me.
-- **Detail = premium conversation:** message-first opening card + chat reply
-  thread (`report_thread.dart` bubbles + status markers) + compact recipient
-  status bar + pinned composer; task-style `report_timeline.dart` deleted.
-- **Notification types trimmed** to `reportSubmitted` / `reportUpdated` /
-  `reportResolved` / `reportCommented`.
-- `flutter analyze` clean (0 new) · **368 tests pass** · `node --check` OK.
-  Filing rules unchanged (admin can't file; manager → admin-only; employee →
-  manager/admin/both). Same deploy set as below.
+- **Rename + reframe.** `lib/features/reports/` → `lib/features/cases/`;
+  collection `reports` → `cases`; all `report*` enums/entities/cubits/routes/
+  functions/rules renamed `case*`. Routes `/cases`, `/cases/create`, `/case/:caseId`.
+- **Real chat, not a timeline.** The conversation moved off the `activityLog`
+  array onto a **`cases/{id}/messages` subcollection** streamed in realtime for
+  **every** role (employees included). A reply is a **single message `add`** —
+  no whole-array read-modify-write. This is the **structural fix for the
+  reply-sending bug** (stale-snapshot lost updates + no employee stream).
+  `CaseMessage` (opening | message | system) renders as chat bubbles + centered
+  system chips + date separators (`case_message_list.dart`).
+- **Desktop split-pane** (`cases_screen.dart`): full-bleed inbox pane (~360px) │
+  `CaseConversationView`; the old centered-720 detail layout is gone. Mobile
+  keeps the list → push-conversation model; one shared `CaseConversationView`
+  (header + list + composer) serves both.
+- **Status control in the top header** (`case_status_control.dart` in the header
+  bar), not a bottom bar. **Lifecycle Open → In Discussion → Waiting Response →
+  Closed**; **closed = read-only** (composer disabled + rules deny message-create
+  when the parent case is closed); a recipient can Reopen.
+- **Severity → a single `urgent` bool** (owner ruling): "Mark as Urgent" toggle,
+  urgent badge in list + header, urgent cases sort above normal.
+- **+ Personal category** → defaults to **Admin · Confidential** (overridable).
+- **Inbox ordering** (Slack/Intercom): active cases first (urgent-first, latest
+  activity desc), **Closed collapse into an archive section** (`case_ordering.dart`).
+- **Cubits:** `CaseListCubit` (inbox + desktop selection) + a per-case
+  `CaseConversationCubit` (dual stream of the case doc + messages; send / status).
+- **Server-side ownership.** `onCaseCreated` writes the de-identified **opening**
+  message + notifies recipients; `onCaseUpdated` inserts a **system** message on
+  status change + notifies; `onCaseMessageCreated` bumps `lastMessage*` + notifies
+  the other party. `opening`/`system` are Admin-SDK-only (clients can't forge
+  them). Notification types → `caseOpened` / `caseUpdated` / `caseClosed` /
+  `caseReplied`; route `case_details`; inbox category **Cases**.
+- **Privacy split preserved** — the case doc carries no creator uid; the reporter
+  identity stays in `cases/{id}/reporter/identity` (owner + admin only); admin can
+  "Reveal sender". **Rules** drop the fragile reporter frozen-field clause
+  (reporters interact via `messages`; message-create is denied when the parent is
+  closed and stamps the author = server-enforced read-only + de-id).
+- **Greenfield migration** — Reports was never deployed (rules/functions/indexes
+  deploy was still pending), so there is **no data migration**. `flutter analyze`
+  clean (7 pre-existing infos, 0 new) · **377 tests pass** (5 new case suites; old
+  report suites removed) · `node --check` OK · freezed regenerated.
+
+⚠️ **Deploy required:** `firebase deploy --only firestore:rules` · `--only storage`
+· `--only firestore:indexes` · `--only
+functions:onCaseCreated,onCaseUpdated,onCaseMessageCreated,onNotificationCreated`.
+(The old `onReportCreated`/`onReportUpdated` were never deployed — nothing to delete.)
+⚠️ Live QA needs a seeded emulator / device: open a case (normal / confidential /
+personal→admin) → recipient replies → **reporter sees it live** → status
+Open→In Discussion→Waiting Response (system chips) → Close (read-only) → Reopen.
 
 ---
 
-## ✅ Reports Center — Reports / Escalation System (2026-07-03)
+## ✅ Reports Center — Reports / Escalation System (2026-07-03) — SUPERSEDED
+
+> **SUPERSEDED** by the Case Management System (2026-07-04) above. This section is
+> kept as design history — the `reports` slice it describes has been deleted.
 
 A first-class, branch-scoped internal **Reports Center**: any employee files a
 categorized, severity-rated report, routes it to their manager and/or admin

@@ -117,11 +117,11 @@ class AppShell extends StatelessWidget {
       label: 'Communications',
       route: RouteNames.communications,
     );
-    const reports = SidebarItem(
-      icon: Icons.flag_outlined,
-      activeIcon: Icons.flag_rounded,
-      label: 'Reports',
-      route: RouteNames.reports,
+    const cases = SidebarItem(
+      icon: Icons.forum_outlined,
+      activeIcon: Icons.forum_rounded,
+      label: 'Cases',
+      route: RouteNames.cases,
     );
 
     switch (role) {
@@ -147,7 +147,7 @@ class AppShell extends StatelessWidget {
               route: RouteNames.adminSchedule,
             ),
             communications,
-            reports,
+            cases,
             notifications,
           ]),
           SidebarSection(title: 'Administration', items: [
@@ -199,7 +199,7 @@ class AppShell extends StatelessWidget {
               route: RouteNames.managerSchedule,
             ),
             communications,
-            reports,
+            cases,
             notifications,
           ]),
         ];
@@ -224,7 +224,7 @@ class AppShell extends StatelessWidget {
               label: 'My Schedule',
               route: RouteNames.mySchedule,
             ),
-            reports,
+            cases,
             notifications,
           ]),
         ];

@@ -102,11 +102,11 @@ class RoleScaffold extends StatelessWidget {
               tooltip: 'Communications',
               onPressed: () => context.push(RouteNames.communications),
             ),
-          // Reports Center — available to every role (the list self-scopes).
+          // Case Management — available to every role (the list self-scopes).
           IconButton(
-            icon: const Icon(Icons.flag_outlined, color: AppColors.textSecondary),
-            tooltip: 'Reports',
-            onPressed: () => context.push(RouteNames.reports),
+            icon: const Icon(Icons.forum_outlined, color: AppColors.textSecondary),
+            tooltip: 'Cases',
+            onPressed: () => context.push(RouteNames.cases),
           ),
           _NotificationBell(
             onPressed: () => context.push(RouteNames.notifications),
