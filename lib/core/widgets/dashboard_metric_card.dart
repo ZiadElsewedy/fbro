@@ -60,8 +60,11 @@ class DashboardMetricCard extends StatelessWidget {
               ),
               const Spacer(),
               if (onTap != null)
-                const Icon(Icons.chevron_right_rounded,
-                    size: 18, color: AppColors.textTertiary),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: AppColors.textSecondary,
+                ),
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
@@ -69,7 +72,12 @@ class DashboardMetricCard extends StatelessWidget {
           // (e.g. the "—" loading placeholder) renders as plain text.
           _value(),
           const SizedBox(height: 2),
-          Text(label, style: AppTypography.caption),
+          Text(
+            label,
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
           if (trend != null) ...[
             const SizedBox(height: 6),
             Text(

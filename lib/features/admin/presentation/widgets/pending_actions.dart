@@ -13,7 +13,8 @@ import 'package:drop/core/widgets/metric_pill.dart';
 ///
 /// Presentational only (counts + callbacks) so it renders in widget tests with no
 /// cubits/router. **Always rendered** by the dashboard — when everything is clear
-/// it shows an explicit "all caught up" state rather than vanishing.
+/// it collapses to a quiet confirmation row rather than competing with real
+/// operational risks.
 class PendingActions extends StatelessWidget {
   const PendingActions({
     super.key,
@@ -67,29 +68,38 @@ class PendingActions extends StatelessWidget {
     ];
 
     if (rows.isEmpty) {
-      // All clear — keep the panel visible so the admin knows it's here.
+      // Keep an explicit empty state, but make it deliberately compact: the
+      // dashboard's attention hierarchy belongs to real operational gaps.
       return AppGlassCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: AppColors.success.withAlpha(28),
-                borderRadius: BorderRadius.circular(11),
+                borderRadius: BorderRadius.circular(9),
               ),
-              child: const Icon(Icons.check_circle_rounded,
-                  size: 20, color: AppColors.success),
+              child: const Icon(
+                Icons.check_circle_rounded,
+                size: 17,
+                color: AppColors.success,
+              ),
             ),
-            const SizedBox(width: AppSpacing.md),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("You're all caught up", style: AppTypography.label),
+                  Text('Nothing queued', style: AppTypography.label),
                   const SizedBox(height: 2),
-                  Text('No swaps, approvals, reviews or overdue tasks.',
-                      style: AppTypography.caption),
+                  Text(
+                    'No swaps, reviews or overdue tasks.',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -125,13 +135,19 @@ class PendingActions extends StatelessWidget {
 
     return AppGlassCard(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xs,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (pills.length > 1) ...[
             const SizedBox(height: AppSpacing.md),
-            Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: pills),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: pills,
+            ),
             const SizedBox(height: AppSpacing.sm),
             const Divider(color: AppColors.darkBorder, height: 1),
           ],
@@ -185,12 +201,20 @@ class _ActionRow extends StatelessWidget {
                 children: [
                   Text(label, style: AppTypography.label),
                   const SizedBox(height: 2),
-                  Text(detail, style: AppTypography.caption),
+                  Text(
+                    detail,
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded,
-                size: 20, color: AppColors.textTertiary),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: AppColors.textSecondary,
+            ),
           ],
         ),
       ),

@@ -10,16 +10,13 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/action_card.dart';
 import 'package:drop/core/widgets/admin_section_header.dart';
-import 'package:drop/core/widgets/animated_count.dart';
 import 'package:drop/core/widgets/app_shell.dart';
 import 'package:drop/core/widgets/command_palette.dart';
 import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/dashboard_metric_card.dart';
-import 'package:drop/core/widgets/brand_watermark.dart';
 import 'package:drop/core/widgets/glass_container.dart';
 import 'package:drop/features/admin/presentation/widgets/pending_actions.dart';
-import 'package:drop/features/auth/presentation/widgets/app_button.dart';
 import 'package:drop/features/schedule/presentation/cubit/shift_swap_cubit.dart';
 import 'package:drop/features/schedule/presentation/cubit/shift_swap_state.dart';
 import 'package:drop/features/schedule/presentation/widgets/swap_alert_card.dart'
@@ -93,54 +90,82 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   /// the task stream.
   Widget _greeting() {
     final name = context.currentUser?.displayName;
-    return _StatsSection(builder: (s) => _Greeting(stats: s, name: name));
+    return _StatsSection(
+      builder: (s) => _Greeting(stats: s, name: name),
+    );
   }
 
   /// Stats + live counts: subscribes to the task stream via a BlocSelector on
   /// the two derived counts, so an emit that doesn't move them rebuilds nothing.
-  Widget _hero() => _DynamicSection(
-      builder: (s, overdue, reviews) =>
-          _Hero(stats: s, overdue: overdue, reviews: reviews));
+  Widget _operationalSummary() => _DynamicSection(
+        builder: (s, overdue, reviews) => Column(
+          children: [
+            if (s != null && s.branchesWithoutManagers > 0) ...[
+              _StaffingAlert(
+                branchesWithoutManagers: s.branchesWithoutManagers,
+                onTap: () => context.push(RouteNames.adminManagers),
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            _TaskStatusStrip(
+              stats: s,
+              overdue: overdue,
+              reviews: reviews,
+              onTap: () => context.push(
+                reviews > 0 && overdue == 0
+                    ? RouteNames.adminReview
+                    : RouteNames.adminTasks,
+              ),
+            ),
+          ],
+        ),
+      );
 
-  /// Always rendered — shows an all-clear state when empty, so the panel
-  /// never silently disappears.
-  Widget _pendingHeader() =>
-      _PendingSection(builder: (s, overdue, reviews, swaps) {
-        final pending = swaps + reviews + overdue;
-        return AdminSectionHeader(
-          title: 'Pending Actions',
-          subtitle:
-              pending > 0 ? '$pending awaiting you' : "You're all caught up",
-        );
-      });
+  /// Always rendered — collapses to a quiet confirmation when empty, so the
+  /// queue stays discoverable without competing with real risks.
+  Widget _pendingHeader() => _PendingSection(
+        builder: (s, overdue, reviews, swaps) {
+          final pending = swaps + reviews + overdue;
+          return AdminSectionHeader(
+            title: 'Pending Actions',
+            subtitle:
+                pending > 0 ? '$pending awaiting you' : 'No queued actions',
+          );
+        },
+      );
 
   Widget _pendingActions() => _PendingSection(
-      builder: (s, overdue, reviews, swaps) => PendingActions(
-            swaps: swaps,
-            reviews: reviews,
-            overdue: overdue,
-            // Straight to the actionable all-branches queue — the cubit is
-            // already streaming loadAll() here. (Pushing the Schedule screen
-            // landed on "Pick a branch" and made the admin hunt for the swap.)
-            onSwaps: () => showSwapQueueSheet(
-              context: context,
-              currentUid: context.currentUser?.uid ?? '',
-              showBranch: true,
-            ),
-            onReviews: () => context.push(RouteNames.adminReview),
-            onOverdue: () => context.push(RouteNames.adminTasks),
-          ));
+        builder: (s, overdue, reviews, swaps) => PendingActions(
+          swaps: swaps,
+          reviews: reviews,
+          overdue: overdue,
+          // Straight to the actionable all-branches queue — the cubit is
+          // already streaming loadAll() here. (Pushing the Schedule screen
+          // landed on "Pick a branch" and made the admin hunt for the swap.)
+          onSwaps: () => showSwapQueueSheet(
+            context: context,
+            currentUid: context.currentUser?.uid ?? '',
+            showBranch: true,
+          ),
+          onReviews: () => context.push(RouteNames.adminReview),
+          onOverdue: () => context.push(RouteNames.adminTasks),
+        ),
+      );
 
   Widget _mobile(BuildContext context) {
     var i = 0;
     Widget sec(String id, Widget child) => _sec(id, i++, child);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, AppSpacing.sm,
-          AppSpacing.pagePadding, AppSpacing.xxxl),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.pagePadding,
+        AppSpacing.sm,
+        AppSpacing.pagePadding,
+        AppSpacing.xxxl,
+      ),
       children: [
         sec('greeting', _greeting()),
         const SizedBox(height: AppSpacing.xl),
-        sec('hero', _hero()),
+        sec('summary', _operationalSummary()),
         const SizedBox(height: AppSpacing.xl),
         sec('pa-header', _pendingHeader()),
         sec('pa', _pendingActions()),
@@ -149,9 +174,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         sec('metrics', _StatsSection(builder: (s) => _metrics(s))),
         const SizedBox(height: AppSpacing.xl),
         sec(
-            'feed-h',
-            const AdminSectionHeader(
-                title: 'Active tasks', subtitle: 'Every branch, live')),
+          'feed-h',
+          const AdminSectionHeader(
+            title: 'Active tasks',
+            subtitle: 'Every branch, live',
+          ),
+        ),
         sec('feed', const TaskFeedSection()),
         const SizedBox(height: AppSpacing.xl),
         sec('qa-h', const AdminSectionHeader(title: 'Quick actions')),
@@ -163,15 +191,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  /// Executive desktop arrangement: the operational story (greeting → pulse
-  /// hero → metrics → live activity) reads down the wide main column; the
+  /// Executive desktop arrangement: the operational story (greeting → staffing
+  /// risk → task status → metrics → task feed) reads down the wide main column; the
   /// queue-and-launch surfaces (pending actions · quick actions · manage ·
   /// branch pulse) sit in a fixed right rail, always in view.
   Widget _desktop(BuildContext context) {
     var i = 0;
     Widget sec(String id, Widget child) => _sec(id, i++, child);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(40, AppSpacing.lg, 40, AppSpacing.xxxl),
+      padding: const EdgeInsets.fromLTRB(
+        40,
+        AppSpacing.lg,
+        40,
+        AppSpacing.xxxl,
+      ),
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,26 +214,31 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   sec(
-                      'greeting',
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: _greeting()),
-                          _CommandHint(),
-                        ],
-                      )),
+                    'greeting',
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: _greeting()),
+                        _CommandHint(),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.xl),
-                  sec('hero', _hero()),
+                  sec('summary', _operationalSummary()),
                   const SizedBox(height: AppSpacing.xl),
-                  sec('overview-h', const AdminSectionHeader(title: 'Overview')),
+                  sec(
+                    'overview-h',
+                    const AdminSectionHeader(title: 'Overview'),
+                  ),
                   sec('metrics', _StatsSection(builder: (s) => _metrics(s))),
                   const SizedBox(height: AppSpacing.xl),
                   sec(
-                      'feed-h',
-                      const AdminSectionHeader(
-                        title: 'Active tasks',
-                        subtitle: 'Every branch, live — tap to open',
-                      )),
+                    'feed-h',
+                    const AdminSectionHeader(
+                      title: 'Active tasks',
+                      subtitle: 'Every branch, live — tap to open',
+                    ),
+                  ),
                   sec('feed', const TaskFeedSection()),
                 ],
               ),
@@ -215,10 +253,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   sec('pa', _pendingActions()),
                   const SizedBox(height: AppSpacing.xl),
                   sec('qa-h', const AdminSectionHeader(title: 'Quick actions')),
-                  sec('qa', _quickActions(maxItemWidth: 150)),
+                  sec('qa', _quickActions(compact: true)),
                   const SizedBox(height: AppSpacing.xl),
                   sec('manage-h', const AdminSectionHeader(title: 'Manage')),
-                  sec('manage', _manage(maxItemWidth: 150)),
+                  sec('manage', _manage(compact: true)),
                   const SizedBox(height: AppSpacing.xl),
                   sec('pulse', const _BranchPulse()),
                 ],
@@ -235,46 +273,51 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     String v(int? n) => s == null ? '—' : '${n ?? 0}';
     final unstaffed = s?.branchesWithoutManagers ?? 0;
     final reviews = s?.waitingReviews ?? 0;
-    return _grid([
-      DashboardMetricCard(
-        icon: Icons.store_mall_directory_outlined,
-        value: v(s?.totalBranches),
-        label: 'Branches',
-        trend: s == null
-            ? null
-            : (unstaffed > 0 ? '$unstaffed without manager' : 'All staffed'),
-        trendColor: unstaffed > 0 ? AppColors.warning : AppColors.success,
-        onTap: () => context.push(RouteNames.adminBranches),
-      ),
-      DashboardMetricCard(
-        icon: Icons.groups_outlined,
-        value: v(s?.totalEmployees),
-        label: 'Employees',
-        trend: s == null ? null : '${s.totalManagers} managers',
-        onTap: () => context.push(RouteNames.adminEmployees),
-      ),
-      DashboardMetricCard(
-        icon: Icons.supervisor_account_outlined,
-        value: v(s?.totalManagers),
-        label: 'Managers',
-        onTap: () => context.push(RouteNames.adminManagers),
-      ),
-      DashboardMetricCard(
-        icon: Icons.fact_check_outlined,
-        value: v(s?.activeTasks),
-        label: 'Active tasks',
-        trend: s == null
-            ? null
-            : (reviews > 0 ? '$reviews in review' : 'None in review'),
-        trendColor: reviews > 0 ? AppColors.warning : AppColors.textSecondary,
-        onTap: () => context.push(RouteNames.adminTasks),
-      ),
-    ]);
+    return ResponsiveCardGrid(
+      tabletColumns: 2,
+      desktopColumns: 2,
+      ultrawideColumns: 2,
+      children: [
+        DashboardMetricCard(
+          icon: Icons.store_mall_directory_outlined,
+          value: v(s?.totalBranches),
+          label: 'Branches',
+          trend: s == null
+              ? null
+              : (unstaffed > 0 ? '$unstaffed without manager' : 'All staffed'),
+          trendColor: unstaffed > 0 ? AppColors.warning : AppColors.success,
+          onTap: () => context.push(RouteNames.adminBranches),
+        ),
+        DashboardMetricCard(
+          icon: Icons.groups_outlined,
+          value: v(s?.totalEmployees),
+          label: 'Employees',
+          trend: s == null ? null : '${s.totalManagers} managers',
+          onTap: () => context.push(RouteNames.adminEmployees),
+        ),
+        DashboardMetricCard(
+          icon: Icons.admin_panel_settings_outlined,
+          value: v(s?.totalManagers),
+          label: 'Managers',
+          onTap: () => context.push(RouteNames.adminManagers),
+        ),
+        DashboardMetricCard(
+          icon: Icons.fact_check_outlined,
+          value: v(s?.activeTasks),
+          label: 'Active tasks',
+          trend: s == null
+              ? null
+              : (reviews > 0 ? '$reviews in review' : 'None in review'),
+          trendColor: reviews > 0 ? AppColors.warning : AppColors.textSecondary,
+          onTap: () => context.push(RouteNames.adminTasks),
+        ),
+      ],
+    );
   }
 
   // ── Quick actions ────────────────────────────────────────────────
-  Widget _quickActions({double maxItemWidth = 300}) {
-    return _grid(maxItemWidth: maxItemWidth, [
+  Widget _quickActions({bool compact = false}) {
+    return _grid(maxItemWidth: compact ? 180 : 300, [
       ActionCard(
         icon: Icons.add_business_outlined,
         title: 'Add Branch',
@@ -282,7 +325,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
       ActionCard(
         icon: Icons.person_add_alt_1_outlined,
-        title: 'Create Account',
+        title: 'New Account',
         onTap: () => context.push(RouteNames.adminCreateAccount),
       ),
       ActionCard(
@@ -299,38 +342,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   // ── Manage (module directory) ────────────────────────────────────
-  Widget _manage({double maxItemWidth = 300}) {
-    return _grid(maxItemWidth: maxItemWidth, [
+  Widget _manage({bool compact = false}) {
+    return _grid(maxItemWidth: compact ? 180 : 300, [
       ActionCard(
         icon: Icons.calendar_view_week_outlined,
         title: 'Schedules',
         subtitle: 'Any branch',
+        secondary: true,
         onTap: () => context.push(RouteNames.adminSchedule),
       ),
       ActionCard(
         icon: Icons.groups_outlined,
         title: 'Employees',
         subtitle: 'Manage staff',
+        secondary: true,
         onTap: () => context.push(RouteNames.adminEmployees),
       ),
       ActionCard(
         icon: Icons.insights_outlined,
         title: 'Analytics',
         subtitle: 'Full metrics',
+        secondary: true,
         onTap: () => context.push(RouteNames.adminAnalytics),
       ),
       ActionCard(
         icon: Icons.settings_outlined,
         title: 'Settings',
         subtitle: 'App & account',
+        secondary: true,
         onTap: () => context.push(RouteNames.settings),
       ),
     ]);
   }
 
-  /// Lay [cards] out in a width-aware grid: two-per-row on mobile, but 3–4
-  /// compact tiles per row on desktop instead of two over-wide cards. The
-  /// desktop right rail passes a small [maxItemWidth] for a tight 2-up fit.
+  /// Lay [cards] out in a width-aware grid. The
+  /// desktop right rail uses a 180px target, which resolves to a stable 2-up
+  /// grid at 330px instead of squeezing three unreadable tiles across.
   Widget _grid(List<Widget> cards, {double maxItemWidth = 300}) {
     return ResponsiveCardGrid(maxItemWidth: maxItemWidth, children: cards);
   }
@@ -346,8 +393,11 @@ class _CommandHint extends StatelessWidget {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        onTap: () => showCommandPalette(context,
-            user: user, sections: AppShell.sectionsForRole(user.role)),
+        onTap: () => showCommandPalette(
+          context,
+          user: user,
+          sections: AppShell.sectionsForRole(user.role),
+        ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
@@ -358,23 +408,31 @@ class _CommandHint extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.search_rounded,
-                  size: 15, color: AppColors.textTertiary),
+              const Icon(
+                Icons.search_rounded,
+                size: 15,
+                color: AppColors.textSecondary,
+              ),
               const SizedBox(width: 8),
-              Text('Search or run a command',
-                  style: AppTypography.caption
-                      .copyWith(color: AppColors.textTertiary)),
+              Text(
+                'Search or run a command',
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
               const SizedBox(width: 10),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
                   border: Border.all(color: AppColors.darkBorder),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text('⌘K',
-                    style: AppTypography.caption
-                        .copyWith(color: AppColors.textSecondary)),
+                child: Text(
+                  '⌘K',
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
               ),
             ],
           ),
@@ -383,8 +441,6 @@ class _CommandHint extends StatelessWidget {
     );
   }
 }
-
-// ─── Live activity feed (desktop main column) ───────────────────────
 
 // ─── Branch pulse (desktop rail) ────────────────────────────────────
 
@@ -399,7 +455,9 @@ class _BranchPulse extends StatelessWidget {
     return BlocBuilder<TaskCubit, TaskState>(
       builder: (context, state) {
         final tasks = state.maybeWhen(
-            loaded: (t, _, _, _, _) => t, orElse: () => const <TaskEntity>[]);
+          loaded: (t, _, _, _, _) => t,
+          orElse: () => const <TaskEntity>[],
+        );
         final names = context.read<TaskCubit>().branchNames;
         final byBranch = <String, ({int open, int review})>{};
         for (final t in tasks) {
@@ -417,8 +475,11 @@ class _BranchPulse extends StatelessWidget {
           );
         }
         final rows = byBranch.entries.toList()
-          ..sort((a, b) => (b.value.open + b.value.review)
-              .compareTo(a.value.open + a.value.review));
+          ..sort(
+            (a, b) => (b.value.open + b.value.review).compareTo(
+              a.value.open + a.value.review,
+            ),
+          );
         if (rows.isEmpty) return const SizedBox.shrink();
 
         return Column(
@@ -427,7 +488,9 @@ class _BranchPulse extends StatelessWidget {
             const AdminSectionHeader(title: 'Branch pulse'),
             GlassContainer(
               padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.sm,
+              ),
               child: Column(
                 children: [
                   for (final (i, row) in rows.take(4).toList().indexed) ...[
@@ -442,14 +505,17 @@ class _BranchPulse extends StatelessWidget {
                               names[row.key] ?? 'Branch',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppTypography.labelSmall
-                                  .copyWith(color: AppColors.textPrimary),
+                              style: AppTypography.labelSmall.copyWith(
+                                color: AppColors.textPrimary,
+                              ),
                             ),
                           ),
                           Text(
                             '${row.value.open} open'
                             '${row.value.review > 0 ? ' · ${row.value.review} review' : ''}',
-                            style: AppTypography.caption,
+                            style: AppTypography.caption.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
                           ),
                         ],
                       ),
@@ -493,18 +559,24 @@ class _DynamicSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<StatisticsCubit, StatisticsState>(
       builder: (context, statsState) {
-        final stats =
-            statsState.maybeWhen(loaded: (s) => s, orElse: () => null);
+        final stats = statsState.maybeWhen(
+          loaded: (s) => s,
+          orElse: () => null,
+        );
         // Both counts come from the LIVE task stream (not the TTL-cached stats),
-        // so reviewing/finishing a task updates Pending Actions + the hero
+        // so reviewing/finishing a task updates Pending Actions + the summary
         // immediately. The record selector still rebuilds only when one of the
         // two numbers actually moves.
         return BlocSelector<TaskCubit, TaskState, ({int overdue, int reviews})>(
           selector: (state) {
             final tasks = state.maybeWhen(
-                loaded: (t, _, _, _, _) => t,
-                orElse: () => const <TaskEntity>[]);
-            return (overdue: _overdueCount(tasks), reviews: _reviewCount(tasks));
+              loaded: (t, _, _, _, _) => t,
+              orElse: () => const <TaskEntity>[],
+            );
+            return (
+              overdue: _overdueCount(tasks),
+              reviews: _reviewCount(tasks),
+            );
           },
           builder: (context, c) => builder(stats, c.overdue, c.reviews),
         );
@@ -520,14 +592,17 @@ class _DynamicSection extends StatelessWidget {
 class _PendingSection extends StatelessWidget {
   const _PendingSection({required this.builder});
   final Widget Function(
-      StatisticsEntity? stats, int overdue, int reviews, int swaps) builder;
+    StatisticsEntity? stats,
+    int overdue,
+    int reviews,
+    int swaps,
+  ) builder;
 
   @override
   Widget build(BuildContext context) {
     return BlocSelector<ShiftSwapCubit, ShiftSwapState, int>(
       selector: (state) => state.maybeWhen(
-        loaded: (swaps, _) =>
-            swaps.where((s) => !s.status.isResolved).length,
+        loaded: (swaps, _) => swaps.where((s) => !s.status.isResolved).length,
         orElse: () => 0,
       ),
       builder: (context, swaps) => _DynamicSection(
@@ -546,7 +621,13 @@ class _Greeting extends StatelessWidget {
   final String? name;
 
   static const _weekdays = [
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
   ];
   static const _months = [
     'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
@@ -568,7 +649,8 @@ class _Greeting extends StatelessWidget {
   String get _scope {
     final s = stats;
     if (s == null) return 'Operations overview';
-    final b = '${s.totalBranches} ${s.totalBranches == 1 ? 'branch' : 'branches'}';
+    final b =
+        '${s.totalBranches} ${s.totalBranches == 1 ? 'branch' : 'branches'}';
     final e =
         '${s.totalEmployees} ${s.totalEmployees == 1 ? 'employee' : 'employees'}';
     return '$b · $e';
@@ -576,23 +658,36 @@ class _Greeting extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final first =
-        (name != null && name!.trim().isNotEmpty) ? name!.trim().split(' ').first : 'Admin';
+    final first = (name != null && name!.trim().isNotEmpty)
+        ? name!.trim().split(' ').first
+        : 'Admin';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(_date.toUpperCase(),
-            style: AppTypography.labelSmall
-                .copyWith(color: AppColors.textTertiary, letterSpacing: 1.0)),
+        Text(
+          _date.toUpperCase(),
+          style: AppTypography.labelSmall.copyWith(
+            color: AppColors.textSecondary,
+            letterSpacing: 1.0,
+          ),
+        ),
         const SizedBox(height: AppSpacing.xs),
         Text('$_salutation, $first', style: AppTypography.h1),
         const SizedBox(height: AppSpacing.xs),
         Row(
           children: [
-            const Icon(Icons.public_rounded,
-                size: 14, color: AppColors.textTertiary),
+            const Icon(
+              Icons.public_rounded,
+              size: 14,
+              color: AppColors.textSecondary,
+            ),
             const SizedBox(width: 6),
-            Text(_scope, style: AppTypography.caption),
+            Text(
+              _scope,
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
           ],
         ),
       ],
@@ -600,146 +695,253 @@ class _Greeting extends StatelessWidget {
   }
 }
 
-// ─── Hero card ──────────────────────────────────────────────────────
+// ─── Operational summary ────────────────────────────────────────────
 
-class _Hero extends StatelessWidget {
-  const _Hero({required this.stats, required this.overdue, required this.reviews});
-  final StatisticsEntity? stats;
-  final int overdue;
+/// The highest-priority dashboard signal. A missing manager means a branch has
+/// no clear owner for schedules, reviews, or escalations, so this sits above the
+/// task queue and links directly to the manager-assignment workflow.
+class _StaffingAlert extends StatelessWidget {
+  const _StaffingAlert({
+    required this.branchesWithoutManagers,
+    required this.onTap,
+  });
 
-  /// Live count of tasks awaiting review (from the task stream, not stats).
-  final int reviews;
+  final int branchesWithoutManagers;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final s = stats;
-    final active = s?.activeTasks ?? 0;
-    final doneToday = s?.completedTasksToday ?? 0;
-    final totalToday = doneToday + active;
-    final progress = totalToday == 0 ? 0.0 : doneToday / totalToday;
+    final count = branchesWithoutManagers;
+    final title = count == 1
+        ? '1 branch needs a manager'
+        : '$count branches need a manager';
 
-    final String title, value, summary, cta, route;
-    final Color accent;
-    final bool highlight;
-    final IconData icon;
-
-    if (reviews > 0) {
-      title = 'Tasks awaiting review';
-      value = '$reviews';
-      summary =
-          '$reviews ${reviews == 1 ? 'task' : 'tasks'} submitted and waiting for your review.';
-      cta = 'Review tasks';
-      route = RouteNames.adminReview;
-      accent = AppColors.warning;
-      highlight = true;
-      icon = Icons.rate_review_rounded;
-    } else if (overdue > 0) {
-      title = 'Overdue tasks';
-      value = '$overdue';
-      summary =
-          '$overdue ${overdue == 1 ? 'task is' : 'tasks are'} past the deadline and not yet submitted.';
-      cta = 'View tasks';
-      route = RouteNames.adminTasks;
-      accent = AppColors.error;
-      highlight = true;
-      icon = Icons.warning_amber_rounded;
-    } else {
-      title = 'All clear';
-      value = '$active';
-      summary =
-          'No reviews or overdue tasks waiting. $active active ${active == 1 ? 'task' : 'tasks'} in progress.';
-      cta = 'View tasks';
-      route = RouteNames.adminTasks;
-      accent = AppColors.success;
-      highlight = false;
-      icon = Icons.check_circle_rounded;
-    }
-
-    return GlassContainer(
-      highlight: highlight,
-      accent: accent,
-      padding: const EdgeInsets.all(AppSpacing.xl),
-      child: BrandWatermark(
-        child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: accent.withAlpha(28),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(icon, size: 20, color: accent),
+    Widget message() => Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(28),
+                borderRadius: BorderRadius.circular(11),
               ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Text(
-                  highlight ? 'NEEDS ATTENTION' : 'ALL CLEAR',
-                  style: AppTypography.caption.copyWith(
-                    color: accent,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.0,
-                  ),
-                ),
-              ),
-              Text(
-                '$doneToday/$totalToday today',
-                style: AppTypography.caption
-                    .copyWith(color: AppColors.textTertiary),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          // Big metric beside its title + summary — one tight block, no dead space.
-          Row(
-            children: [
-              AnimatedCount(
-                  value: int.tryParse(value) ?? 0,
-                  style: AppTypography.displayMedium),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: AppTypography.h3),
-                    const SizedBox(height: 2),
-                    Text(summary,
-                        style: AppTypography.bodySmall.copyWith(
-                            color: AppColors.textSecondary, height: 1.4)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: progress),
-              duration: const Duration(milliseconds: 600),
-              curve: Curves.easeOutCubic,
-              builder: (context, v, _) => LinearProgressIndicator(
-                value: v,
-                minHeight: 6,
-                backgroundColor: AppColors.darkSurfaceElevated,
-                valueColor:
-                    const AlwaysStoppedAnimation(AppColors.textPrimary),
+              child: const Icon(
+                Icons.admin_panel_settings_outlined,
+                size: 21,
+                color: AppColors.warning,
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          AppButton(
-            label: cta,
-            icon: const Icon(Icons.arrow_forward_rounded,
-                size: 18, color: AppColors.textDark),
-            onPressed: () => context.push(route),
-          ),
-        ],
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'STAFFING GAP',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.warning,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(title, style: AppTypography.h3),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Assign branch ownership so schedules, reviews, and cases have a clear owner.',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+
+    final action = _InlineAction(label: 'Assign now', onTap: onTap);
+
+    return Semantics(
+      button: true,
+      label: '$title. Assign now.',
+      child: GlassContainer(
+        onTap: onTap,
+        highlight: true,
+        accent: AppColors.warning,
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 560) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  message(),
+                  const SizedBox(height: AppSpacing.md),
+                  Align(alignment: Alignment.centerRight, child: action),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: message()),
+                const SizedBox(width: AppSpacing.lg),
+                action,
+              ],
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+/// A compact task-health strip. Positive/empty task state stays visible, but it
+/// no longer gets hero-card scale or outranks a staffing gap.
+class _TaskStatusStrip extends StatelessWidget {
+  const _TaskStatusStrip({
+    required this.stats,
+    required this.overdue,
+    required this.reviews,
+    required this.onTap,
+  });
+
+  final StatisticsEntity? stats;
+  final int overdue;
+  final int reviews;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final loading = stats == null;
+    final active = stats?.activeTasks ?? 0;
+    final issues = overdue + reviews;
+    final hasIssues = issues > 0;
+    final accent = loading
+        ? AppColors.textSecondary
+        : overdue > 0
+            ? AppColors.error
+            : reviews > 0
+                ? AppColors.warning
+                : AppColors.success;
+    final icon = loading
+        ? Icons.sync_rounded
+        : overdue > 0
+            ? Icons.warning_amber_rounded
+            : reviews > 0
+                ? Icons.rate_review_rounded
+                : Icons.check_circle_rounded;
+    final title = loading
+        ? 'Checking task status'
+        : hasIssues
+            ? '$issues task ${issues == 1 ? 'action needs' : 'actions need'} attention'
+            : 'Task queue is clear';
+    final facts = <String>[
+      if (loading) 'Loading live task health',
+      if (overdue > 0) '$overdue overdue',
+      if (reviews > 0) '$reviews waiting review',
+      if (!loading && !hasIssues && active > 0) '$active active',
+      if (!loading && !hasIssues) 'No overdue work or reviews waiting',
+    ];
+    final actionLabel =
+        reviews > 0 && overdue == 0 ? 'Review now' : 'View tasks';
+
+    Widget summary() => Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: accent.withAlpha(28),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 19, color: accent),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    loading
+                        ? 'UPDATING'
+                        : hasIssues
+                            ? 'TASK QUEUE'
+                            : 'ON TRACK',
+                    style: AppTypography.caption.copyWith(
+                      color: accent,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(title, style: AppTypography.labelLarge),
+                  const SizedBox(height: 2),
+                  Text(
+                    facts.join(' · '),
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+
+    final action = _InlineAction(label: actionLabel, onTap: onTap);
+    return GlassContainer(
+      onTap: onTap,
+      highlight: hasIssues,
+      accent: accent,
+      elevated: hasIssues,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 480) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                summary(),
+                const SizedBox(height: AppSpacing.sm),
+                Align(alignment: Alignment.centerRight, child: action),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: summary()),
+              const SizedBox(width: AppSpacing.lg),
+              action,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _InlineAction extends StatelessWidget {
+  const _InlineAction({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.textPrimary,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        minimumSize: const Size(44, 44),
+      ),
+      label: Text(label, style: AppTypography.labelSmall),
+      iconAlignment: IconAlignment.end,
+      icon: const Icon(Icons.arrow_forward_rounded, size: 17),
     );
   }
 }
@@ -747,7 +949,8 @@ class _Hero extends StatelessWidget {
 // ─── Overdue helper ─────────────────────────────────────────────────
 
 /// Count of open tasks (pending/started/rejected) that are past their deadline —
-/// the operational "needs attention" signal. Shared by the hero + Pending Actions.
+/// the operational "needs attention" signal. Shared by the status strip +
+/// Pending Actions.
 int _overdueCount(List<TaskEntity> tasks) {
   final now = DateTime.now();
   return tasks.where((t) {
@@ -762,7 +965,6 @@ int _overdueCount(List<TaskEntity> tasks) {
 
 /// Count of tasks awaiting review — derived from the **live** task stream, not
 /// the TTL-cached `StatisticsCubit` (which isn't invalidated on a mutation), so
-/// the Pending Actions queue + hero drop the instant a review completes.
+/// the Pending Actions queue + status strip drop the instant a review completes.
 int _reviewCount(List<TaskEntity> tasks) =>
     tasks.where((t) => t.status == TaskStatus.waitingReview).length;
-

@@ -16,6 +16,7 @@ class ActionCard extends StatelessWidget {
     required this.onTap,
     this.subtitle,
     this.accent,
+    this.secondary = false,
   });
 
   final IconData icon;
@@ -26,41 +27,71 @@ class ActionCard extends StatelessWidget {
   /// Icon tint (defaults to the white accent).
   final Color? accent;
 
+  /// Uses the quieter, horizontal treatment intended for navigation shortcuts.
+  /// Primary quick actions stay vertical and elevated; repeated module links
+  /// should set this so they do not compete for the same visual priority.
+  final bool secondary;
+
   @override
   Widget build(BuildContext context) {
     final tint = accent ?? AppColors.primary;
-    return GlassContainer(
-      onTap: onTap,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: tint.withAlpha(28),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(icon, size: 19, color: tint),
-          ),
-          const SizedBox(height: AppSpacing.md),
+    final iconChip = Container(
+      width: secondary ? 32 : 38,
+      height: secondary ? 32 : 38,
+      decoration: BoxDecoration(
+        color: tint.withAlpha(28),
+        borderRadius: BorderRadius.circular(secondary ? 9 : 11),
+      ),
+      child: Icon(icon, size: secondary ? 17 : 19, color: tint),
+    );
+    final labels = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Action labels are never ellipsized. A narrow tile grows vertically
+        // instead of making the admin guess what its CTA does.
+        Text(title, style: AppTypography.label),
+        if (subtitle != null) ...[
+          const SizedBox(height: 2),
           Text(
-            title,
-            style: AppTypography.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              subtitle!,
-              style: AppTypography.caption,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            subtitle!,
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textSecondary,
             ),
-          ],
+          ),
         ],
+      ],
+    );
+
+    return Semantics(
+      button: true,
+      label: subtitle == null ? title : '$title, $subtitle',
+      child: GlassContainer(
+        onTap: onTap,
+        elevated: !secondary,
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: secondary
+            ? Row(
+                children: [
+                  iconChip,
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(child: labels),
+                  const SizedBox(width: AppSpacing.xs),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 17,
+                    color: AppColors.textSecondary,
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  iconChip,
+                  const SizedBox(height: AppSpacing.md),
+                  labels,
+                ],
+              ),
       ),
     );
   }

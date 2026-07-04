@@ -12,6 +12,31 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-07-04 — Admin dashboard risk-first design review)
+
+Implemented the real-UI dashboard critique as a presentation-only pass; no
+schema, route, cubit, repository, DI, rules, or deployment change.
+
+- **Flipped the hierarchy:** `branchesWithoutManagers` now drives a highlighted
+  top banner — “N branches need a manager” → **Assign now** → `/admin/managers`.
+  The oversized all-clear hero/progress/CTA was replaced with a compact live
+  task-status strip.
+- **Reduced empty-state noise:** Pending Actions stays discoverable but collapses
+  to a quiet **Nothing queued** row when empty.
+- **Eliminated truncated CTAs:** the 330px rail is a stable 2-up grid (180px
+  target instead of 150px), “Create Account” is **New Account**, and
+  `ActionCard` labels/subtitles wrap instead of ever using ellipsis.
+- **Separated action priority:** added `ActionCard.secondary` (flat horizontal)
+  for Manage/navigation shortcuts; primary Quick actions remain elevated and
+  vertical.
+- **Rebalanced Overview:** fixed 2×2 KPI grid; Managers now uses a distinct admin
+  badge icon; all four metrics retain the same tappable chevron affordance.
+- **Accessibility:** dashboard supporting text and chevrons moved from
+  `textTertiary` to `textSecondary` for readable contrast on near-black.
+- Added `action_card_test.dart` (narrow primary + secondary no-truncation cases)
+  and updated the Pending Actions empty-state test. Full analysis: 7 pre-existing
+  infos, 0 new; focused widget tests: **5 pass**.
+
 ### Changed (2026-07-04 — Case Management System: Reports reframed as private conversations)
 
 Rebuilt the Reports feature from scratch as a **Case Management System** — a
