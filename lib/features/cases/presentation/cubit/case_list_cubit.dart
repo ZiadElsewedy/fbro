@@ -7,6 +7,7 @@ import 'package:drop/core/enums/case_privacy.dart';
 import 'package:drop/core/enums/case_recipient.dart';
 import 'package:drop/core/enums/case_status.dart';
 import 'package:drop/core/errors/failures.dart';
+import 'package:drop/core/services/case_seen_store.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/auth/domain/usecases/get_users_by_branch.dart';
 import 'package:drop/features/branch/domain/repositories/branch_repository.dart';
@@ -37,6 +38,7 @@ class CaseListCubit extends Cubit<CaseListState> {
   final CreateCase _createCase;
   final UploadCaseAttachment _uploadCaseAttachment;
   final GetUsersByBranch _getUsersByBranch;
+  final CaseSeenStore _seenStore;
 
   UserEntity? _user;
   StreamSubscription<List<CaseEntity>>? _scopeSub;
@@ -59,10 +61,17 @@ class CaseListCubit extends Cubit<CaseListState> {
     required this._createCase,
     required this._uploadCaseAttachment,
     required this._getUsersByBranch,
+    required this._seenStore,
   }) : super(const CaseListState.initial());
 
   List<CaseEntity> get _cases =>
-      state.maybeWhen(loaded: (c, _, _, _) => c, orElse: () => const []);
+      state.maybeWhen(loaded: (c, _, _, _, _) => c, orElse: () => const []);
+
+  /// Ids of cases with activity newer than the viewer last opened them.
+  Set<String> _computeUnread(List<CaseEntity> list) => {
+        for (final c in list)
+          if (_seenStore.isUnread(c.id, c.lastActivityAt)) c.id,
+      };
 
   CaseEntity? caseById(String id) {
     for (final c in _cases) {
@@ -75,6 +84,9 @@ class CaseListCubit extends Cubit<CaseListState> {
       '${u.uid}:${u.role.value}:${u.branchId ?? ''}';
 
   Future<void> load(UserEntity user, {bool forceRefresh = false}) async {
+    // Scope the inbox unread-tracking to this user (idempotent after the first
+    // load; always refreshes the active uid so an account switch is clean).
+    await _seenStore.load(user.uid);
     final inError = state.maybeWhen(error: (_) => true, orElse: () => false);
     final sameScope = _user != null && _scopeKey(_user!) == _scopeKey(user);
     if (!forceRefresh && !inError && _scopeSubActive && sameScope) return;
@@ -91,7 +103,7 @@ class CaseListCubit extends Cubit<CaseListState> {
     _loadBranchNames();
 
     final hasCases =
-        state.maybeWhen(loaded: (_, _, _, _) => true, orElse: () => false);
+        state.maybeWhen(loaded: (_, _, _, _, _) => true, orElse: () => false);
     if (!hasCases) emit(const CaseListState.loading());
 
     await _scopeSub?.cancel();
@@ -147,10 +159,22 @@ class CaseListCubit extends Cubit<CaseListState> {
     if (user != null) await load(user, forceRefresh: true);
   }
 
-  /// Select a case for the desktop split-pane's right side.
+  /// Select a case for the desktop split-pane's right side. Opening a case marks
+  /// it seen, so its unread flag clears immediately.
   void select(String? caseId) {
     _selectedId = caseId;
-    state.mapOrNull(loaded: (s) => emit(s.copyWith(selectedId: caseId)));
+    if (caseId != null) {
+      _seenStore.markSeen(caseId, caseById(caseId)?.lastActivityAt);
+    }
+    _emitMerged();
+  }
+
+  /// Marks a case seen (mobile opens it via a pushed route, not [select]). Only
+  /// re-emits when the seen-state actually advanced.
+  void markSeen(String caseId) {
+    if (_seenStore.markSeen(caseId, caseById(caseId)?.lastActivityAt)) {
+      _emitMerged();
+    }
   }
 
   /// Merges the role stream + the caller's own cases (deduped by id) and emits
@@ -176,10 +200,18 @@ class CaseListCubit extends Cubit<CaseListState> {
         if (bt == null) return -1;
         return bt.compareTo(at);
       });
+    // The desktop-open case is on screen — keep it read as new replies land, so
+    // it never re-flags itself unread while you're looking at it.
+    final sel = _selectedId;
+    if (sel != null) {
+      final c = merged[sel];
+      if (c != null) _seenStore.markSeen(sel, c.lastActivityAt);
+    }
     emit(CaseListState.loaded(list,
         busy: _mutating,
         directory: Map.of(_directory),
-        selectedId: _selectedId));
+        selectedId: _selectedId,
+        unreadIds: _computeUnread(list)));
     _ensureDirectory(list);
   }
 
@@ -231,7 +263,10 @@ class CaseListCubit extends Cubit<CaseListState> {
     if (user == null || _mutating) return null;
     _mutating = true;
     emit(CaseListState.loaded(_cases,
-        busy: true, directory: Map.of(_directory), selectedId: _selectedId));
+        busy: true,
+        directory: Map.of(_directory),
+        selectedId: _selectedId,
+        unreadIds: _computeUnread(_cases)));
 
     CaseEntity? created;
     try {
@@ -322,7 +357,10 @@ class CaseListCubit extends Cubit<CaseListState> {
     if (_user == null || _mutating) return;
     _mutating = true;
     emit(CaseListState.loaded(_cases,
-        busy: true, directory: Map.of(_directory), selectedId: _selectedId));
+        busy: true,
+        directory: Map.of(_directory),
+        selectedId: _selectedId,
+        unreadIds: _computeUnread(_cases)));
     try {
       await _repository.deleteCase(caseId);
       if (_selectedId == caseId) _selectedId = null;

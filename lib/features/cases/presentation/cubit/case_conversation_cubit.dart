@@ -89,14 +89,16 @@ class CaseConversationCubit extends Cubit<CaseConversationState> {
   }
 
   // ─── Send a reply (single message create) ──────────────────────
-  Future<void> sendMessage(
+  /// Returns whether the message was sent. The composer keys its input-clearing
+  /// off this, so a failed send never loses what the user typed.
+  Future<bool> sendMessage(
     String text, {
     List<PickedAttachment> attachments = const [],
   }) async {
     final trimmed = text.trim();
     final c = _case;
-    if (_user == null || c == null || c.isClosed || _sending) return;
-    if (trimmed.isEmpty && attachments.isEmpty) return;
+    if (_user == null || c == null || c.isClosed || _sending) return false;
+    if (trimmed.isEmpty && attachments.isEmpty) return false;
 
     final isReporter = viewerIsReporter(_user.role, c);
     final hide = isReporter && c.privacy.isConfidential;
@@ -132,10 +134,13 @@ class CaseConversationCubit extends Cubit<CaseConversationState> {
           createdAt: DateTime.now(),
         ),
       );
+      return true;
     } on Failure catch (e) {
       emit(CaseConversationState.error(e.message));
+      return false;
     } catch (_) {
       emit(const CaseConversationState.error('Failed to send your message.'));
+      return false;
     } finally {
       _sending = false;
       _emit();

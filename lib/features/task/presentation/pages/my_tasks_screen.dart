@@ -9,6 +9,7 @@ import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
 import 'package:drop/core/widgets/responsive_card_grid.dart';
+import 'package:drop/core/widgets/segmented_tab_bar.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
@@ -59,9 +60,9 @@ class _MyTasksScreenState extends State<MyTasksScreen>
           onPressed: () => context.read<TaskCubit>().refresh(),
         ),
       ],
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(44),
-        child: _TabBar(controller: _tabs),
+      bottom: SegmentedTabBar(
+        controller: _tabs,
+        tabs: const ['Active', 'Done'],
       ),
       body: BlocConsumer<TaskCubit, TaskState>(
         listener: (context, state) =>
@@ -96,44 +97,6 @@ class _MyTasksScreenState extends State<MyTasksScreen>
           ),
         ),
       ],
-    );
-  }
-}
-
-// ─── Tab bar ────────────────────────────────────────────────────────
-
-class _TabBar extends StatelessWidget {
-  const _TabBar({required this.controller});
-  final TabController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-          AppSpacing.pagePadding, 0, AppSpacing.pagePadding, AppSpacing.md),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.darkBorder),
-      ),
-      child: TabBar(
-        controller: controller,
-        indicator: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(9),
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        dividerColor: Colors.transparent,
-        labelColor: AppColors.onPrimary,
-        unselectedLabelColor: AppColors.textSecondary,
-        labelStyle: AppTypography.caption.copyWith(fontWeight: FontWeight.w700),
-        unselectedLabelStyle: AppTypography.caption,
-        tabs: const [
-          Tab(text: 'Active'),
-          Tab(text: 'Done'),
-        ],
-      ),
     );
   }
 }

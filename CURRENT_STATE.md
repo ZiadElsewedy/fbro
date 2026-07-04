@@ -11,8 +11,117 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-04 (Admin dashboard design-review implementation)
+**Last updated:** 2026-07-04 (Case Management — inbox unread indicators)
 **Version:** 1.0.0+1 · **Branch:** `feature/report-issue` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Case Management — inbox unread indicators (2026-07-04)
+
+The biggest remaining "conversation inbox" gap: nothing flagged a case with a
+new reply you hadn't seen. Added a **client-only** unread model — **no new
+dependency** (reuses `path_provider`), **no schema/rules/functions/deploy**.
+
+- **`CaseSeenStore`** (`core/services/case_seen_store.dart`) persists, per user,
+  the last time each case was opened, to a small JSON file in the app-support dir
+  (same mechanism as the crash reporter). Namespaced by uid so a shared device
+  never leaks read-state; any file failure (web/sandbox) degrades to in-memory.
+  Pure `caseIsUnread(lastActivityAt, seenMillis)` decision extracted + tested.
+- **A case is unread when its `lastActivityAt` is newer than the stored seen
+  time** (or it was never opened). `CaseListCubit` loads the store per user,
+  computes an **`unreadIds` set into `CaseListState.loaded`** (freezed field added),
+  and marks a case seen on open — `select(id)` (desktop) and `markSeen(id)`
+  (mobile push). The desktop-open case is re-marked seen inside `_emitMerged` so a
+  reply landing while you're looking at it never re-flags it.
+- **Premium monochrome treatment** in `CaseListTile`: a fixed unread gutter with
+  an 8px white dot, a **bolder subject** (w700 vs w600), a brighter preview, and
+  an emphasized timestamp. Inbox **ordering is unchanged** (active-urgent-first).
+- **Note:** pre-deploy, `lastMessageAt` isn't bumped (that's `onCaseMessageCreated`),
+  so unread mainly flags **new cases** until the functions ship — then it lights
+  up on every new reply automatically (keyed off the right signal by design).
+- `flutter analyze` clean (7 pre-existing infos, 0 new) · **406 tests pass** (+10:
+  `case_seen_store_test` 8, `case_list_tile_test` 2). freezed regenerated.
+
+---
+
+## ✅ Case Management — premium conversation pass (2026-07-04)
+
+Senior-engineer quality pass on the issue-report / Case conversation. All
+presentation/cubit — **no schema/rules/functions/deploy change, no new deps.**
+
+- **Fixed a message-loss defect.** `CaseComposer` cleared the input the instant
+  it fired `onSend`, before the async send resolved — so a failed send (network /
+  permission) silently discarded what the user typed. `onSend` is now
+  `Future<bool>` (`CaseConversationCubit.sendMessage` returns success); the
+  composer clears **only on success** and keeps text + attachments on failure so
+  the user retries, not retypes. Covered by `test/case_composer_test.dart`.
+- **Desktop chat ergonomics.** On desktop **Enter sends, Shift+Enter inserts a
+  newline** (via the composer's `FocusNode` key handler); mobile keeps
+  Enter = newline + the send button. Focus is retained after a send so the next
+  reply flows.
+- **Opening-message resilience** (`case_thread.dart`, pure + tested). The
+  canonical `opening` message is written by `onCaseCreated` — **not yet deployed**
+  — so today a fresh case opens with an empty thread. `caseThread(...)` now
+  synthesizes the opening from the case doc (subject context · description ·
+  attachments · reporter label, de-identified by role) when no server opening is
+  present, and **suppresses it the moment the real one exists** (no double-render
+  once functions are live). Covered by `test/case_thread_test.dart`.
+- **Smart auto-scroll.** The thread no longer yanks a reader who has scrolled up
+  into history: new replies auto-scroll only when they're already at the bottom
+  (or it's their own message); otherwise a floating **"New messages"** pill
+  appears and jumps to the latest on tap.
+- `flutter analyze` clean (7 pre-existing infos, 0 new) · **396 tests pass** (+9).
+  Still pending (unchanged, deploy-side): the Case Cloud Functions + rules/indexes
+  deploy (`onCaseCreated` / `onCaseUpdated` / `onCaseMessageCreated` / notifs).
+
+---
+
+## ✅ Admin Task Management — Active / Done segmented pages (2026-07-04)
+
+Presentation-only. Owner ask (Apple-style toggle, "like a new iOS update"):
+split **Task Management** into two swipeable pages behind a segmented pill.
+
+- **New shared `SegmentedTabBar`** (`core/widgets/segmented_tab_bar.dart`) — an
+  Apple-style monochrome segmented control (dark track · white sliding selector ·
+  no ripple) implementing `PreferredSizeWidget`, so it drops straight into
+  `AdaptiveScaffold.bottom`. It drives a `TabController` (pair with a
+  `TabBarView`). Extracted from the employee **My Tasks** toggle — `my_tasks_screen`
+  now reuses it (its private `_TabBar` deleted, zero visual change).
+- **`AdminTaskOverviewScreen` is now two lenses of the same branch grid**
+  (`_TaskLens.active` / `.done`), switched by the pill + swipe:
+  - **Active** — branches that need attention first (overdue → pending review);
+    cards show **Active · Pending review · Overdue**; summary strip leads with
+    **Active / In review / Overdue**.
+  - **Done** — branches that completed the most first (approved → completion rate);
+    cards show **Done · In review · Open** with an "N of M done / All complete"
+    caption; summary strip leads with **Done / In review / Open**.
+  - Same data (`_BranchMetrics`), re-sorted (`_sortForLens`) and re-framed per
+    lens; drill-into-branch, cover headers, completion bar all unchanged.
+- **Coverage:** new `segmented_tab_bar_test.dart` (labels · 44px preferred height ·
+  tap drives the paired `TabBarView`). `flutter analyze` clean (7 pre-existing
+  infos, 0 new) · **387 tests pass** (+3). Nothing to deploy.
+
+---
+
+## ✅ Admin dashboard — Sync control + rail label fix (2026-07-04)
+
+Presentation-only follow-up on the risk-first pass; nothing to deploy.
+
+- **Header Sync control** (`_SyncButton`). Desktop = a labelled pill next to the
+  ⌘K hint; mobile = an icon-only tap target beside the greeting. Tap force-
+  refreshes the three live sources (`StatisticsCubit` · `TaskCubit` stream ·
+  `ShiftSwapCubit`); the sync icon spins while in flight and otherwise reads
+  **“Synced just now / 3m ago / 2h ago / 1d ago”** (local 30 s ticker keeps it
+  honest). A ~650 ms min-spin makes a cached refresh feel intentional.
+- **`_load` awaits** all three futures under one `_syncing`/`_lastSynced` pair, so
+  the button spinner and pull-to-refresh both reflect real completion (was fire-
+  and-forget). Pull-to-refresh behaviour is otherwise unchanged.
+- **Fixed truncated Manage shortcuts.** In the 330px desktop rail the 2-up grid
+  broke single words mid-word (“Employee\ns”); Manage now renders **1-up** there
+  (wide `maxItemWidth` when compact). Mobile was already single-column.
+- **Pure + tested:** `syncLabel(DateTime?, {now})` extracted as a top-level
+  function; new `sync_status_label_test.dart` (5 clock cases). `flutter analyze`
+  clean (7 pre-existing infos, 0 new) · **384 tests pass** (+5).
 
 ---
 

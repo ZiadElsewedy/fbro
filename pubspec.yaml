@@ -60,6 +60,7 @@ dependencies:
   # Code Generation (annotations only at runtime)
   freezed_annotation: ^2.4.4
   json_annotation: ^4.9.0
+  lottie: ^3.4.0
 
 dev_dependencies:
   flutter_test:

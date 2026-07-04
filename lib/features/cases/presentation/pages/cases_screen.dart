@@ -60,7 +60,7 @@ class _Workspace extends StatelessWidget {
       child: BlocBuilder<CaseListCubit, CaseListState>(
         builder: (context, state) {
           return state.maybeWhen(
-            loaded: (cases, busy, directory, selectedId) {
+            loaded: (cases, busy, directory, selectedId, unreadIds) {
               // Auto-select the first case so the pane opens into a conversation.
               if (selectedId == null && cases.isNotEmpty) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -78,6 +78,7 @@ class _Workspace extends StatelessWidget {
                     child: _ListPane(
                       cases: cases,
                       selectedId: selectedId,
+                      unreadIds: unreadIds,
                       showBranch: isGlobal,
                       onOpen: (id) => context.read<CaseListCubit>().select(id),
                     ),
@@ -102,11 +103,13 @@ class _ListPane extends StatelessWidget {
   const _ListPane({
     required this.cases,
     required this.selectedId,
+    required this.unreadIds,
     required this.showBranch,
     required this.onOpen,
   });
   final List<CaseEntity> cases;
   final String? selectedId;
+  final Set<String> unreadIds;
   final bool showBranch;
   final ValueChanged<String> onOpen;
 
@@ -137,6 +140,7 @@ class _ListPane extends StatelessWidget {
             cases: cases,
             onOpen: onOpen,
             selectedId: selectedId,
+            unreadIds: unreadIds,
             showBranch: showBranch,
             branchNames: context.read<CaseListCubit>().branchNames,
           ),
@@ -223,12 +227,18 @@ class _MobileInbox extends StatelessWidget {
                 }
               },
             ),
-            loaded: (cases, busy, directory, selectedId) => RefreshIndicator(
+            loaded: (cases, busy, directory, selectedId, unreadIds) =>
+                RefreshIndicator(
               onRefresh: () => context.read<CaseListCubit>().refresh(),
               color: AppColors.primary,
               child: _Inbox(
                 cases: cases,
-                onOpen: (id) => context.push(RouteNames.caseDetail(id)),
+                onOpen: (id) {
+                  // Opening the conversation clears its unread flag.
+                  context.read<CaseListCubit>().markSeen(id);
+                  context.push(RouteNames.caseDetail(id));
+                },
+                unreadIds: unreadIds,
                 showBranch: isGlobal,
                 branchNames: context.read<CaseListCubit>().branchNames,
               ),
@@ -247,6 +257,7 @@ class _Inbox extends StatefulWidget {
     required this.onOpen,
     required this.showBranch,
     required this.branchNames,
+    required this.unreadIds,
     this.selectedId,
   });
 
@@ -254,6 +265,7 @@ class _Inbox extends StatefulWidget {
   final ValueChanged<String> onOpen;
   final bool showBranch;
   final Map<String, String> branchNames;
+  final Set<String> unreadIds;
   final String? selectedId;
 
   @override
@@ -323,6 +335,7 @@ class _InboxState extends State<_Inbox> {
   Widget _tile(CaseEntity c) => CaseListTile(
         caseItem: c,
         selected: c.id == widget.selectedId,
+        unread: widget.unreadIds.contains(c.id),
         branchName: widget.showBranch ? widget.branchNames[c.branchId] : null,
         onTap: () => widget.onOpen(c.id),
       );

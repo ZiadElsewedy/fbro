@@ -12,6 +12,84 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-07-04 — Case Management: inbox unread indicators)
+
+Client-only; no new dependency (reuses `path_provider`), no schema/rules/
+functions/deploy change.
+
+- **Added** `CaseSeenStore` (`core/services/case_seen_store.dart`): persists
+  per-user, per-case "last opened" timestamps to a JSON file in the app-support
+  dir (uid-namespaced; in-memory fallback on web/sandbox). Pure `caseIsUnread`
+  decision extracted.
+- **Added** an `unreadIds` set to `CaseListState.loaded` (freezed): `CaseListCubit`
+  computes it from the store and marks a case seen on open (`select` desktop /
+  `markSeen` mobile); the desktop-open case stays read as new replies arrive.
+- **Added** a monochrome unread treatment to `CaseListTile` — an 8px dot gutter,
+  bold subject, brighter preview + timestamp. Inbox ordering unchanged.
+- Tests: `test/case_seen_store_test.dart` (+8), `test/case_list_tile_test.dart`
+  (+2). Analysis: 7 pre-existing infos, 0 new · **406 tests pass** (+10).
+
+### Fixed / Added (2026-07-04 — Case Management: premium conversation pass)
+
+Presentation/cubit only; no schema/rules/functions/deploy change, no new deps.
+
+- **Fixed** a message-loss defect in `CaseComposer`: it cleared the input before
+  the async send resolved, so a failed send discarded the user's text. `onSend`
+  is now `Future<bool>` (`CaseConversationCubit.sendMessage` returns success); the
+  composer clears **only on success** and keeps text + attachments on failure.
+- **Added** desktop chat ergonomics: Enter sends / Shift+Enter newline on desktop
+  (mobile unchanged); focus retained after send.
+- **Added** `case_thread.dart` (`caseThread`): synthesizes the `opening` message
+  from the case doc when the server-written one (`onCaseCreated`, not yet
+  deployed) is absent, and suppresses it once the real one exists — so a fresh
+  case never opens with an empty thread.
+- **Added** smart auto-scroll to the conversation: new replies only auto-scroll
+  when the reader is at the bottom (or it's their own message); otherwise a
+  floating "New messages" pill jumps to the latest.
+- Tests: `test/case_thread_test.dart` (+5), `test/case_composer_test.dart` (+4).
+  Analysis: 7 pre-existing infos, 0 new · **396 tests pass** (+9).
+
+### Added / Refactored (2026-07-04 — Admin Task Management: Active/Done segmented pages)
+
+Presentation-only; no schema/route/cubit/repo/rules/deploy change.
+
+- **Added a shared `SegmentedTabBar`** (`core/widgets/segmented_tab_bar.dart`): an
+  Apple-style monochrome segmented control (dark track, white sliding selector,
+  no ripple) that implements `PreferredSizeWidget` for the `AdaptiveScaffold.bottom`
+  slot and drives a `TabController`.
+- **Split `AdminTaskOverviewScreen` into Active / Done pages** behind the pill +
+  swipe (`_TaskLens`). The **Active** lens keeps the attention-first order and the
+  Active/Pending review/Overdue framing; the **Done** lens re-sorts branches by
+  most-completed (approved → completion rate) and re-frames cards + the company
+  summary to Done · In review · Open (with an "N of M done / All complete"
+  caption). Same `_BranchMetrics`, re-sorted via `_sortForLens` and re-framed —
+  no data-layer change.
+- **Refactored** the employee `my_tasks_screen` to reuse `SegmentedTabBar`
+  (deleted its private `_TabBar`; identical look).
+- Added `test/segmented_tab_bar_test.dart`. Analysis: 7 pre-existing infos, 0 new
+  · **387 tests pass** (+3).
+
+### Added / Fixed (2026-07-04 — Admin dashboard Sync control + rail label fix)
+
+Presentation-only follow-up on the risk-first pass; no schema/route/cubit/repo/
+rules/deploy change.
+
+- **Added a header Sync control** (`_SyncButton` in `admin_dashboard_screen.dart`).
+  Desktop shows a labelled pill beside the ⌘K hint; mobile shows an icon-only tap
+  target next to the greeting. Tapping force-refreshes the three live sources
+  (statistics · task stream · shift swaps); the icon spins while a refresh is in
+  flight (min ~650 ms so a cached answer still feels responsive) and otherwise
+  reads **“Synced just now / 3m ago / 2h ago / 1d ago”**, ticking via a local 30 s
+  timer. Pull-to-refresh is unchanged and now shares the same await path.
+- **`_load` now awaits** all three cubit futures under a single
+  `_syncing`/`_lastSynced` pair, so both the button spinner and the pull-to-refresh
+  reflect real completion instead of firing and forgetting.
+- **Fixed the truncated Manage shortcuts:** in the 330px desktop rail the 2-up grid
+  broke single words mid-word (“Employee\ns”). Manage now renders **1-up** in the
+  rail (wide `maxItemWidth` when compact); mobile was already single-column.
+- Added `sync_status_label_test.dart` (pure `syncLabel` clock cases). Analysis:
+  7 pre-existing infos, 0 new · **384 tests pass** (+5).
+
 ### Changed (2026-07-04 — Admin dashboard risk-first design review)
 
 Implemented the real-UI dashboard critique as a presentation-only pass; no

@@ -26,6 +26,7 @@ mixin _$CaseListState {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )
     loaded,
     required TResult Function(String message) error,
@@ -39,6 +40,7 @@ mixin _$CaseListState {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -52,6 +54,7 @@ mixin _$CaseListState {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -153,6 +156,7 @@ class _$InitialImpl implements _Initial {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )
     loaded,
     required TResult Function(String message) error,
@@ -170,6 +174,7 @@ class _$InitialImpl implements _Initial {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -187,6 +192,7 @@ class _$InitialImpl implements _Initial {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -290,6 +296,7 @@ class _$LoadingImpl implements _Loading {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )
     loaded,
     required TResult Function(String message) error,
@@ -307,6 +314,7 @@ class _$LoadingImpl implements _Loading {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -324,6 +332,7 @@ class _$LoadingImpl implements _Loading {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -389,6 +398,7 @@ abstract class _$$LoadedImplCopyWith<$Res> {
     bool busy,
     Map<String, UserEntity> directory,
     String? selectedId,
+    Set<String> unreadIds,
   });
 }
 
@@ -410,6 +420,7 @@ class __$$LoadedImplCopyWithImpl<$Res>
     Object? busy = null,
     Object? directory = null,
     Object? selectedId = freezed,
+    Object? unreadIds = null,
   }) {
     return _then(
       _$LoadedImpl(
@@ -429,6 +440,10 @@ class __$$LoadedImplCopyWithImpl<$Res>
             ? _value.selectedId
             : selectedId // ignore: cast_nullable_to_non_nullable
                   as String?,
+        unreadIds: null == unreadIds
+            ? _value._unreadIds
+            : unreadIds // ignore: cast_nullable_to_non_nullable
+                  as Set<String>,
       ),
     );
   }
@@ -442,8 +457,10 @@ class _$LoadedImpl implements _Loaded {
     this.busy = false,
     final Map<String, UserEntity> directory = const <String, UserEntity>{},
     this.selectedId,
+    final Set<String> unreadIds = const <String>{},
   }) : _cases = cases,
-       _directory = directory;
+       _directory = directory,
+       _unreadIds = unreadIds;
 
   final List<CaseEntity> _cases;
   @override
@@ -468,9 +485,25 @@ class _$LoadedImpl implements _Loaded {
   @override
   final String? selectedId;
 
+  /// Ids of cases with activity newer than the last time the viewer opened
+  /// them — drives the inbox "unread" treatment (see `CaseSeenStore`). Held in
+  /// state so opening a case (which advances seen-state) reactively clears it.
+  final Set<String> _unreadIds;
+
+  /// Ids of cases with activity newer than the last time the viewer opened
+  /// them — drives the inbox "unread" treatment (see `CaseSeenStore`). Held in
+  /// state so opening a case (which advances seen-state) reactively clears it.
+  @override
+  @JsonKey()
+  Set<String> get unreadIds {
+    if (_unreadIds is EqualUnmodifiableSetView) return _unreadIds;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableSetView(_unreadIds);
+  }
+
   @override
   String toString() {
-    return 'CaseListState.loaded(cases: $cases, busy: $busy, directory: $directory, selectedId: $selectedId)';
+    return 'CaseListState.loaded(cases: $cases, busy: $busy, directory: $directory, selectedId: $selectedId, unreadIds: $unreadIds)';
   }
 
   @override
@@ -485,7 +518,11 @@ class _$LoadedImpl implements _Loaded {
               _directory,
             ) &&
             (identical(other.selectedId, selectedId) ||
-                other.selectedId == selectedId));
+                other.selectedId == selectedId) &&
+            const DeepCollectionEquality().equals(
+              other._unreadIds,
+              _unreadIds,
+            ));
   }
 
   @override
@@ -495,6 +532,7 @@ class _$LoadedImpl implements _Loaded {
     busy,
     const DeepCollectionEquality().hash(_directory),
     selectedId,
+    const DeepCollectionEquality().hash(_unreadIds),
   );
 
   /// Create a copy of CaseListState
@@ -515,11 +553,12 @@ class _$LoadedImpl implements _Loaded {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )
     loaded,
     required TResult Function(String message) error,
   }) {
-    return loaded(cases, busy, directory, selectedId);
+    return loaded(cases, busy, directory, selectedId, unreadIds);
   }
 
   @override
@@ -532,11 +571,12 @@ class _$LoadedImpl implements _Loaded {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult? Function(String message)? error,
   }) {
-    return loaded?.call(cases, busy, directory, selectedId);
+    return loaded?.call(cases, busy, directory, selectedId, unreadIds);
   }
 
   @override
@@ -549,13 +589,14 @@ class _$LoadedImpl implements _Loaded {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
     if (loaded != null) {
-      return loaded(cases, busy, directory, selectedId);
+      return loaded(cases, busy, directory, selectedId, unreadIds);
     }
     return orElse();
   }
@@ -604,12 +645,18 @@ abstract class _Loaded implements CaseListState {
     final bool busy,
     final Map<String, UserEntity> directory,
     final String? selectedId,
+    final Set<String> unreadIds,
   }) = _$LoadedImpl;
 
   List<CaseEntity> get cases;
   bool get busy;
   Map<String, UserEntity> get directory;
   String? get selectedId;
+
+  /// Ids of cases with activity newer than the last time the viewer opened
+  /// them — drives the inbox "unread" treatment (see `CaseSeenStore`). Held in
+  /// state so opening a case (which advances seen-state) reactively clears it.
+  Set<String> get unreadIds;
 
   /// Create a copy of CaseListState
   /// with the given fields replaced by the non-null parameter values.
@@ -695,6 +742,7 @@ class _$ErrorImpl implements _Error {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )
     loaded,
     required TResult Function(String message) error,
@@ -712,6 +760,7 @@ class _$ErrorImpl implements _Error {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -729,6 +778,7 @@ class _$ErrorImpl implements _Error {
       bool busy,
       Map<String, UserEntity> directory,
       String? selectedId,
+      Set<String> unreadIds,
     )?
     loaded,
     TResult Function(String message)? error,

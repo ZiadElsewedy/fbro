@@ -97,6 +97,7 @@ class _Loaded extends StatelessWidget {
         const Divider(height: 1, color: AppColors.darkBorder),
         Expanded(
           child: CaseMessageList(
+            caseItem: caseItem,
             messages: messages,
             currentUid: user?.uid ?? '',
             iAmReporter: iAmReporter,

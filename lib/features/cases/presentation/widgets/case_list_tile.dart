@@ -17,12 +17,17 @@ class CaseListTile extends StatelessWidget {
     required this.caseItem,
     required this.onTap,
     this.selected = false,
+    this.unread = false,
     this.branchName,
   });
 
   final CaseEntity caseItem;
   final VoidCallback onTap;
   final bool selected;
+
+  /// New activity since the viewer last opened this case — drives the unread
+  /// dot + emphasized subject/time (see `CaseSeenStore`).
+  final bool unread;
 
   /// Shown for the admin/global list (which spans branches). Null → hidden.
   final String? branchName;
@@ -54,6 +59,17 @@ class CaseListTile extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Fixed unread gutter — a filled dot when unread, empty otherwise,
+              // so read and unread rows stay aligned.
+              SizedBox(
+                width: 14,
+                child: unread
+                    ? const Padding(
+                        padding: EdgeInsets.only(top: 15),
+                        child: _UnreadDot(),
+                      )
+                    : null,
+              ),
               _CategoryAvatar(caseItem: caseItem),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -66,7 +82,9 @@ class CaseListTile extends StatelessWidget {
                           child: Text(
                             caseItem.subject,
                             style: AppTypography.body.copyWith(
-                                fontWeight: FontWeight.w600, height: 1.2),
+                                fontWeight:
+                                    unread ? FontWeight.w700 : FontWeight.w600,
+                                height: 1.2),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -74,8 +92,13 @@ class CaseListTile extends StatelessWidget {
                         if (time.isNotEmpty) ...[
                           const SizedBox(width: AppSpacing.sm),
                           Text(time,
-                              style: AppTypography.caption
-                                  .copyWith(color: AppColors.textTertiary)),
+                              style: AppTypography.caption.copyWith(
+                                  color: unread
+                                      ? AppColors.textPrimary
+                                      : AppColors.textTertiary,
+                                  fontWeight: unread
+                                      ? FontWeight.w600
+                                      : FontWeight.w400)),
                         ],
                       ],
                     ),
@@ -83,8 +106,10 @@ class CaseListTile extends StatelessWidget {
                     if (preview.isNotEmpty)
                       Text(
                         preview,
-                        style: AppTypography.bodySmall
-                            .copyWith(color: AppColors.textTertiary),
+                        style: AppTypography.bodySmall.copyWith(
+                            color: unread
+                                ? AppColors.textSecondary
+                                : AppColors.textTertiary),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -134,6 +159,21 @@ class CaseListTile extends StatelessWidget {
         padding: EdgeInsets.symmetric(horizontal: 6),
         child: Text('·',
             style: TextStyle(color: AppColors.textTertiary, fontSize: 12)),
+      );
+}
+
+/// The unread indicator — a small filled monochrome dot (there is no chromatic
+/// accent, so unread reads as the white [AppColors.primary] on the dark surface).
+class _UnreadDot extends StatelessWidget {
+  const _UnreadDot();
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          color: AppColors.primary,
+          shape: BoxShape.circle,
+        ),
       );
 }
 

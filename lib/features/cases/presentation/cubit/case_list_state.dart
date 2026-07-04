@@ -20,6 +20,10 @@ class CaseListState with _$CaseListState {
     @Default(false) bool busy,
     @Default(<String, UserEntity>{}) Map<String, UserEntity> directory,
     String? selectedId,
+    /// Ids of cases with activity newer than the last time the viewer opened
+    /// them — drives the inbox "unread" treatment (see `CaseSeenStore`). Held in
+    /// state so opening a case (which advances seen-state) reactively clears it.
+    @Default(<String>{}) Set<String> unreadIds,
   }) = _Loaded;
 
   /// Transient — surfaced as a snackbar; the cubit immediately re-emits the

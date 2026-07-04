@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:drop/core/services/case_seen_store.dart';
 import 'package:drop/core/services/notification_service.dart';
 import 'package:drop/features/auth/data/datasources/auth_remote_datasource.dart';
 import 'package:drop/features/auth/data/datasources/user_remote_datasource.dart';
@@ -250,6 +251,7 @@ class AppDependencies {
       createCase: CreateCase(caseRepository),
       uploadCaseAttachment: uploadCaseAttachment,
       getUsersByBranch: GetUsersByBranch(authRepository),
+      seenStore: CaseSeenStore(),
     );
 
     // ─── Admin module (Phase 5) ───────────────────────────────

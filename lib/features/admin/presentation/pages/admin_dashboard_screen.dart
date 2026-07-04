@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -45,24 +47,61 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  /// A refresh is in flight — drives the header Sync control's spinner.
+  bool _syncing = false;
+
+  /// When the live sources were last (re)pulled — drives "Synced 3m ago".
+  DateTime? _lastSynced;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  /// Refresh the three live sources that feed the dashboard, tracking a single
+  /// [_syncing]/[_lastSynced] pair so the header **Sync** button can show a
+  /// spinner and how fresh the numbers are. Awaits all three so pull-to-refresh
+  /// and the button both reflect real completion.
   Future<void> _load({bool force = false}) async {
     final user = context.currentUser;
     if (user == null) return;
-    context.read<StatisticsCubit>().load(user, forceRefresh: force);
-    // The all-branches task stream powers the Pending Actions + overdue counts.
-    // TaskCubit.load is now self-guarding (no-op if already streaming this user
-    // unless forced), so a revisit doesn't re-subscribe.
-    context.read<TaskCubit>().load(user, forceRefresh: force);
-    // Pending swaps now stream live (scope = all branches), so the Pending
-    // Actions swap count updates the instant a swap settles — no refresh.
-    context.read<ShiftSwapCubit>().loadAll(force: force);
+    if (mounted) setState(() => _syncing = true);
+    final startedAt = DateTime.now();
+    try {
+      await Future.wait([
+        context.read<StatisticsCubit>().load(user, forceRefresh: force),
+        // The all-branches task stream powers Pending Actions + overdue counts.
+        // TaskCubit.load is self-guarding (no-op if already streaming this user
+        // unless forced), so a revisit doesn't re-subscribe.
+        context.read<TaskCubit>().load(user, forceRefresh: force),
+        // Pending swaps stream live (scope = all branches), so the Pending
+        // Actions swap count updates the instant a swap settles.
+        context.read<ShiftSwapCubit>().loadAll(force: force),
+      ]);
+      // On an explicit sync, keep the spin perceptible even when every source
+      // answered from cache in a few milliseconds — otherwise the tap feels dead.
+      if (force) {
+        final rest = const Duration(milliseconds: 650) -
+            DateTime.now().difference(startedAt);
+        if (rest > Duration.zero) await Future<void>.delayed(rest);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _syncing = false;
+          _lastSynced = DateTime.now();
+        });
+      }
+    }
   }
+
+  Widget _syncButton({bool compact = false}) => _SyncButton(
+        syncing: _syncing,
+        lastSynced: _lastSynced,
+        onSync: () => _load(force: true),
+        compact: compact,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -163,7 +202,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         AppSpacing.xxxl,
       ),
       children: [
-        sec('greeting', _greeting()),
+        sec(
+          'greeting',
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _greeting()),
+              const SizedBox(width: AppSpacing.sm),
+              _syncButton(compact: true),
+            ],
+          ),
+        ),
         const SizedBox(height: AppSpacing.xl),
         sec('summary', _operationalSummary()),
         const SizedBox(height: AppSpacing.xl),
@@ -219,6 +268,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(child: _greeting()),
+                        _syncButton(),
+                        const SizedBox(width: AppSpacing.sm),
                         _CommandHint(),
                       ],
                     ),
@@ -343,7 +394,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   // ── Manage (module directory) ────────────────────────────────────
   Widget _manage({bool compact = false}) {
-    return _grid(maxItemWidth: compact ? 180 : 300, [
+    // In the 330px desktop rail a 2-up grid squeezed these horizontal shortcuts
+    // until single words broke mid-word ("Employee\ns"). A wide target forces a
+    // clean 1-up list there; full-width mobile is already single-column.
+    return _grid(maxItemWidth: compact ? 400 : 300, [
       ActionCard(
         icon: Icons.calendar_view_week_outlined,
         title: 'Schedules',
@@ -435,6 +489,160 @@ class _CommandHint extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Sync control ───────────────────────────────────────────────────
+
+/// Relative "last synced" label for the dashboard [_SyncButton]. Pure with an
+/// injectable clock so it's unit-testable.
+String syncLabel(DateTime? lastSynced, {DateTime? now}) {
+  if (lastSynced == null) return 'Sync';
+  final d = (now ?? DateTime.now()).difference(lastSynced);
+  if (d.inSeconds < 45) return 'Synced just now';
+  if (d.inMinutes < 60) return 'Synced ${d.inMinutes}m ago';
+  if (d.inHours < 24) return 'Synced ${d.inHours}h ago';
+  return 'Synced ${d.inDays}d ago';
+}
+
+/// A premium **Sync** control for the dashboard header. Rotates while a refresh
+/// is in flight and otherwise shows how long ago the live data was last pulled;
+/// tapping force-refreshes statistics · the task stream · shift swaps. Desktop
+/// shows a labelled pill (mirroring the ⌘K hint); mobile shows an icon-only tap
+/// target next to the greeting.
+class _SyncButton extends StatefulWidget {
+  const _SyncButton({
+    required this.syncing,
+    required this.lastSynced,
+    required this.onSync,
+    this.compact = false,
+  });
+
+  final bool syncing;
+  final DateTime? lastSynced;
+  final VoidCallback onSync;
+  final bool compact;
+
+  @override
+  State<_SyncButton> createState() => _SyncButtonState();
+}
+
+class _SyncButtonState extends State<_SyncButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _spin = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  Timer? _ticker;
+  bool _hovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.syncing) _spin.repeat();
+    // Keep the "3m ago" label honest without leaning on a parent rebuild.
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _SyncButton old) {
+    super.didUpdateWidget(old);
+    if (widget.syncing == old.syncing) return;
+    if (widget.syncing) {
+      _spin.repeat();
+    } else {
+      // Let the current turn finish for a smooth stop, then settle to rest.
+      _spin
+          .animateTo(1, duration: const Duration(milliseconds: 220))
+          .whenComplete(() {
+        if (mounted) _spin.reset();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _spin.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = widget.syncing ? 'Syncing…' : syncLabel(widget.lastSynced);
+    final onTap = widget.syncing ? null : widget.onSync;
+    final icon = RotationTransition(
+      turns: _spin,
+      child: Icon(
+        Icons.sync_rounded,
+        size: 15,
+        color:
+            widget.syncing ? AppColors.textPrimary : AppColors.textSecondary,
+      ),
+    );
+
+    if (widget.compact) {
+      return Semantics(
+        button: true,
+        label: label,
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.darkSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.darkBorder),
+            ),
+            child: Center(child: icon),
+          ),
+        ),
+      );
+    }
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: MouseRegion(
+        cursor: onTap == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.darkSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _hovered ? AppColors.textTertiary : AppColors.darkBorder,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                icon,
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
