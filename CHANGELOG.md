@@ -72,7 +72,7 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   locked it with a glyph-centring widget test.
 - **Superseded the horizontal bbox compensation with the owner's manual visual
   correction:** the whole Lottie container now receives `Offset(60, 0)` and a
-  centre-anchored `1.12×` scale. OPERATIONS, the loading bar, and the spacing
+  centre-anchored `1.22×` scale. OPERATIONS, the loading bar, and the spacing
   beneath the logo are untouched.
 - **Framed the whole lockup as one unit at the optical centre** (owner: "the
   group sits too low — centre the combined bbox, move it up 80–100px"): the

@@ -846,7 +846,7 @@ imports `core/theme`, `core/widgets`, `core/routes`. Data imports
 | **Firestore Timestamp→DateTime mapping**  | `lib/core/extensions/firestore_extensions.dart` (`map.date('field')` in every `*Model.fromMap`) |
 | **Roles enum / role values**              | `lib/core/enums/user_role.dart`                                         |
 | **Account provisioning / activation**     | `features/admin/.../create_account_screen.dart` → callable `createUserAccount`; `UserEntity.isActive` is the sole access flag (no approval enum/screen) |
-| **Cold-start intro / bootstrap rendezvous** | `lib/main.dart` (`LaunchApp`, Firebase/DI/auth + essential preload) + `features/auth/presentation/pages/splash_page.dart` (Lottie playback/error fallback; owner-tuned whole-box `Offset(60, 0)` + `1.12` scale, with OPERATIONS/bar layout untouched and no debug crosshair) + `assets/0704.json`; Android/iOS native launch backgrounds are black |
+| **Cold-start intro / bootstrap rendezvous** | `lib/main.dart` (`LaunchApp`, Firebase/DI/auth + essential preload) + `features/auth/presentation/pages/splash_page.dart` (Lottie playback/error fallback; owner-tuned whole-box `Offset(60, 0)` + `1.22` scale, with OPERATIONS/bar layout untouched and no debug crosshair) + `assets/0704.json`; Android/iOS native launch backgrounds are black |
 | **Role-based redirect / route guards**    | `lib/core/routes/app_router.dart` (redirect + `_isAdminArea`/`_isManagerArea`) + `RouteNames.homeForRole` |
 | **Settings / change password UI**         | `lib/features/settings/presentation/pages/`                              |
 | **Routes / navigation guards**            | `lib/core/routes/app_router.dart` + `route_names.dart`                    |

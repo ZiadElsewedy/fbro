@@ -66,7 +66,7 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   to the bottom edge, which is what read as off-centre).
 - **Owner-tuned Lottie box placement supersedes horizontal bbox centering:**
   the entire Lottie container is translated **60 logical pixels right** and
-  scaled to **1.12×** in `splash_page.dart`. Both transforms are paint-only;
+  scaled to **1.22×** in `splash_page.dart`. Both transforms are paint-only;
   OPERATIONS, the loading bar, and their layout spacing are unchanged.
 - **OPERATIONS trailing-tracking compensation is measured, not assumed:** this
   engine appends `letterSpacing` after the LAST glyph too (TextPainter:
