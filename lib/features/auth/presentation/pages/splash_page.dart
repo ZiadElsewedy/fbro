@@ -29,7 +29,7 @@ const double kSplashOpticalLift = 80;
 /// MANUAL visual correction (owner-tuned by eye, 2026-07-05): the whole Lottie
 /// box is nudged right and scaled up. Paint-only — OPERATIONS, the bar and
 /// all spacing are untouched. Tune these two numbers to taste.
-const double kLogoManualNudgeX = 60;
+const double kLogoManualNudgeX = 90;
 const double kLogoManualScale = 1.12;
 
 /// The cold-start visual surface.
