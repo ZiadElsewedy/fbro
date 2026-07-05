@@ -1,8 +1,35 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/drop_logo.dart';
+
+/// Where the DROP artwork's visual centre actually sits inside the Lottie's
+/// 720×405 composition, relative to the frame's geometric centre — the mean
+/// of the settled tail frames' bright-pixel bounding boxes (the frames held
+/// on screen during the bootstrap wait), measured and locked by
+/// `test/splash_visual_centering_test.dart`. The splash applies the inverse
+/// (scaled) so the ARTWORK is what lands on the window centre, not the frame
+/// box. Mid-flight the camera move swings the artwork ±≈18px by design.
+const Offset kLogoVisualCenterOffset = Offset(4, 21);
+
+/// Where the DROP artwork's bright pixels BEGIN vertically inside the 720×405
+/// frame (composition px, settled-tail mean) — i.e. the invisible dead space
+/// baked into the top of every Lottie frame. Measured and locked by
+/// `test/splash_visual_centering_test.dart`. Used to centre the lockup's
+/// VISIBLE bounding box instead of its layout box.
+const double kLogoArtworkTop = 59;
+
+/// How far above the window's geometric centre the lockup's visible bounding
+/// box sits. A mass dead-centred geometrically reads LOW to the eye, and the
+/// owner's reference mock frames the lockup high with breathing room below —
+/// 80px ≈ 9% of a 900px window.
+const double kSplashOpticalLift = 80;
+
+/// Draws a centre crosshair over the splash (debug builds only) so centering
+/// can be confirmed by eye against the guides instead of argued about.
+const bool kSplashDebugCentering = true;
 
 /// The cold-start visual surface.
 ///
@@ -65,85 +92,144 @@ class _SplashPageState extends State<SplashPage>
 
   @override
   Widget build(BuildContext context) {
-    // The premium loading indicator is visible for the whole intro — under
-    // the logo from the very first frame — not just once the Lottie
-    // playback finishes and bootstrap is still pending. It only steps aside
-    // for the error state.
     final showError = _animationReported && widget.bootstrapError != null;
-    final showWaiting = !showError;
+
+    // ── DEBUG (debug builds only): prove the centering math on this platform.
+    // Prints the render-surface size, its geometric centre, and the safe-area
+    // insets — so a macOS title-bar / notch offset would show up here as
+    // non-zero padding instead of being guessed at. Compare `size/2` against
+    // where the lockup actually lands on screen.
+    assert(() {
+      final mq = MediaQuery.of(context);
+      debugPrint(
+        '[SplashPage] size=${mq.size} '
+        'centre=(${(mq.size.width / 2).toStringAsFixed(1)}, '
+        '${(mq.size.height / 2).toStringAsFixed(1)}) '
+        'padding=${mq.padding} viewPadding=${mq.viewPadding} '
+        'viewInsets=${mq.viewInsets} dpr=${mq.devicePixelRatio}',
+      );
+      return true;
+    }());
+
+    // Logo scales with the window but is clamped so it never gets huge or
+    // tiny; height follows the source 16:9 frame. The layout is exactly
+    // Center → Column(min) → [logo, OPERATIONS, bar] — no SafeArea, Stack,
+    // Align, Positioned, ConstrainedBox, or Padding — so nothing but Center
+    // decides where the lockup sits. The only paint-time adjustment is the
+    // measured Lottie compensation inside _logoLockup.
+    final logoWidth = (MediaQuery.sizeOf(context).width * 0.32).clamp(
+      240.0,
+      440.0,
+    );
+
+    // ── Centre the lockup's VISIBLE bounding box, not its layout box. ──
+    // The Lottie frame bakes dead space above the artwork (kLogoArtworkTop),
+    // which drags the visible mass low when the layout box is centred; and a
+    // geometrically-centred mass reads low to the eye anyway
+    // (kSplashOpticalLift). The bottom balancer SizedBox raises the visible
+    // group by `lift` while keeping the layout pure Center → Column — the
+    // combined artwork→bar bbox then sits kSplashOpticalLift above the
+    // window's geometric centre.
+    final boxH = logoWidth * 9 / 16;
+    final scale = logoWidth / 720;
+    final topInset =
+        kLogoArtworkTop / 405 * boxH - kLogoVisualCenterOffset.dy * scale;
+    final lift = kSplashOpticalLift + topInset / 2;
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: ColoredBox(
-        color: Colors.black,
-        child: SafeArea(
-          child: Stack(
-            fit: StackFit.expand,
+      // CustomPaint is layout-neutral (sizes to its child); the painter is
+      // non-null only when the debug centering guides are enabled, and costs
+      // nothing in release.
+      body: CustomPaint(
+        foregroundPainter: kDebugMode && kSplashDebugCentering
+            ? const _CenterGuidesPainter()
+            : null,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
+              // 1. Logo — visually centred via the measured compensation.
+              Center(child: _logoLockup(logoWidth)),
+              const SizedBox(height: 24),
+              // 2. OPERATIONS — the premium wordmark.
+              const Center(child: _OperationsWordmark()),
+              const SizedBox(height: 28),
+              // 3. Loading bar (or the startup error, animation-gated).
               Center(
-                child: RepaintBoundary(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 520),
-                    child: FractionallySizedBox(
-                      widthFactor: 0.86,
-                      child: AspectRatio(
-                        aspectRatio: 16 / 9,
-                        child: Semantics(
-                          label: 'DROP Operations',
-                          image: true,
-                          child: LottieBuilder(
-                            // This export contains 102 embedded 720×405 WebP
-                            // image assets (not lightweight vector paths). Load
-                            // the JSON off the UI isolate and decode the images
-                            // at a bounded size to avoid a ~113 MiB cold-start
-                            // decoded-image footprint.
-                            lottie: _LaunchAssetLottie('assets/0704.json'),
-                            controller: _controller,
-                            fit: BoxFit.contain,
-                            repeat: false,
-                            animate: false,
-                            onLoaded: _play,
-                            errorBuilder: (context, error, stackTrace) {
-                              // A malformed/missing launch asset must never
-                              // deadlock startup. Keep the brand visible and
-                              // release the animation side of the gate.
-                              WidgetsBinding.instance.addPostFrameCallback(
-                                (_) => _reportAnimationComplete(),
-                              );
-                              return const Center(child: DropLogo(height: 88));
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                child: showError
+                    ? _StartupError(onRetry: widget.onRetry)
+                    : const _PremiumLoadingBar(),
               ),
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 36),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 180),
-                    child: showError
-                        ? _StartupError(
-                            key: const ValueKey('startup-error'),
-                            onRetry: widget.onRetry,
-                          )
-                        : showWaiting
-                        ? const _WaitingIndicator(
-                            key: ValueKey('startup-waiting'),
-                          )
-                        : const SizedBox.shrink(key: ValueKey('startup-idle')),
-                  ),
-                ),
-              ),
+              // 4. Balancer — shifts the visible group up by `lift` within
+              // the Center, with zero transforms (pure layout).
+              SizedBox(height: 2 * lift),
             ],
           ),
         ),
       ),
     );
   }
+
+  /// The logo box with two paint-time treatments:
+  ///
+  /// * **Measured centering compensation** — the DROP artwork sits
+  ///   [kLogoVisualCenterOffset] away from its Lottie frame's geometric
+  ///   centre (18px low: the drop-arrow tail pads the bottom of the frames).
+  ///   A `Transform.translate` of the inverse, scaled to the rendered size,
+  ///   puts the ARTWORK — not the frame — on the window centre.
+  ///   `Transform` is paint-only, so Column spacing/layout is untouched.
+  /// * **A soft radial light** behind the mark (decoration paints under the
+  ///   child), so the logo rests in a faint pool of light instead of flat
+  ///   black.
+  Widget _logoLockup(double logoWidth) {
+    final scale = logoWidth / 720; // Lottie composition is 720×405.
+    return Transform.translate(
+      offset: Offset(
+        -kLogoVisualCenterOffset.dx * scale,
+        -kLogoVisualCenterOffset.dy * scale,
+      ),
+      child: SizedBox(
+        width: logoWidth,
+        height: logoWidth * 9 / 16,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              radius: 0.6,
+              colors: [AppColors.white.withAlpha(16), Colors.transparent],
+            ),
+          ),
+          child: RepaintBoundary(child: _logo()),
+        ),
+      ),
+    );
+  }
+
+  /// The cold-start Lottie — the animated DROP logo. A malformed/missing asset
+  /// falls back to the static wordmark and releases the animation gate so it
+  /// can never deadlock startup.
+  Widget _logo() => Semantics(
+    label: 'DROP Operations',
+    image: true,
+    child: LottieBuilder(
+      // This export contains 102 embedded 720×405 WebP image assets (not
+      // lightweight vector paths). Load the JSON off the UI isolate and
+      // decode the images at a bounded size to avoid a ~113 MiB cold-start
+      // decoded-image footprint.
+      lottie: _LaunchAssetLottie('assets/0704.json'),
+      controller: _controller,
+      fit: BoxFit.contain,
+      repeat: false,
+      animate: false,
+      onLoaded: _play,
+      errorBuilder: (context, error, stackTrace) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _reportAnimationComplete(),
+        );
+        return const DropLogo(height: 88);
+      },
+    ),
+  );
 }
 
 /// Asset provider that keeps the supplied Lottie intact while bounding its
@@ -154,7 +240,7 @@ class _LaunchAssetLottie extends AssetLottie {
   // visible at the call site.
   // ignore: use_super_parameters
   _LaunchAssetLottie(String assetName)
-      : super(assetName, backgroundLoading: true);
+    : super(assetName, backgroundLoading: true);
 
   static const _decodedWidth = 480;
 
@@ -167,21 +253,127 @@ class _LaunchAssetLottie extends AssetLottie {
   }
 }
 
-/// A premium, monochrome indeterminate loading cue — three dots breathing in
-/// a staggered wave. Reads as quiet brand chrome rather than a bare spinner,
-/// matching the rest of the app's shimmer-driven loading language.
-class _WaitingIndicator extends StatefulWidget {
-  const _WaitingIndicator({super.key});
+/// The premium 'OPERATIONS' wordmark — wide-tracked caps in pure white with a
+/// soft outer glow, a whisper of drop shadow for depth, and a very subtle
+/// light sweep that passes every few seconds. Strictly monochrome: the glow
+/// is white light, no colour.
+class _OperationsWordmark extends StatefulWidget {
+  const _OperationsWordmark();
 
   @override
-  State<_WaitingIndicator> createState() => _WaitingIndicatorState();
+  State<_OperationsWordmark> createState() => _OperationsWordmarkState();
 }
 
-class _WaitingIndicatorState extends State<_WaitingIndicator>
+class _OperationsWordmarkState extends State<_OperationsWordmark>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 4400),
+  )..repeat();
+
+  static const _tracking = 12.0;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        // The sheen crosses during the first ~35% of the cycle, then rests —
+        // a passing light, not a strobe.
+        final t = (_ctrl.value / 0.35).clamp(0.0, 1.0);
+        final x = -0.4 + Curves.easeInOut.transform(t) * 1.8;
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (rect) => LinearGradient(
+            begin: const Alignment(-1.0, -0.3),
+            end: const Alignment(1.0, 0.3),
+            colors: [
+              Colors.transparent,
+              AppColors.white.withAlpha(140),
+              Colors.transparent,
+            ],
+            stops: [
+              (x - 0.25).clamp(0.0, 1.0),
+              x.clamp(0.0, 1.0),
+              (x + 0.25).clamp(0.0, 1.0),
+            ],
+          ).createShader(rect),
+          child: child,
+        );
+      },
+      // Flutter adds letter-spacing AFTER every glyph, including the last —
+      // which drags wide-tracked text visually left of centre. The leading
+      // padding equal to one tracking unit rebalances it so the GLYPHS are
+      // what's centred, not the text box.
+      child: Padding(
+        padding: const EdgeInsets.only(left: _tracking),
+        child: Text(
+          'OPERATIONS',
+          // Built fresh (not copyWith) because a gradient `foreground` cannot
+          // coexist with an inherited `color`. Strictly monochrome: the
+          // metallic ramp is white → silver greys, the bloom is white light.
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            letterSpacing: _tracking,
+            // Metallic glyphs: bright white top edge cooling to silver at the
+            // baseline — reads as brushed metal under the passing sweep.
+            foreground: Paint()
+              ..shader = const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFFFFFFFF),
+                  Color(0xFFE9EAEE),
+                  Color(0xFFB4B8C2),
+                ],
+                stops: [0.0, 0.55, 1.0],
+              ).createShader(const Rect.fromLTWH(0, 0, 320, 20)),
+            shadows: [
+              // Bloom — a wide halo of light around the whole word.
+              Shadow(color: AppColors.white.withAlpha(120), blurRadius: 30),
+              // Glow — the tighter luminous edge.
+              Shadow(color: AppColors.white.withAlpha(90), blurRadius: 12),
+              // Core — crispness right at the glyph border.
+              Shadow(color: AppColors.white.withAlpha(50), blurRadius: 4),
+              // Soft drop shadow — grounds the glow with a hint of depth.
+              Shadow(
+                color: Colors.black.withAlpha(160),
+                offset: const Offset(0, 2),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The premium indeterminate loading bar — thin, rounded, resting in a faint
+/// halo of light, with a soft band sweeping left→right until bootstrap
+/// completes. Monochrome white on the dim track.
+class _PremiumLoadingBar extends StatefulWidget {
+  const _PremiumLoadingBar();
+
+  static const double width = 240;
+  static const double height = 3.5;
+
+  @override
+  State<_PremiumLoadingBar> createState() => _PremiumLoadingBarState();
+}
+
+class _PremiumLoadingBarState extends State<_PremiumLoadingBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1200),
+    duration: const Duration(milliseconds: 1400),
   )..repeat();
 
   @override
@@ -192,47 +384,73 @@ class _WaitingIndicatorState extends State<_WaitingIndicator>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < 3; i++) ...[
-              if (i > 0) const SizedBox(width: 6),
-              _dot(i),
-            ],
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _dot(int index) {
-    // Each dot's wave is offset by a third of the cycle, so the pulse travels
-    // left → right instead of all three dots breathing in unison.
-    final t = (_controller.value - index * (1 / 3)) % 1.0;
-    final wave = (1 - (2 * t - 1).abs()).clamp(0.0, 1.0);
-    final scale = 0.6 + wave * 0.4;
-    final opacity = 0.35 + wave * 0.65;
-    return Opacity(
-      opacity: opacity,
-      child: Transform.scale(
-        scale: scale,
-        child: const DecoratedBox(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.textSecondary,
+    return Container(
+      width: _PremiumLoadingBar.width,
+      height: _PremiumLoadingBar.height,
+      // The halo: a soft white glow around the whole track (premium, quiet).
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(_PremiumLoadingBar.height),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.white.withAlpha(30),
+            blurRadius: 12,
+            spreadRadius: 1,
           ),
-          child: SizedBox(width: 6, height: 6),
-        ),
+        ],
+      ),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          // The bright band's centre travels from just off the left edge to
+          // just off the right edge each cycle, easing at both ends.
+          final c = -0.3 + Curves.easeInOut.transform(_controller.value) * 1.6;
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(_PremiumLoadingBar.height),
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.white.withAlpha(26),
+                  AppColors.white.withAlpha(255),
+                  AppColors.white.withAlpha(26),
+                ],
+                stops: [
+                  (c - 0.3).clamp(0.0, 1.0),
+                  c.clamp(0.0, 1.0),
+                  (c + 0.3).clamp(0.0, 1.0),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 }
 
+/// Debug-only centre guides: a crosshair through the exact window centre so
+/// the lockup's alignment can be verified by eye against hard lines.
+/// Enabled by [kSplashDebugCentering]; never painted in release builds.
+class _CenterGuidesPainter extends CustomPainter {
+  const _CenterGuidesPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.white.withAlpha(70)
+      ..strokeWidth = 1;
+    final c = size.center(Offset.zero);
+    canvas
+      ..drawLine(Offset(c.dx, 0), Offset(c.dx, size.height), paint)
+      ..drawLine(Offset(0, c.dy), Offset(size.width, c.dy), paint)
+      ..drawCircle(c, 4, paint..style = PaintingStyle.stroke);
+  }
+
+  @override
+  bool shouldRepaint(_CenterGuidesPainter oldDelegate) => false;
+}
+
 class _StartupError extends StatelessWidget {
-  const _StartupError({required this.onRetry, super.key});
+  const _StartupError({required this.onRetry});
 
   final VoidCallback? onRetry;
 

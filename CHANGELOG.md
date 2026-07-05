@@ -12,6 +12,23 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-07-05 — Schedule Final View)
+
+Client/presentation-only; no Firebase schema, rules, functions, route-name,
+Cubit, or dependency change.
+
+- **Added a `Final view` action** to the manager/admin schedule toolbar. It
+  opens the currently loaded branch/week and active shift filter as an opaque
+  root-navigator preview, covering the persistent desktop sidebar and all edit
+  chrome.
+- **Added `ScheduleFinalView`**: a branded, read-only weekly roster that reuses
+  the production `ScheduleGrid`, adds branch/week identity plus concise
+  employee/assignment facts, and cannot drag, edit, or write roster data.
+- **Added a controls-free `Clean screenshot` state.** Escape restores the
+  preview controls first, then closes the preview on the next press.
+- Added `schedule_final_view_test.dart`; focused schedule tests: **14 pass**;
+  full suite: **414 pass**. `flutter analyze`: 7 pre-existing infos, 0 new.
+
 ### Fixed / Refactored (2026-07-05 — intro polish, card-grid, undo bugfixes)
 
 Client-only; no Firebase schema, rules, functions, or deploy change.
@@ -19,9 +36,56 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
 - **Fixed** the cold-start intro to always play over a fixed **5s**, instead of
   whatever length the `assets/0704.json` composition happens to encode
   (`SplashPage._introDuration` now overrides the Lottie controller's duration).
-- **Added** a premium monochrome 3-dot loading indicator under the splash logo,
-  visible for the whole intro (previously a bare spinner shown only after the
-  animation finished, if bootstrap was still pending).
+- **Added** a premium monochrome indeterminate **loading bar** (168×3, a white
+  band sweeping across a dim track) directly under the splash logo, visible for
+  the whole intro (previously a bare spinner shown only after the animation
+  finished, if bootstrap was still pending), added an **'OPERATIONS' wordmark**
+  under the logo so the splash is the full brand lockup, and **stripped the
+  splash layout to exactly `Scaffold → Center → Column(min) → [logo,
+  'OPERATIONS', bar]`** — removed the old `Stack`/`Align(bottomCenter)`/
+  `SafeArea` (the logo was `Center`-ed while the indicator was pinned to the
+  bottom edge, which read as off-centre).
+- **Fixed the "still slightly off-centre" splash logo by measuring the asset,
+  not the layout:** decoded the actual frames of `assets/0704.json` and found
+  the DROP artwork's bright-pixel bounding-box centre sits **(+4, +21)px**
+  (settled-tail mean) below/right of the 720×405 frame's geometric centre (the
+  drop-arrow tail pads the bottom of every frame). Added
+  `kLogoVisualCenterOffset = Offset(4, 21)` applied as an inverse, scale-aware
+  `Transform.translate` (paint-only) so the ARTWORK — not the padded frame —
+  lands on the window centre. New `test/splash_visual_centering_test.dart`
+  re-measures the real asset pixels on every run and fails if the constant
+  drifts (swap the Lottie → test forces a re-measure); it also documents the
+  intro's camera move (mid-flight artwork swings ±≈18px by design — that
+  motion is the cinematic, not a layout bug). Also verified with TextPainter
+  that this engine appends letter-spacing after the last glyph (Δ == 24 for 2
+  glyphs @ls:12), so the OPERATIONS leading-pad compensation is correct, and
+  locked it with a glyph-centring widget test.
+- **Framed the whole lockup as one unit at the optical centre** (owner: "the
+  group sits too low — centre the combined bbox, move it up 80–100px"): the
+  Lottie frame bakes ~59px of dead space above the artwork
+  (`kLogoArtworkTop = 59`, settled-tail mean, pixel-locked), and dead-centre
+  reads low optically. A balancer `SizedBox(height: 2·lift)` at the column's
+  end (pure layout, no Transform) now places the **combined visible bbox
+  (artwork top → bar bottom) exactly `kSplashOpticalLift` (80px) above the
+  window centre** — a ≈92px visible shift at 1440×900. Asserted at both
+  1440×900 and 1024×720.
+- **OPERATIONS luxury pass:** metallic glyph gradient (white → silver,
+  `TextStyle.foreground` shader), triple white glow (bloom 30 / glow 12 /
+  core 4), soft black drop shadow, brighter ~4.4s light sweep (alpha 140),
+  fontSize 15 — strictly monochrome (white/silver/grey only).
+- **Premium splash treatments (2026-07-05 second pass):** soft radial light
+  pool behind the logo; 'OPERATIONS' upgraded to tracking-12 pure-white caps
+  with dual white outer glow, a whisper of drop shadow, a subtle ~4.4s passing
+  light sweep, and a leading pad equal to one tracking unit (Flutter appends
+  letter-spacing after the last glyph, which otherwise drags wide-tracked text
+  visually left of centre); loading bar upgraded to `_PremiumLoadingBar`
+  (240×3.5, rounded, faint white halo `BoxShadow`, easing sweep band). Added
+  `kSplashDebugCentering` (debug-only) drawing a centre crosshair via a
+  layout-neutral `CustomPaint.foregroundPainter` for by-eye verification.
+  Added a debug-only `assert` that prints `MediaQuery` size/centre/padding and
+  a `test/splash_centering_test.dart` proving the logo + column centre equal
+  the window centre (padding is `EdgeInsets.zero`, so the macOS title bar adds
+  no offset).
 - **Changed** `AppSidebar`'s brand header from the static `DropLogo` to the
   shimmering `AnimatedDropLogo` (owner-requested 2026-07-05) — **reverses the
   2026-07-02 "chrome marks stay static" scoping** for the persistent desktop
@@ -47,7 +111,7 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   `hideCurrentSnackBar()`, which could otherwise kill an unrelated later
   snackbar if the user swiped the undo bar away early).
 - Reviewed via `/code-review`; verification: `flutter analyze` 7 pre-existing
-  infos, 0 new; **406 tests pass** (`test/responsive_card_grid_test.dart`
+  infos, 0 new; **412 tests pass** (`test/responsive_card_grid_test.dart`
   updated for the row-based layout; `test/brand_chrome_test.dart` unchanged
   and green — `AnimatedDropLogo` renders a real `DropLogo` internally).
 

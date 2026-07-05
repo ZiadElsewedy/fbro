@@ -29,6 +29,7 @@ import 'package:drop/features/schedule/presentation/cubit/schedule_state.dart';
 import 'package:drop/features/schedule/presentation/cubit/shift_swap_cubit.dart';
 import 'package:drop/features/schedule/presentation/cubit/shift_swap_state.dart';
 import 'package:drop/features/schedule/presentation/schedule_insights.dart';
+import 'package:drop/features/schedule/presentation/pages/schedule_final_view.dart';
 import 'package:drop/features/schedule/presentation/widgets/assignment_chip.dart'
     show ChipDragData;
 import 'package:drop/features/schedule/presentation/widgets/broken_assignment_banner.dart';
@@ -129,7 +130,7 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
     return Column(
       children: [
         if (busy) const LinearProgressIndicator(minHeight: 2),
-        _controls(branchId, weekStart, cubit, members.length),
+        _controls(branchId, weekStart, schedule, members, cubit),
         Expanded(
           child: RefreshIndicator(
             onRefresh: () => cubit.refresh(),
@@ -146,13 +147,14 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   Widget _controls(
     String branchId,
     DateTime weekStart,
+    WeeklyScheduleEntity? schedule,
+    List<UserEntity> members,
     ScheduleCubit cubit,
-    int memberCount,
   ) {
     if (context.isDesktop) {
-      return _desktopControls(branchId, weekStart, cubit, memberCount);
+      return _desktopControls(branchId, weekStart, schedule, members, cubit);
     }
-    return _mobileControls(branchId, weekStart, cubit, memberCount);
+    return _mobileControls(branchId, weekStart, schedule, members, cubit);
   }
 
   /// Desktop: a single dense operations toolbar — branch identity on the left,
@@ -160,8 +162,9 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   Widget _desktopControls(
     String branchId,
     DateTime weekStart,
+    WeeklyScheduleEntity? schedule,
+    List<UserEntity> members,
     ScheduleCubit cubit,
-    int memberCount,
   ) {
     return Container(
       padding: const EdgeInsets.fromLTRB(40, 16, 40, 16),
@@ -170,7 +173,7 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       ),
       child: Row(
         children: [
-          Expanded(child: _branchHeader(branchId, memberCount)),
+          Expanded(child: _branchHeader(branchId, members.length)),
           if (widget.isAdmin) ...[
             const SizedBox(width: AppSpacing.lg),
             SizedBox(width: 260, child: _branchSelector(branchId)),
@@ -179,6 +182,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
           _weekNavigator(weekStart, cubit),
           const SizedBox(width: AppSpacing.lg),
           SizedBox(width: 280, child: _shiftFilter()),
+          const SizedBox(width: AppSpacing.md),
+          _finalViewButton(branchId, schedule, members),
         ],
       ),
     );
@@ -220,8 +225,9 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   Widget _mobileControls(
     String branchId,
     DateTime weekStart,
+    WeeklyScheduleEntity? schedule,
+    List<UserEntity> members,
     ScheduleCubit cubit,
-    int memberCount,
   ) {
     return Container(
       padding: const EdgeInsets.fromLTRB(
@@ -235,7 +241,7 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       ),
       child: Column(
         children: [
-          _branchHeader(branchId, memberCount),
+          _branchHeader(branchId, members.length),
           const SizedBox(height: AppSpacing.sm),
           if (widget.isAdmin) ...[
             _branchSelector(branchId),
@@ -275,8 +281,34 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
           ),
           const SizedBox(height: AppSpacing.md),
           _shiftFilter(),
+          const SizedBox(height: AppSpacing.md),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _finalViewButton(branchId, schedule, members),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _finalViewButton(
+    String branchId,
+    WeeklyScheduleEntity? schedule,
+    List<UserEntity> members,
+  ) {
+    final enabled = branchId.isNotEmpty && schedule != null;
+    return OutlinedButton.icon(
+      onPressed: !enabled
+          ? null
+          : () => showScheduleFinalView(
+              context: context,
+              schedule: schedule,
+              members: members,
+              branch: context.read<BranchCubit>().branchById(branchId),
+              filter: _filter,
+            ),
+      icon: const Icon(Icons.visibility_outlined, size: 17),
+      label: const Text('Final view'),
     );
   }
 

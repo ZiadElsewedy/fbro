@@ -11,8 +11,30 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-05 (intro polish + grid/undo fixes)
+**Last updated:** 2026-07-05 (schedule Final View)
 **Version:** 1.0.0+1 · **Branch:** `feature/report-issue` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Schedule Final View — screenshot-ready roster (2026-07-05)
+
+Presentation-only; no Firebase schema, rules, functions, route-name, Cubit, or
+dependency change.
+
+- **Added `Final view`** to the manager/admin schedule toolbar. It captures the
+  currently loaded branch/week and active All/Morning/Night filter, then opens
+  an opaque root-navigator preview above the persistent desktop sidebar.
+- **Added `ScheduleFinalView`** (`schedule_final_view.dart`): a branded,
+  read-only roster composition with branch identity, week range, employee and
+  assignment facts, the existing `ScheduleGrid`, and a quiet DROP footer.
+  Reusing the production grid prevents preview/editor visual drift.
+- **Added clean screenshot mode.** `Clean screenshot` removes the preview
+  controls; Escape restores them first and closes the preview on a second
+  press. The roster has no drag, context-menu, assignment, or Firestore write
+  affordances.
+- Tests: `schedule_final_view_test.dart` (branded snapshot + read-only grid;
+  controls-free capture). Focused schedule suite: **14 pass**; full suite:
+  **414 pass**. `flutter analyze`: 7 pre-existing infos, 0 new.
 
 ---
 
@@ -24,11 +46,65 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   frame length (`_introDuration` in `splash_page.dart` overrides the
   controller's duration instead of using `composition.duration`) — swapping
   the composition later changes its speed, not the launch's wall-clock length.
-- **Premium loading cue is visible for the whole intro**, not just once the
-  animation ends while bootstrap is still pending: `_WaitingIndicator` is now
-  a monochrome 3-dot breathing wave (replacing the bare `CircularProgressIndicator`),
-  shown under the logo from the first frame and only stepping aside for the
-  error state.
+- **Premium loading bar is visible for the whole intro**, not just once the
+  animation ends while bootstrap is still pending: `_WaitingIndicator` is a
+  thin (168×3) monochrome indeterminate bar with a soft white band sweeping
+  left→right across a dim track (replacing the bare `CircularProgressIndicator`),
+  shown directly under the logo and only stepping aside for the error state.
+- **Full premium brand lockup, one centered `Column`** — the layout is exactly
+  `Scaffold → Center → Column(min) → [logo, 'OPERATIONS', loading bar]` —
+  **no** `SafeArea`, `Stack`, `Align`, `Positioned`, `ConstrainedBox` (the old
+  build used a `Stack` with the logo `Center`-ed and the indicator `Align`-ed
+  to the bottom edge, which is what read as off-centre).
+- **⚠️ MEASURED Lottie off-centre artwork + pixel-locked compensation:** the
+  DROP artwork inside `assets/0704.json` is NOT centred in its own 720×405
+  frames — the settled tail frames' bright-pixel bounding-box centres average
+  **(+4, +21)px** from the frame's geometric centre (the drop-arrow tail pads
+  the bottom). `kLogoVisualCenterOffset = Offset(4, 21)` (public, in
+  `splash_page.dart`) is applied as an inverse, scale-aware
+  `Transform.translate` (paint-only, layout untouched) so the ARTWORK lands on
+  the window centre. `test/splash_visual_centering_test.dart` decodes the
+  actual asset frames and asserts the constant matches the settled-tail mean
+  (±2.5px) — swap the Lottie and the test fails until re-measured. The same
+  test documents the intro's camera move: mid-flight frames swing the artwork
+  ±≈18px by design (25%: −18.5, 50%: +8, 75%: −8 horizontal), so only the
+  settled tail is a valid centering target.
+- **OPERATIONS trailing-tracking compensation is measured, not assumed:** this
+  engine appends `letterSpacing` after the LAST glyph too (TextPainter:
+  `width('AB', ls:12) − width('AB', ls:0) == 24`), so the glyph run sits 6px
+  left of the text box centre; the page's 12px leading pad re-centres the
+  GLYPHS, and `test/splash_centering_test.dart` asserts glyph centre == window
+  centre.
+- **Lockup framed as ONE unit at the optical centre (owner ruling 2026-07-05):**
+  a geometrically-centred column read LOW because (a) the Lottie frame bakes
+  ~59px of dead space above the artwork (`kLogoArtworkTop = 59`, settled-tail
+  mean, pixel-locked by the visual test) and (b) a dead-centred mass reads low
+  to the eye. The column now ends with a **balancer `SizedBox(height: 2·lift)`**
+  (pure layout — no Transform/Align) where `lift = kSplashOpticalLift(80) +
+  topInset/2`, so the **combined visible bbox (artwork top → bar bottom) sits
+  exactly 80px above the window centre** (total visible shift ≈ 92px at
+  1440×900, inside the owner's requested 80–100 band). Asserted at 1440×900
+  AND 1024×720 by `expectLockupFraming` in `test/splash_centering_test.dart`.
+- **Premium treatments:** soft radial light pool behind the logo (decoration
+  under the Lottie, no Stack); **'OPERATIONS' luxury pass** — metallic glyph
+  gradient (white → silver via `TextStyle.foreground` shader; built fresh, not
+  `copyWith`, because `foreground` can't coexist with an inherited `color`),
+  triple white glow (bloom 30 / glow 12 / core 4) + soft black drop shadow,
+  passing light sweep (~4.4s, alpha 140), fontSize 15, tracking 12 with the
+  leading pad (Flutter adds letter-spacing after the last glyph, which
+  otherwise drags wide-tracked text visually left of centre) — strictly
+  monochrome (white/silver/grey only); **`_PremiumLoadingBar`** 240×3.5
+  rounded track in a faint white halo (`BoxShadow`) with the easing sweep band.
+- **Debug centering guides:** `kSplashDebugCentering = true` draws a
+  crosshair through the exact window centre via a layout-neutral
+  `CustomPaint.foregroundPainter` — **debug builds only** (flag is dead code in
+  release); flip to `false` once visually confirmed. The debug-only `assert`
+  still prints `MediaQuery` size/centre/padding each launch.
+- Proven by `test/splash_centering_test.dart` (artwork centre == window centre
+  horizontally; logo box lifted by exactly the measured compensation; combined
+  lockup bbox framed 80px above centre at 1440×900 and 1024×720;
+  `padding == EdgeInsets.zero`, so the macOS transparent title bar adds no
+  offset).
 - **Sidebar brand mark now uses `AnimatedDropLogo`** (the light-sweep shimmer)
   instead of the static `DropLogo` — **this reverses the 2026-07-02 "chrome
   marks stay static" ruling** for the persistent desktop sidebar specifically
@@ -50,9 +126,11 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   `ScaffoldFeatureController` returned by `showSnackBar` (not the ambient
   `hideCurrentSnackBar()`, which could otherwise kill an unrelated later
   snackbar if the user swiped the undo bar away early).
-- Verification: `flutter analyze` — 7 pre-existing infos, 0 new; **406 tests
-  pass** (`test/responsive_card_grid_test.dart` updated for the row-based
-  layout; `test/brand_chrome_test.dart` unchanged and green).
+- Verification: `flutter analyze` — 7 pre-existing infos, 0 new; **412 tests
+  pass** (+6: `test/splash_centering_test.dart` 5 layout proofs incl. OPERATIONS glyph centring and combined-bbox framing +
+  `test/splash_visual_centering_test.dart` 1 asset-pixel measurement;
+  `test/responsive_card_grid_test.dart` updated for the row-based layout;
+  `test/brand_chrome_test.dart` unchanged and green).
 
 ---
 
