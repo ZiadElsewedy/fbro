@@ -12,22 +12,32 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
-### Added (2026-07-05 — Schedule Final View)
+### Added / Fixed (2026-07-05 — Schedule Final View + PNG export)
 
 Client/presentation-only; no Firebase schema, rules, functions, route-name,
-Cubit, or dependency change.
+Cubit, or new dependency (`path_provider` reused).
 
 - **Added a `Final view` action** to the manager/admin schedule toolbar. It
   opens the currently loaded branch/week and active shift filter as an opaque
   root-navigator preview, covering the persistent desktop sidebar and all edit
   chrome.
-- **Added `ScheduleFinalView`**: a branded, read-only weekly roster that reuses
-  the production `ScheduleGrid`, adds branch/week identity plus concise
-  employee/assignment facts, and cannot drag, edit, or write roster data.
-- **Added a controls-free `Clean screenshot` state.** Escape restores the
-  preview controls first, then closes the preview on the next press.
-- Added `schedule_final_view_test.dart`; focused schedule tests: **14 pass**;
-  full suite: **414 pass**. `flutter analyze`: 7 pre-existing infos, 0 new.
+- **Fixed the initial screenshot-mode implementation:** `Save PNG` now captures
+  an isolated 1600×900 `RepaintBoundary` at 1.5× and writes a real 2400×1350
+  PNG to Downloads; the previous button only hid controls and saved nothing.
+- Added the macOS sandbox `files.downloads.read-write` entitlement in both
+  debug and release; without it the automatic Downloads write was denied.
+- **Added a persistent Back action** (plus Escape) in a responsive toolbar that
+  is structurally outside the capture boundary, so navigation controls and the
+  desktop sidebar never enter the exported image.
+- Added a distinct role-aware **Dashboard** exit using
+  `RouteNames.homeForRole`, while Back continues to return to the editor.
+- **Redesigned the export canvas** to eliminate the oversized dead area:
+  larger roster rows, compact identity/week header, four useful roster facts,
+  framed grid + legend, and a restrained footer. `ScheduleGrid` now exposes
+  optional presentation sizing while preserving editor defaults exactly.
+- Added/updated `schedule_final_view_test.dart`; focused schedule tests:
+  **15 pass**; full suite: **415 pass**. `flutter analyze`: 7 pre-existing
+  infos, 0 new.
 
 ### Fixed / Refactored (2026-07-05 — intro polish, card-grid, undo bugfixes)
 
@@ -60,6 +70,10 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   that this engine appends letter-spacing after the last glyph (Δ == 24 for 2
   glyphs @ls:12), so the OPERATIONS leading-pad compensation is correct, and
   locked it with a glyph-centring widget test.
+- **Superseded the horizontal bbox compensation with the owner's manual visual
+  correction:** the whole Lottie container now receives `Offset(60, 0)` and a
+  centre-anchored `1.12×` scale. OPERATIONS, the loading bar, and the spacing
+  beneath the logo are untouched.
 - **Framed the whole lockup as one unit at the optical centre** (owner: "the
   group sits too low — centre the combined bbox, move it up 80–100px"): the
   Lottie frame bakes ~59px of dead space above the artwork
@@ -80,9 +94,8 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   letter-spacing after the last glyph, which otherwise drags wide-tracked text
   visually left of centre); loading bar upgraded to `_PremiumLoadingBar`
   (240×3.5, rounded, faint white halo `BoxShadow`, easing sweep band). Added
-  `kSplashDebugCentering` (debug-only) drawing a centre crosshair via a
-  layout-neutral `CustomPaint.foregroundPainter` for by-eye verification.
-  Added a debug-only `assert` that prints `MediaQuery` size/centre/padding and
+  The temporary debug centre crosshair was removed after visual tuning.
+  The debug-only `assert` still prints `MediaQuery` size/centre/padding and
   a `test/splash_centering_test.dart` proving the logo + column centre equal
   the window centre (padding is `EdgeInsets.zero`, so the macOS title bar adds
   no offset).

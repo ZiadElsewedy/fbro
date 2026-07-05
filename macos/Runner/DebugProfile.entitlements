@@ -20,6 +20,9 @@
 	     app only reads the picked file, never writes back to it. -->
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
+	<!-- Schedule Final View exports a generated PNG directly to Downloads. -->
+	<key>com.apple.security.files.downloads.read-write</key>
+	<true/>
 	<!-- REQUIRED for Firebase Auth session persistence. FirebaseAuth (11.x) stores
 	     the signed-in user in the keychain on macOS and fails with "An error
 	     occurred when accessing the keychain" without a declared access group.

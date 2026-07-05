@@ -1,12 +1,20 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
-import 'package:drop/core/responsive/breakpoints.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
 import 'package:drop/core/widgets/drop_logo.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
@@ -17,8 +25,10 @@ import 'package:drop/features/schedule/presentation/schedule_insights.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_grid.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
 
+const _exportSize = Size(1600, 900);
+
 /// Opens an opaque route on the root navigator so the final roster is shown
-/// above the authenticated [AppShell] (including its persistent sidebar).
+/// above the authenticated desktop shell and sidebar.
 Future<void> showScheduleFinalView({
   required BuildContext context,
   required WeeklyScheduleEntity schedule,
@@ -45,10 +55,8 @@ Future<void> showScheduleFinalView({
   );
 }
 
-/// Read-only, screenshot-ready rendering of one weekly branch roster.
-///
-/// The floating controls can be hidden for a completely clean capture. Escape
-/// restores them first, then closes the preview on the next press.
+/// A real export surface: the toolbar remains visible for navigation while the
+/// isolated 1600×900 [RepaintBoundary] is saved as a controls-free PNG.
 class ScheduleFinalView extends StatefulWidget {
   const ScheduleFinalView({
     super.key,
@@ -68,13 +76,55 @@ class ScheduleFinalView extends StatefulWidget {
 }
 
 class _ScheduleFinalViewState extends State<ScheduleFinalView> {
-  bool _clean = false;
+  final _captureKey = GlobalKey();
+  bool _saving = false;
 
-  void _handleEscape() {
-    if (_clean) {
-      setState(() => _clean = false);
-    } else {
-      Navigator.of(context).maybePop();
+  void _openDashboard() {
+    final user = context.currentUser;
+    if (user == null) return;
+    final router = GoRouter.of(context);
+    Navigator.of(context).pop();
+    router.go(RouteNames.homeForRole(user.role));
+  }
+
+  Future<void> _savePng() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      final boundary =
+          _captureKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) throw StateError('Export canvas is unavailable.');
+
+      // 1600×900 logical canvas → 2400×1350 PNG: crisp on Retina without an
+      // unnecessarily huge file or capturing any preview toolbar chrome.
+      final image = await boundary.toImage(pixelRatio: 1.5);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      if (data == null) throw StateError('PNG encoding failed.');
+
+      final directory =
+          await getDownloadsDirectory() ??
+          await getApplicationDocumentsDirectory();
+      final filename = scheduleExportFilename(
+        widget.branch?.name ?? 'branch',
+        widget.schedule.weekStart,
+      );
+      final file = File('${directory.path}${Platform.pathSeparator}$filename');
+      await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
+
+      if (mounted) {
+        AppSnackbar.success(context, 'Saved to Downloads · $filename');
+      }
+    } catch (_) {
+      if (mounted) {
+        AppSnackbar.error(context, 'Could not save the schedule PNG.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
@@ -82,24 +132,126 @@ class _ScheduleFinalViewState extends State<ScheduleFinalView> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): _handleEscape,
+        const SingleActivator(LogicalKeyboardKey.escape): () =>
+            Navigator.of(context).maybePop(),
       },
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          backgroundColor: AppColors.darkBg,
-          body: Stack(
-            children: [
-              Positioned.fill(child: _ScheduleCanvas(widget: widget)),
-              if (!_clean)
-                Positioned(
-                  top: context.isDesktop ? 20 : 12,
-                  right: context.isDesktop ? 24 : 12,
-                  child: _PreviewControls(
-                    onClean: () => setState(() => _clean = true),
-                    onClose: () => Navigator.of(context).maybePop(),
+          backgroundColor: const Color(0xFF080809),
+          body: SafeArea(
+            child: Column(
+              children: [
+                _PreviewToolbar(
+                  saving: _saving,
+                  onBack: () => Navigator.of(context).maybePop(),
+                  onDashboard: _openDashboard,
+                  onSave: _savePng,
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: Container(
+                          padding: const EdgeInsets.all(1),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppColors.darkBorder),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.black.withAlpha(150),
+                                blurRadius: 36,
+                                offset: const Offset(0, 14),
+                              ),
+                            ],
+                          ),
+                          child: RepaintBoundary(
+                            key: _captureKey,
+                            child: SizedBox.fromSize(
+                              size: _exportSize,
+                              child: _ExportCanvas(widget: widget),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Stable, filesystem-safe name for the exported schedule image.
+String scheduleExportFilename(String branchName, DateTime weekStart) {
+  final safe = branchName
+      .trim()
+      .replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_')
+      .replaceAll(RegExp(r'^_+|_+$'), '')
+      .toLowerCase();
+  final y = weekStart.year.toString().padLeft(4, '0');
+  final m = weekStart.month.toString().padLeft(2, '0');
+  final d = weekStart.day.toString().padLeft(2, '0');
+  return '${safe.isEmpty ? 'branch' : safe}_schedule_$y-$m-$d.png';
+}
+
+class _PreviewToolbar extends StatelessWidget {
+  const _PreviewToolbar({
+    required this.saving,
+    required this.onBack,
+    required this.onDashboard,
+    required this.onSave,
+  });
+
+  final bool saving;
+  final VoidCallback onBack;
+  final VoidCallback onDashboard;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 68,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: onBack,
+                icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                label: const Text('Back to schedule'),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              TextButton.icon(
+                onPressed: onDashboard,
+                icon: const Icon(Icons.dashboard_outlined, size: 18),
+                label: const Text('Dashboard'),
+              ),
+              if (constraints.maxWidth >= 980) ...[
+                const SizedBox(width: AppSpacing.md),
+                Text(
+                  'Export preview · controls are not included in the PNG',
+                  style: AppTypography.caption,
+                ),
+              ],
+              const Spacer(),
+              FilledButton.icon(
+                onPressed: saving ? null : onSave,
+                icon: saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_rounded, size: 18),
+                label: Text(saving ? 'Saving…' : 'Save PNG'),
+              ),
             ],
           ),
         ),
@@ -108,8 +260,8 @@ class _ScheduleFinalViewState extends State<ScheduleFinalView> {
   }
 }
 
-class _ScheduleCanvas extends StatelessWidget {
-  const _ScheduleCanvas({required this.widget});
+class _ExportCanvas extends StatelessWidget {
+  const _ExportCanvas({required this.widget});
 
   final ScheduleFinalView widget;
 
@@ -125,6 +277,8 @@ class _ScheduleCanvas extends StatelessWidget {
     );
     final assignedUids = <String>{};
     var assignmentCount = 0;
+    var staffedSlots = 0;
+    final visibleShifts = widget.filter == null ? 2 : 1;
     for (final day in ScheduleDay.values) {
       for (final shift in ScheduleShift.values) {
         if (widget.filter != null && shift != widget.filter) continue;
@@ -134,8 +288,10 @@ class _ScheduleCanvas extends StatelessWidget {
         );
         assignedUids.addAll(valid);
         assignmentCount += valid.length;
+        if (valid.isNotEmpty) staffedSlots++;
       }
     }
+    final totalSlots = ScheduleDay.values.length * visibleShifts;
 
     final grid = ScheduleGrid(
       schedule: schedule,
@@ -143,17 +299,17 @@ class _ScheduleCanvas extends StatelessWidget {
       filter: widget.filter,
       insights: insights,
       canEdit: false,
+      railWidth: 96,
+      cellWidth: 180,
+      cellHeight: 188,
+      headerHeight: 54,
       onCellTap: (_, _) {},
     );
 
-    return SafeArea(
+    return ColoredBox(
+      color: AppColors.darkBg,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          context.isDesktop ? 52 : 18,
-          context.isDesktop ? 44 : 24,
-          context.isDesktop ? 52 : 18,
-          context.isDesktop ? 30 : 20,
-        ),
+        padding: const EdgeInsets.fromLTRB(52, 42, 52, 34),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -163,45 +319,93 @@ class _ScheduleCanvas extends StatelessWidget {
               weekLabel: ScheduleWeek.rangeLabel(schedule.weekStart),
               shiftLabel: widget.filter?.label,
             ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: 18),
             const Divider(height: 1, color: AppColors.darkBorder),
-            const SizedBox(height: AppSpacing.lg),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
+            const SizedBox(height: 18),
+            Row(
               children: [
                 _FactPill(
                   icon: Icons.people_outline_rounded,
                   value: '${assignedUids.length}',
-                  label: assignedUids.length == 1 ? 'employee' : 'employees',
+                  label: assignedUids.length == 1
+                      ? 'team member'
+                      : 'team members',
                 ),
+                const SizedBox(width: AppSpacing.sm),
                 _FactPill(
-                  icon: Icons.calendar_month_outlined,
+                  icon: Icons.assignment_ind_outlined,
                   value: '$assignmentCount',
                   label: assignmentCount == 1 ? 'assignment' : 'assignments',
                 ),
+                const SizedBox(width: AppSpacing.sm),
+                _FactPill(
+                  icon: Icons.event_available_outlined,
+                  value: '$staffedSlots',
+                  label: staffedSlots == 1 ? 'staffed shift' : 'staffed shifts',
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                _FactPill(
+                  icon: Icons.event_busy_outlined,
+                  value: '${totalSlots - staffedSlots}',
+                  label: totalSlots - staffedSlots == 1
+                      ? 'open shift'
+                      : 'open shifts',
+                ),
               ],
             ),
-            const SizedBox(height: AppSpacing.xl),
-            Expanded(
-              child: Align(
-                alignment: const Alignment(0, -0.15),
-                child: SizedBox(height: grid.height, child: grid),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0C0C0E),
+                borderRadius: AppRadius.cardAll,
+                border: Border.all(color: AppColors.darkBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'WEEKLY ROSTER',
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.textSecondary,
+                          letterSpacing: 1.15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      _LegendDot(
+                        color: AppColors.primary,
+                        label: 'Current day',
+                      ),
+                      const SizedBox(width: 18),
+                      const _LegendDot(
+                        color: AppColors.darkBorder,
+                        label: 'Unassigned',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(height: grid.height, child: grid),
+                ],
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
+            const Spacer(),
             Row(
               children: [
                 const DropLogo(height: 15, color: AppColors.textTertiary),
-                const SizedBox(width: 8),
+                const SizedBox(width: 9),
                 Text(
-                  'OPERATIONS  /  WEEKLY STAFF SCHEDULE',
+                  'OPERATIONS  /  STAFF SCHEDULE',
                   style: AppTypography.caption.copyWith(
                     color: AppColors.textTertiary,
-                    letterSpacing: 1.1,
+                    letterSpacing: 1.15,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                const Spacer(),
+                Text('Read-only roster snapshot', style: AppTypography.caption),
               ],
             ),
           ],
@@ -226,21 +430,19 @@ class _FinalHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final identity = Row(
-      mainAxisSize: MainAxisSize.min,
+    return Row(
       children: [
         BranchAvatar(
           logoUrl: branch?.logoUrl,
           name: branchName,
-          size: context.isDesktop ? 48 : 42,
-          radius: 13,
+          size: 52,
+          radius: 14,
         ),
-        const SizedBox(width: AppSpacing.md),
+        const SizedBox(width: AppSpacing.lg),
         Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(branchName, style: AppTypography.h2),
+            Text(branchName, style: AppTypography.h1),
             const SizedBox(height: 3),
             Text(
               shiftLabel == null
@@ -250,40 +452,23 @@ class _FinalHeader extends StatelessWidget {
             ),
           ],
         ),
-      ],
-    );
-
-    final week = Column(
-      crossAxisAlignment: context.isDesktop
-          ? CrossAxisAlignment.end
-          : CrossAxisAlignment.start,
-      children: [
-        Text(
-          'WEEK OF',
-          style: AppTypography.caption.copyWith(
-            color: AppColors.textTertiary,
-            letterSpacing: 1.2,
-            fontWeight: FontWeight.w700,
-          ),
+        const Spacer(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              'WEEK OF',
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textTertiary,
+                letterSpacing: 1.25,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(weekLabel, style: AppTypography.h2),
+          ],
         ),
-        const SizedBox(height: 5),
-        Text(weekLabel, style: AppTypography.h3),
       ],
-    );
-
-    if (!context.isDesktop) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          identity,
-          const SizedBox(height: AppSpacing.lg),
-          week,
-        ],
-      );
-    }
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [identity, week],
     );
   }
 }
@@ -302,7 +487,7 @@ class _FactPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.darkSurface,
         borderRadius: AppRadius.fullAll,
@@ -327,46 +512,25 @@ class _FactPill extends StatelessWidget {
   }
 }
 
-class _PreviewControls extends StatelessWidget {
-  const _PreviewControls({required this.onClean, required this.onClose});
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
 
-  final VoidCallback onClean;
-  final VoidCallback onClose;
+  final Color color;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.darkSurfaceElevated,
-      borderRadius: AppRadius.fullAll,
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          borderRadius: AppRadius.fullAll,
-          border: Border.all(color: AppColors.darkBorder),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.black.withAlpha(120),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton.icon(
-              onPressed: onClean,
-              icon: const Icon(Icons.photo_camera_outlined, size: 17),
-              label: const Text('Clean screenshot'),
-            ),
-            IconButton(
-              onPressed: onClose,
-              tooltip: 'Close preview (Esc)',
-              icon: const Icon(Icons.close_rounded, size: 19),
-            ),
-          ],
-        ),
-      ),
+        const SizedBox(width: 6),
+        Text(label, style: AppTypography.caption),
+      ],
     );
   }
 }

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:drop/core/theme/app_colors.dart';
@@ -27,9 +26,11 @@ const double kLogoArtworkTop = 59;
 /// 80px ≈ 9% of a 900px window.
 const double kSplashOpticalLift = 80;
 
-/// Draws a centre crosshair over the splash (debug builds only) so centering
-/// can be confirmed by eye against the guides instead of argued about.
-const bool kSplashDebugCentering = true;
+/// MANUAL visual correction (owner-tuned by eye, 2026-07-05): the whole Lottie
+/// box is nudged right and scaled up. Paint-only — OPERATIONS, the bar and
+/// all spacing are untouched. Tune these two numbers to taste.
+const double kLogoManualNudgeX = 60;
+const double kLogoManualScale = 1.12;
 
 /// The cold-start visual surface.
 ///
@@ -115,8 +116,8 @@ class _SplashPageState extends State<SplashPage>
     // tiny; height follows the source 16:9 frame. The layout is exactly
     // Center → Column(min) → [logo, OPERATIONS, bar] — no SafeArea, Stack,
     // Align, Positioned, ConstrainedBox, or Padding — so nothing but Center
-    // decides where the lockup sits. The only paint-time adjustment is the
-    // measured Lottie compensation inside _logoLockup.
+    // decides where the lockup sits. The Lottie box itself receives only the
+    // owner-tuned manual translation and scale inside _logoLockup.
     final logoWidth = (MediaQuery.sizeOf(context).width * 0.32).clamp(
       240.0,
       440.0,
@@ -138,68 +139,53 @@ class _SplashPageState extends State<SplashPage>
 
     return Scaffold(
       backgroundColor: Colors.black,
-      // CustomPaint is layout-neutral (sizes to its child); the painter is
-      // non-null only when the debug centering guides are enabled, and costs
-      // nothing in release.
-      body: CustomPaint(
-        foregroundPainter: kDebugMode && kSplashDebugCentering
-            ? const _CenterGuidesPainter()
-            : null,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 1. Logo — visually centred via the measured compensation.
-              Center(child: _logoLockup(logoWidth)),
-              const SizedBox(height: 24),
-              // 2. OPERATIONS — the premium wordmark.
-              const Center(child: _OperationsWordmark()),
-              const SizedBox(height: 28),
-              // 3. Loading bar (or the startup error, animation-gated).
-              Center(
-                child: showError
-                    ? _StartupError(onRetry: widget.onRetry)
-                    : const _PremiumLoadingBar(),
-              ),
-              // 4. Balancer — shifts the visible group up by `lift` within
-              // the Center, with zero transforms (pure layout).
-              SizedBox(height: 2 * lift),
-            ],
-          ),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 1. Logo — manually positioned by eye.
+            Center(child: _logoLockup(logoWidth)),
+            const SizedBox(height: 24),
+            // 2. OPERATIONS — the premium wordmark.
+            const Center(child: _OperationsWordmark()),
+            const SizedBox(height: 28),
+            // 3. Loading bar (or the startup error, animation-gated).
+            Center(
+              child: showError
+                  ? _StartupError(onRetry: widget.onRetry)
+                  : const _PremiumLoadingBar(),
+            ),
+            // 4. Balancer — shifts the visible group up by `lift` within
+            // the Center, with zero transforms (pure layout).
+            SizedBox(height: 2 * lift),
+          ],
         ),
       ),
     );
   }
 
-  /// The logo box with two paint-time treatments:
-  ///
-  /// * **Measured centering compensation** — the DROP artwork sits
-  ///   [kLogoVisualCenterOffset] away from its Lottie frame's geometric
-  ///   centre (18px low: the drop-arrow tail pads the bottom of the frames).
-  ///   A `Transform.translate` of the inverse, scaled to the rendered size,
-  ///   puts the ARTWORK — not the frame — on the window centre.
-  ///   `Transform` is paint-only, so Column spacing/layout is untouched.
-  /// * **A soft radial light** behind the mark (decoration paints under the
-  ///   child), so the logo rests in a faint pool of light instead of flat
-  ///   black.
+  /// The logo box, MANUALLY corrected by eye (owner ruling — no automatic
+  /// bbox centering): the whole Lottie container is nudged right by
+  /// [kLogoManualNudgeX] and scaled up by [kLogoManualScale]. Both transforms
+  /// are paint-only, so OPERATIONS, the bar and all spacing are untouched.
+  /// The soft radial light behind the mark paints under the child.
   Widget _logoLockup(double logoWidth) {
-    final scale = logoWidth / 720; // Lottie composition is 720×405.
     return Transform.translate(
-      offset: Offset(
-        -kLogoVisualCenterOffset.dx * scale,
-        -kLogoVisualCenterOffset.dy * scale,
-      ),
-      child: SizedBox(
-        width: logoWidth,
-        height: logoWidth * 9 / 16,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              radius: 0.6,
-              colors: [AppColors.white.withAlpha(16), Colors.transparent],
+      offset: const Offset(kLogoManualNudgeX, 0),
+      child: Transform.scale(
+        scale: kLogoManualScale,
+        child: SizedBox(
+          width: logoWidth,
+          height: logoWidth * 9 / 16,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                radius: 0.6,
+                colors: [AppColors.white.withAlpha(16), Colors.transparent],
+              ),
             ),
+            child: RepaintBoundary(child: _logo()),
           ),
-          child: RepaintBoundary(child: _logo()),
         ),
       ),
     );
@@ -425,28 +411,6 @@ class _PremiumLoadingBarState extends State<_PremiumLoadingBar>
       ),
     );
   }
-}
-
-/// Debug-only centre guides: a crosshair through the exact window centre so
-/// the lockup's alignment can be verified by eye against hard lines.
-/// Enabled by [kSplashDebugCentering]; never painted in release builds.
-class _CenterGuidesPainter extends CustomPainter {
-  const _CenterGuidesPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.white.withAlpha(70)
-      ..strokeWidth = 1;
-    final c = size.center(Offset.zero);
-    canvas
-      ..drawLine(Offset(c.dx, 0), Offset(c.dx, size.height), paint)
-      ..drawLine(Offset(0, c.dy), Offset(size.width, c.dy), paint)
-      ..drawCircle(c, 4, paint..style = PaintingStyle.stroke);
-  }
-
-  @override
-  bool shouldRepaint(_CenterGuidesPainter oldDelegate) => false;
 }
 
 class _StartupError extends StatelessWidget {

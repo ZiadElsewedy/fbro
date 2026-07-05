@@ -21,7 +21,8 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('logo ARTWORK (not just its frame box) is centered on a 1440×900 '
+  testWidgets(
+      'logo box carries exactly the owner-tuned manual nudge on a 1440×900 '
       'macOS window', (tester) async {
     await pumpSplashAt(tester, const Size(1440, 900));
 
@@ -43,30 +44,22 @@ void main() {
       reason: 'Column centre must equal the window centre',
     );
 
-    // The DROP artwork sits kLogoVisualCenterOffset (720×405 composition px)
-    // away from the frame's geometric centre; the page compensates with the
-    // inverse Transform.translate. Horizontally the ARTWORK must land on the
-    // window centre: box centre + offset·scale == window centre.
-    final scale = 440.0 / 720.0;
+    // MANUAL visual correction (owner-tuned): the box centre sits exactly
+    // kLogoManualNudgeX right of the window centre; the centre-anchored
+    // Transform.scale does not move it.
     expect(
-      logoBox.center.dx + kLogoVisualCenterOffset.dx * scale,
-      moreOrLessEquals(screenCentre.dx, epsilon: 0.5),
-      reason: 'Artwork centre must equal the window centre (horizontal)',
+      logoBox.center.dx,
+      moreOrLessEquals(screenCentre.dx + kLogoManualNudgeX, epsilon: 0.5),
+      reason: 'Logo box centre must equal window centre + manual nudge',
     );
 
-    // Vertically the logo is the column's top section (wordmark + bar sit
-    // below), so the invariant is: the box was LIFTED from its natural layout
-    // slot (column top + half box height) by exactly offset.dy·scale — which
-    // puts the artwork, not the padded frame, where layout intended.
+    // Vertically the box sits in its natural layout slot (top of the column);
+    // the manual transforms are horizontal/scale only.
     const boxHeight = 440.0 * 9 / 16;
-    final naturalCentreY = column.top + boxHeight / 2;
     expect(
       logoBox.center.dy,
-      moreOrLessEquals(
-        naturalCentreY - kLogoVisualCenterOffset.dy * scale,
-        epsilon: 0.5,
-      ),
-      reason: 'Logo box must be lifted by the measured compensation',
+      moreOrLessEquals(column.top + boxHeight / 2, epsilon: 0.5),
+      reason: 'Logo box keeps its natural vertical slot',
     );
   });
 

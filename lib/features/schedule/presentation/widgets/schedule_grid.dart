@@ -35,6 +35,10 @@ class ScheduleGrid extends StatelessWidget {
     this.onSwapChip,
     this.onChipActions,
     this.onChipSwapWith,
+    this.railWidth = 78,
+    this.cellWidth = 128,
+    this.cellHeight = 122,
+    this.headerHeight = 50,
   });
 
   final WeeklyScheduleEntity schedule;
@@ -57,36 +61,46 @@ class ScheduleGrid extends StatelessWidget {
   /// Desktop drag-to-move: [data]'s person leaves their source slot for the
   /// drop cell's (day, shift).
   final void Function(
-          ChipDragData data, ScheduleDay toDay, ScheduleShift toShift)?
-      onMoveChip;
+    ChipDragData data,
+    ScheduleDay toDay,
+    ScheduleShift toShift,
+  )?
+  onMoveChip;
 
   /// Chip context-menu remove.
   final void Function(ScheduleDay day, ScheduleShift shift, String uid)?
-      onRemoveChip;
+  onRemoveChip;
 
   /// Desktop drag-to-switch: [data]'s person was dropped onto `withUid`, who
   /// holds (toDay, toShift) — the two trade slots.
-  final void Function(ChipDragData data, ScheduleDay toDay,
-      ScheduleShift toShift, String withUid)? onSwapChip;
+  final void Function(
+    ChipDragData data,
+    ScheduleDay toDay,
+    ScheduleShift toShift,
+    String withUid,
+  )?
+  onSwapChip;
 
   /// Touch long-press on a chip → the move/switch/remove action sheet
   /// (Schedule 4.0 mobile UX).
   final void Function(ScheduleDay day, ScheduleShift shift, String uid)?
-      onChipActions;
+  onChipActions;
 
   /// Desktop chip context-menu "Switch shifts with…" — the guided flow.
   final void Function(ScheduleDay day, ScheduleShift shift, String uid)?
-      onChipSwapWith;
+  onChipSwapWith;
 
-  static const double _railWidth = 78;
-  static const double _cellWidth = 128;
-  static const double _cellHeight = 122;
-  static const double _headerHeight = 50;
+  /// Sizing hooks used by the read-only 1600×900 export canvas. Defaults keep
+  /// the interactive editor pixel-identical.
+  final double railWidth;
+  final double cellWidth;
+  final double cellHeight;
+  final double headerHeight;
 
   /// Total intrinsic height for [filter] — lets callers embed the grid in a
   /// scroll view without unbounded-height surprises.
   double get height =>
-      _headerHeight + (filter == null ? _cellHeight * 2 : _cellHeight);
+      headerHeight + (filter == null ? cellHeight * 2 : cellHeight);
 
   @override
   Widget build(BuildContext context) {
@@ -100,23 +114,28 @@ class ScheduleGrid extends StatelessWidget {
           // width so the week reads as one wide, scan-friendly grid (no
           // horizontal scroll). Mobile: keep fixed cells that scroll sideways.
           final avail = constraints.maxWidth;
-          final natural = _railWidth + _cellWidth * 7;
+          final natural = railWidth + cellWidth * 7;
           final fits = avail.isFinite && avail >= natural;
-          final cellW =
-              fits ? ((avail - _railWidth) / 7).floorToDouble() : _cellWidth;
+          final cellW = fits
+              ? ((avail - railWidth) / 7).floorToDouble()
+              : cellWidth;
 
           final body = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                for (final d in ScheduleDay.values)
-                  _dayHeader(d, d == today, cellW),
-              ]),
-              for (final s in shifts)
-                Row(children: [
+              Row(
+                children: [
                   for (final d in ScheduleDay.values)
-                    _cell(d, s, d == today, cellW),
-                ]),
+                    _dayHeader(d, d == today, cellW),
+                ],
+              ),
+              for (final s in shifts)
+                Row(
+                  children: [
+                    for (final d in ScheduleDay.values)
+                      _cell(d, s, d == today, cellW),
+                  ],
+                ),
             ],
           );
 
@@ -126,7 +145,7 @@ class ScheduleGrid extends StatelessWidget {
               // Pinned left rail: corner spacer + shift labels.
               Column(
                 children: [
-                  const SizedBox(width: _railWidth, height: _headerHeight),
+                  SizedBox(width: railWidth, height: headerHeight),
                   for (final s in shifts) _rail(s),
                 ],
               ),
@@ -149,8 +168,8 @@ class ScheduleGrid extends StatelessWidget {
   Widget _rail(ScheduleShift shift) {
     final isMorning = shift == ScheduleShift.morning;
     return SizedBox(
-      width: _railWidth,
-      height: _cellHeight,
+      width: railWidth,
+      height: cellHeight,
       child: Padding(
         padding: const EdgeInsets.only(right: 8),
         child: Column(
@@ -173,18 +192,24 @@ class ScheduleGrid extends StatelessWidget {
               child: Icon(
                 isMorning ? Icons.wb_sunny_rounded : Icons.nightlight_round,
                 size: 17,
-                color:
-                    isMorning ? AppColors.textPrimary : AppColors.textSecondary,
+                color: isMorning
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
               ),
             ),
             const SizedBox(height: 7),
-            Text(shift.label,
-                style: AppTypography.labelSmall.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600)),
+            Text(
+              shift.label,
+              style: AppTypography.labelSmall.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 1),
-            Text(shift.timeRange,
-                style: AppTypography.caption.copyWith(height: 1.1)),
+            Text(
+              shift.timeRange,
+              style: AppTypography.caption.copyWith(height: 1.1),
+            ),
           ],
         ),
       ),
@@ -195,7 +220,7 @@ class ScheduleGrid extends StatelessWidget {
     final date = schedule.weekStart.add(Duration(days: day.index));
     return SizedBox(
       width: cellWidth,
-      height: _headerHeight,
+      height: headerHeight,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -214,7 +239,9 @@ class ScheduleGrid extends StatelessWidget {
             alignment: Alignment.center,
             decoration: isToday
                 ? const BoxDecoration(
-                    color: AppColors.primary, shape: BoxShape.circle)
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  )
                 : null,
             child: Text(
               '${date.day}',
@@ -231,16 +258,22 @@ class ScheduleGrid extends StatelessWidget {
   }
 
   Widget _cell(
-      ScheduleDay day, ScheduleShift shift, bool isToday, double cellWidth) {
+    ScheduleDay day,
+    ScheduleShift shift,
+    bool isToday,
+    double cellWidth,
+  ) {
     final uids = schedule.employeesFor(day, shift);
     final valid = validAssignments(uids, members);
     final orphans = orphanAssignments(uids, members);
     final users = [for (final uid in valid) userForUid(uid, members)!];
-    final dimmed = activeInsight != null &&
+    final dimmed =
+        activeInsight != null &&
         !(insights?.slotsFor(activeInsight!).contains((day, shift)) ?? false);
     final oppositeUids = validAssignments(
-            schedule.employeesFor(day, shift.opposite), members)
-        .toSet();
+      schedule.employeesFor(day, shift.opposite),
+      members,
+    ).toSet();
     return ShiftCell(
       key: ValueKey('cell-${day.name}-${shift.name}'),
       users: users,
@@ -249,7 +282,7 @@ class ScheduleGrid extends StatelessWidget {
       isToday: isToday,
       hasOrphan: orphans.isNotEmpty,
       width: cellWidth,
-      height: _cellHeight,
+      height: cellHeight,
       onTap: () => onCellTap(day, shift),
       canEdit: canEdit,
       dimmed: dimmed,
@@ -258,14 +291,16 @@ class ScheduleGrid extends StatelessWidget {
       onDropChip: onMoveChip == null
           ? null
           : (data) => onMoveChip!(data, day, shift),
-      onRemoveUid:
-          onRemoveChip == null ? null : (uid) => onRemoveChip!(day, shift, uid),
+      onRemoveUid: onRemoveChip == null
+          ? null
+          : (uid) => onRemoveChip!(day, shift, uid),
       onMoveUidToOpposite: onMoveChip == null
           ? null
           : (uid) => onMoveChip!(
               ChipDragData(uid: uid, day: day, shift: shift),
               day,
-              shift.opposite),
+              shift.opposite,
+            ),
       onSwapChip: onSwapChip == null
           ? null
           : (data, withUid) => onSwapChip!(data, day, shift, withUid),

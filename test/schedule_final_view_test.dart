@@ -44,7 +44,7 @@ void main() {
     expect(find.byType(Draggable), findsNothing);
   });
 
-  testWidgets('clean screenshot hides preview controls', (tester) async {
+  testWidgets('keeps back and real PNG export actions visible', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: ScheduleFinalView(
@@ -55,12 +55,16 @@ void main() {
       ),
     );
 
-    expect(find.text('Clean screenshot'), findsOneWidget);
-    await tester.tap(find.text('Clean screenshot'));
-    await tester.pump();
-
-    expect(find.text('Clean screenshot'), findsNothing);
-    expect(find.byTooltip('Close preview (Esc)'), findsNothing);
+    expect(find.text('Back to schedule'), findsOneWidget);
+    expect(find.text('Dashboard'), findsOneWidget);
+    expect(find.text('Save PNG'), findsOneWidget);
     expect(find.text('Drop The Shop | Arkan'), findsOneWidget);
+  });
+
+  test('export filename is stable and filesystem-safe', () {
+    expect(
+      scheduleExportFilename('Drop The Shop | Arkan', DateTime(2026, 7, 5)),
+      'drop_the_shop_arkan_schedule_2026-07-05.png',
+    );
   });
 }

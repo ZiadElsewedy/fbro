@@ -16,25 +16,33 @@
 
 ---
 
-## ✅ Schedule Final View — screenshot-ready roster (2026-07-05)
+## ✅ Schedule Final View — real PNG export + redesigned roster (2026-07-05)
 
 Presentation-only; no Firebase schema, rules, functions, route-name, Cubit, or
-dependency change.
+new dependency (reuses `path_provider`).
 
 - **Added `Final view`** to the manager/admin schedule toolbar. It captures the
   currently loaded branch/week and active All/Morning/Night filter, then opens
   an opaque root-navigator preview above the persistent desktop sidebar.
-- **Added `ScheduleFinalView`** (`schedule_final_view.dart`): a branded,
-  read-only roster composition with branch identity, week range, employee and
-  assignment facts, the existing `ScheduleGrid`, and a quiet DROP footer.
-  Reusing the production grid prevents preview/editor visual drift.
-- **Added clean screenshot mode.** `Clean screenshot` removes the preview
-  controls; Escape restores them first and closes the preview on a second
-  press. The roster has no drag, context-menu, assignment, or Firestore write
-  affordances.
-- Tests: `schedule_final_view_test.dart` (branded snapshot + read-only grid;
-  controls-free capture). Focused schedule suite: **14 pass**; full suite:
-  **414 pass**. `flutter analyze`: 7 pre-existing infos, 0 new.
+- **Corrected the original screenshot-mode misunderstanding:** `Save PNG` now
+  performs a real capture and writes a 2400×1350 file to Downloads with a safe
+  branch/week filename; the old control-hiding-only behavior was removed.
+- Added the narrow macOS sandbox `files.downloads.read-write` entitlement to
+  both debug and release so the automatic Downloads write works in production.
+- **Back is always visible** in a dedicated responsive preview toolbar; Escape
+  also closes the preview. The toolbar lives outside the `RepaintBoundary`, so
+  neither it nor the sidebar can appear in the exported image.
+- Added a separate **Dashboard** action that closes the root preview and routes
+  to the correct admin/manager/employee home via `RouteNames.homeForRole`.
+- **Redesigned the export composition** around a fixed 1600×900 canvas: larger
+  roster cells, compact branch/week header, employee/assignment/staffed/open
+  facts, a framed weekly-roster panel with legend, and a restrained DROP
+  footer. This removes the large dead area from the first pass.
+- `ScheduleGrid` gained optional sizing hooks used only by the export canvas;
+  its interactive-editor defaults and behavior are unchanged.
+- Tests: `schedule_final_view_test.dart` (branded read-only roster, Back/Save
+  actions, safe filename) + focused schedule suite: **15 pass**; full suite:
+  **415 pass**. `flutter analyze`: 7 pre-existing infos, 0 new.
 
 ---
 
@@ -56,19 +64,10 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   **no** `SafeArea`, `Stack`, `Align`, `Positioned`, `ConstrainedBox` (the old
   build used a `Stack` with the logo `Center`-ed and the indicator `Align`-ed
   to the bottom edge, which is what read as off-centre).
-- **⚠️ MEASURED Lottie off-centre artwork + pixel-locked compensation:** the
-  DROP artwork inside `assets/0704.json` is NOT centred in its own 720×405
-  frames — the settled tail frames' bright-pixel bounding-box centres average
-  **(+4, +21)px** from the frame's geometric centre (the drop-arrow tail pads
-  the bottom). `kLogoVisualCenterOffset = Offset(4, 21)` (public, in
-  `splash_page.dart`) is applied as an inverse, scale-aware
-  `Transform.translate` (paint-only, layout untouched) so the ARTWORK lands on
-  the window centre. `test/splash_visual_centering_test.dart` decodes the
-  actual asset frames and asserts the constant matches the settled-tail mean
-  (±2.5px) — swap the Lottie and the test fails until re-measured. The same
-  test documents the intro's camera move: mid-flight frames swing the artwork
-  ±≈18px by design (25%: −18.5, 50%: +8, 75%: −8 horizontal), so only the
-  settled tail is a valid centering target.
+- **Owner-tuned Lottie box placement supersedes horizontal bbox centering:**
+  the entire Lottie container is translated **60 logical pixels right** and
+  scaled to **1.12×** in `splash_page.dart`. Both transforms are paint-only;
+  OPERATIONS, the loading bar, and their layout spacing are unchanged.
 - **OPERATIONS trailing-tracking compensation is measured, not assumed:** this
   engine appends `letterSpacing` after the LAST glyph too (TextPainter:
   `width('AB', ls:12) − width('AB', ls:0) == 24`), so the glyph run sits 6px
@@ -95,11 +94,8 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   otherwise drags wide-tracked text visually left of centre) — strictly
   monochrome (white/silver/grey only); **`_PremiumLoadingBar`** 240×3.5
   rounded track in a faint white halo (`BoxShadow`) with the easing sweep band.
-- **Debug centering guides:** `kSplashDebugCentering = true` draws a
-  crosshair through the exact window centre via a layout-neutral
-  `CustomPaint.foregroundPainter` — **debug builds only** (flag is dead code in
-  release); flip to `false` once visually confirmed. The debug-only `assert`
-  still prints `MediaQuery` size/centre/padding each launch.
+- **Removed the debug centering guides:** the vertical/horizontal crosshair and
+  its `CustomPainter` are no longer rendered on the splash.
 - Proven by `test/splash_centering_test.dart` (artwork centre == window centre
   horizontally; logo box lifted by exactly the measured compensation; combined
   lockup bbox framed 80px above centre at 1440×900 and 1024×720;
