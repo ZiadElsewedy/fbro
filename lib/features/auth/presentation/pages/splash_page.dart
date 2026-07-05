@@ -24,12 +24,12 @@ const double kLogoArtworkTop = 59;
 /// box sits. A mass dead-centred geometrically reads LOW to the eye, and the
 /// owner's reference mock frames the lockup high with breathing room below —
 /// 80px ≈ 9% of a 900px window.
-const double kSplashOpticalLift = 110;
+const double kSplashOpticalLift = 50;
 
 /// MANUAL visual correction (owner-tuned by eye, 2026-07-05): the whole Lottie
 /// box is nudged right and scaled up. Paint-only — OPERATIONS, the bar and
 /// all spacing are untouched. Tune these two numbers to taste.
-const double kLogoManualNudgeX = 90;
+const double kLogoManualNudgeX = 120;
 const double kLogoManualScale = 1.50;
 
 /// The cold-start visual surface.
