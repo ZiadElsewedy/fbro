@@ -1,3 +1,4 @@
+import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/enums/swap_status.dart';
@@ -101,6 +102,38 @@ class ScheduleRepositoryImpl implements ScheduleRepository {
         day: day,
         shift: shift,
         employeeId: employeeId,
+      );
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<void> setDayNote({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String note,
+  }) async {
+    try {
+      await _remote.setDayNote(scheduleId: scheduleId, day: day, note: note);
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<void> setLeave({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String employeeId,
+    required LeaveType? type,
+  }) async {
+    try {
+      await _remote.setLeave(
+        scheduleId: scheduleId,
+        day: day,
+        employeeId: employeeId,
+        type: type,
       );
     } on ServerException catch (e) {
       throw ServerFailure(e.message);

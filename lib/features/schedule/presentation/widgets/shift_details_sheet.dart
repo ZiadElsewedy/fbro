@@ -175,7 +175,8 @@ class ShiftDetailsSheet extends StatelessWidget {
               Text('${day.label} · ${shift.label} Shift',
                   style: AppTypography.h3),
               const SizedBox(height: 2),
-              Text('${_dateLabel(date)} · ${shift.timeRange}',
+              // Weekend nights (Thu/Fri/Sat) run till 00:30.
+              Text('${_dateLabel(date)} · ${shift.timeRangeOn(day)}',
                   style: AppTypography.caption),
             ],
           ),
@@ -340,6 +341,11 @@ class ShiftDetailsSheet extends StatelessWidget {
       subtitle: 'Tap an employee to assign',
       employees: members.where((u) => u.role.isEmployee).toList(),
       isAssigned: (u) => schedule.isAssigned(u.uid, day, shift),
+      // Leave is a caution, not a wall — the row says it, the manager decides.
+      subtitleFor: (u) {
+        final type = schedule.leaveTypeOf(u.uid, day);
+        return type == null ? null : 'On leave · ${type.label}';
+      },
       onPick: (u) {
         if (!schedule.isAssigned(u.uid, day, shift)) {
           cubit.assign(day, shift, u.uid);

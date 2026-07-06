@@ -22,6 +22,7 @@ import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
 import 'package:drop/features/schedule/domain/move_validation.dart';
+import 'package:drop/features/schedule/domain/schedule_health.dart';
 import 'package:drop/features/schedule/domain/schedule_week.dart';
 import 'package:drop/features/schedule/domain/swap_policy.dart';
 import 'package:drop/features/schedule/presentation/cubit/schedule_cubit.dart';
@@ -34,7 +35,9 @@ import 'package:drop/features/schedule/presentation/widgets/assignment_chip.dart
     show ChipDragData;
 import 'package:drop/features/schedule/presentation/widgets/broken_assignment_banner.dart';
 import 'package:drop/features/schedule/presentation/widgets/chip_action_sheet.dart';
+import 'package:drop/features/schedule/presentation/widgets/day_details_sheet.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_grid.dart';
+import 'package:drop/features/schedule/presentation/widgets/schedule_health_card.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
 import 'package:drop/features/schedule/presentation/widgets/shift_details_sheet.dart';
 import 'package:drop/features/schedule/presentation/widgets/swap_alert_card.dart'
@@ -167,7 +170,11 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
     ScheduleCubit cubit,
   ) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(40, 16, 40, 16),
+      // 24px — matches the grid's page padding below, so the toolbar and the
+      // week line up and the schedule gets the full desktop width (item:
+      // use more screen width).
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.pagePadding, 16, AppSpacing.pagePadding, 16),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.darkBorder)),
       ),
@@ -488,11 +495,14 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
     if (schedule == null) return _emptySchedule();
 
     final orphanCount = brokenSlots(schedule, members).length;
+    // Both derivations are single passes over members × 7 days — computed
+    // once per build alongside each other, never inside the grid's cells.
     final insights = computeScheduleInsights(
       schedule,
       members,
       filter: _filter,
     );
+    final health = computeScheduleHealth(schedule, members, nameOf: shortName);
     // Never leave the grid stuck dim on a stale selection (e.g. the last
     // conflict was just resolved) — an insight with no slots is no filter.
     final activeInsight =
@@ -511,6 +521,12 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         context: context,
         day: day,
         shift: shift,
+        canEdit: true,
+      ),
+      // Day header / leave-and-notes strip → the day sheet (note + leave).
+      onDayTap: (day) => showDayDetailsSheet(
+        context: context,
+        day: day,
         canEdit: true,
       ),
       // Every edit path funnels through the validated helpers below —
@@ -556,7 +572,44 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         // The grid scrolls horizontally inside its own viewport.
         SizedBox(height: grid.height, child: grid),
         const SizedBox(height: AppSpacing.sm),
+        _weekSummary(insights),
+        const SizedBox(height: AppSpacing.md),
+        ScheduleHealthCard(health: health),
+        const SizedBox(height: AppSpacing.md),
         _gridHint(),
+      ],
+    );
+  }
+
+  /// Compact week summary — the roster's totals in one quiet caption line.
+  Widget _weekSummary(ScheduleInsights insights) {
+    final parts = [
+      '${insights.morningAssignments} morning',
+      '${insights.nightAssignments} night',
+      if (insights.leaveEntries > 0) '${insights.leaveEntries} on leave',
+      if (insights.openCount > 0)
+        '${insights.openCount} open ${insights.openCount == 1 ? 'shift' : 'shifts'}',
+      '${insights.scheduledPeople} '
+          '${insights.scheduledPeople == 1 ? 'person' : 'people'} scheduled',
+    ];
+    return Row(
+      children: [
+        const Icon(
+          Icons.functions_rounded,
+          size: 14,
+          color: AppColors.textTertiary,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            'This week: ${parts.join(' · ')}',
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }
@@ -567,6 +620,33 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   SwapPolicy _policy(String branchId) =>
       context.read<BranchCubit>().branchById(branchId)?.effectiveSwapPolicy ??
       SwapPolicy.permissive;
+
+  /// True = proceed. When [uid] is marked on leave on [toDay] (Schedule 5.0),
+  /// the edit needs an explicit confirmation — leave is a caution the manager
+  /// may consciously override (e.g. a pending request that won't be granted),
+  /// never a hard block. Slots already on that day (same-day shift switches)
+  /// don't re-prompt: the clash, if any, already exists and is flagged amber.
+  Future<bool> _confirmLeaveClash(
+    WeeklyScheduleEntity schedule,
+    String uid,
+    String name,
+    ScheduleDay toDay,
+  ) async {
+    if (schedule.isAssigned(uid, toDay, ScheduleShift.morning) ||
+        schedule.isAssigned(uid, toDay, ScheduleShift.night)) {
+      return true;
+    }
+    final type = schedule.leaveTypeOf(uid, toDay);
+    if (type == null) return true;
+    return showConfirmDialog(
+      context,
+      title: 'Marked on leave',
+      message:
+          '$name is marked "${type.label}" on ${toDay.label}. '
+          'Assign them anyway?',
+      confirmLabel: 'Assign anyway',
+    );
+  }
 
   Future<void> _moveChip(
     WeeklyScheduleEntity schedule,
@@ -591,6 +671,10 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       AppSnackbar.error(context, reason);
       return;
     }
+    // Leave is a caution, not a wall: moving someone onto a day they're
+    // marked away needs an explicit yes.
+    if (!await _confirmLeaveClash(schedule, data.uid, name, toDay)) return;
+    if (!mounted) return;
     // Fact, not quota: emptying the source shift is allowed, but never silent.
     if (MoveValidation.wouldEmptySlot(
       schedule: schedule,
@@ -653,6 +737,11 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       AppSnackbar.error(context, reason);
       return;
     }
+    // A trade lands each person on the other's day — check both for leave.
+    if (!await _confirmLeaveClash(schedule, data.uid, nameA, toDay)) return;
+    if (!mounted) return;
+    if (!await _confirmLeaveClash(schedule, withUid, nameB, data.day)) return;
+    if (!mounted) return;
     final ok = await cubit.exchange(
       dayA: data.day,
       shiftA: data.shift,
@@ -793,9 +882,9 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   Widget _gridHint() {
     final hint = context.isDesktop
         ? 'Drag people between shifts · drop a person on another to switch '
-              'them · right-click for actions · click a cell for details'
+              'them · right-click for actions · click a day for notes & leave'
         : 'Tap a shift to manage · long-press a person for actions · '
-              'swipe for more days';
+              'tap a day for notes & leave';
     return Row(
       children: [
         const Icon(
@@ -871,6 +960,24 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
               active: active,
               count: insights.doubleBookedCount,
               label: 'double-booked',
+              dotColor: AppColors.error,
+            ),
+          if (insights.shortRestCount > 0)
+            _insightChip(
+              kind: ScheduleInsightKind.shortRest,
+              active: active,
+              count: insights.shortRestCount,
+              label: insights.shortRestCount == 1
+                  ? 'short rest'
+                  : 'short rests',
+              dotColor: AppColors.warning,
+            ),
+          if (insights.leaveClashCount > 0)
+            _insightChip(
+              kind: ScheduleInsightKind.leaveClash,
+              active: active,
+              count: insights.leaveClashCount,
+              label: 'on leave & assigned',
               dotColor: AppColors.error,
             ),
         ],

@@ -12,6 +12,70 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-07-06 — Schedule 5.0: leave & day notes, health analysis, presentation Final View)
+
+A usability/operations upgrade of the manager/admin **Schedule** surface — same
+monochrome design language, architecture and interactions; 16-point owner brief.
+
+- **Leave & day notes (schema, additive):** `weekly_schedules/{id}` gains
+  `dayNotes { <day>: text }` and `leave { <day>: { <uid>: <type> } }` — new
+  `LeaveType` enum (**annual · sick · dayOff · pending**; unknown values are
+  dropped on read, legacy docs parse to empty maps, empty maps are omitted on
+  write). Leave is **day-level** (a person is away for the day, not one shift).
+  New repo/datasource writes `setDayNote` / `setLeave` (dotted-path updates +
+  `FieldValue.delete()` for clears) + `ScheduleCubit.setDayNote`/`setLeave`
+  through the existing `_mutate` busy cycle. **No rules change needed** — the
+  generic manager/admin `weekly_schedules` update rule already covers the new
+  fields. No deploy required.
+- **Grid (Schedule 5.0):** a new **day-info footer row** shows leave mini-pills
+  (`Ahmed · Sick`; *pending* renders hollow/italic) and the day-note pill
+  directly under each day — visible without opening anything; tap it or the day
+  header → the new **day sheet** (`day_details_sheet.dart`: date + weekend
+  hours, Morning/Night staffing facts, 120-char note editor, add/remove leave
+  via the shared employee picker + a type picker). Cells grew **128×122 →
+  136×140** (stretching to full width on desktop as before); every staffed cell
+  carries a **quiet corner count** (staffing at a glance); empty editor cells
+  are a small dashed **"Open"** (the old icon + "No one" placeholder removed);
+  today's column adds a whisper of white tint on top of the existing ring.
+  **Weekend (Thu/Fri/Sat)** day headers carry a `till 00:30` tag —
+  `ScheduleDay.isWeekend` + `ScheduleShift.timeRangeOn(day)` (night weekend =
+  `16:30 – 00:30`; weekdays unchanged; shift-details sheet uses per-day hours).
+- **Insights (extended, still one pass per build):** new facts **short rest**
+  (night → next-day morning, ~8–9.5h turnaround; amber) and **on leave &
+  assigned** (red) join open/one-person/double-booked on the clickable insight
+  strip; affected chips get an **amber dot + tooltip**. Week totals power a new
+  compact **week summary** caption under the grid (`14 morning · 12 night · 2
+  on leave · 1 open · 6 people scheduled`).
+- **Schedule Health (new pure `domain/schedule_health.dart`):** week-level
+  wellbeing read per person — grouped-run analysis (M·M·M·off·N·N·N is the
+  healthy shape), **morning↔night ping-pong**, **night→morning short rests**,
+  **6/7-day runs**, team **workload spread** — scored 0–100 → **Healthy / Fair
+  / Strained** with actionable recommendations ("Group their morning shifts…").
+  Rendered as a collapsed one-row **Schedule Health card** under the grid
+  (`schedule_health_card.dart`), expandable to the findings. **Advice, never a
+  gate** — nothing blocks an edit or publish (facts-not-quotas ruling).
+- **Guarded edits:** moving/switching someone onto a day they're marked on
+  leave asks for explicit confirmation (same confirm-not-block pattern as
+  `wouldEmptySlot`); the assign picker rows caption `On leave · <type>`.
+- **Final View → presentation mode:** the export grid renders print-clean
+  (`presentation` flag on grid/cell/chip): **no dashed placeholders, hover/drag
+  affordances, editing indicators or empty-state icons** — empty slots are quiet
+  em-dashes, **all names render** (no "+N more" collapsing), leave + notes
+  print when present, weekend tags included, legend reduced to a single
+  *Today* dot, new *on leave* fact pill. Toolbar/PNG export flow unchanged.
+- **Width:** the desktop toolbar padding now matches the grid's 24px page
+  padding (was 40px) so the toolbar aligns with the week and the schedule uses
+  the full desktop width.
+- **Tests:** `schedule_health_test` + `weekly_schedule_model_test` (new),
+  `schedule_grid_test` (+4: weekend tags, leave/notes strip + day-tap,
+  presentation, corner count), `schedule_insights_test` (+3),
+  `schedule_final_view_test` (presentation assertions). Full suite: **460
+  pass, 2 fail** (the 2 = pre-existing desktop splash-framing tests, verified
+  failing on a clean tree). `flutter analyze`: 7 pre-existing infos, 0 new.
+- **Not in this slice (follow-ups):** employee-facing leave display on My
+  Schedule, an employee leave *request* flow (managers mark `pending` manually
+  for now), cross-week short-rest detection (Saturday night → next Sunday).
+
 ### Changed (2026-07-06 — Living-border orbit: per-state colour palette)
 
 Reworked the `LiveStatusBorder` colour model back to **per-state persistent

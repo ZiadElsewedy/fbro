@@ -293,16 +293,20 @@ class _ExportCanvas extends StatelessWidget {
     }
     final totalSlots = ScheduleDay.values.length * visibleShifts;
 
+    // Presentation mode (Schedule 5.0): the print-clean roster — no dashed
+    // placeholders, hover/drag affordances or empty-state icons; every name
+    // shown; leave + day notes included when present.
     final grid = ScheduleGrid(
       schedule: schedule,
       members: members,
       filter: widget.filter,
       insights: insights,
       canEdit: false,
+      presentation: true,
       railWidth: 96,
       cellWidth: 180,
-      cellHeight: 188,
-      headerHeight: 54,
+      cellHeight: 184,
+      headerHeight: 60,
       onCellTap: (_, _) {},
     );
 
@@ -351,6 +355,14 @@ class _ExportCanvas extends StatelessWidget {
                       ? 'open shift'
                       : 'open shifts',
                 ),
+                if (insights.leaveEntries > 0) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  _FactPill(
+                    icon: Icons.beach_access_outlined,
+                    value: '${insights.leaveEntries}',
+                    label: 'on leave',
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 24),
@@ -375,14 +387,9 @@ class _ExportCanvas extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      _LegendDot(
-                        color: AppColors.primary,
-                        label: 'Current day',
-                      ),
-                      const SizedBox(width: 18),
                       const _LegendDot(
-                        color: AppColors.darkBorder,
-                        label: 'Unassigned',
+                        color: AppColors.primary,
+                        label: 'Today',
                       ),
                     ],
                   ),

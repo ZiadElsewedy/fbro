@@ -1,3 +1,4 @@
+import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/enums/swap_status.dart';
@@ -40,6 +41,22 @@ abstract class ScheduleRepository {
     required ScheduleDay day,
     required ScheduleShift shift,
     required String employeeId,
+  });
+
+  /// Sets (or clears, when [note] is empty) the manager note pinned to [day].
+  Future<void> setDayNote({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String note,
+  });
+
+  /// Marks [employeeId] on [type] leave for [day]; a null [type] clears the
+  /// entry. Leave is a day-level fact (see [WeeklyScheduleEntity.leave]).
+  Future<void> setLeave({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String employeeId,
+    required LeaveType? type,
   });
 
   // ── Shift swaps ──

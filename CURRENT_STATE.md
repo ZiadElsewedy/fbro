@@ -11,8 +11,50 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-06 (living-border orbit — per-state colour palette)
+**Last updated:** 2026-07-06 (Schedule 5.0 — leave & day notes · health analysis · presentation Final View)
 **Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Schedule 5.0 — leave, day notes, health analysis, presentation Final View (2026-07-06)
+
+The manager/admin Schedule surface got its operations upgrade (16-point owner
+brief) with the visual language, architecture and interactions untouched:
+
+- **Leave & day notes live on the week doc** (`weekly_schedules/{id}` —
+  `dayNotes.<day>` text + `leave.<day>.<uid>` = `LeaveType`
+  annual/sick/dayOff/pending). Day-level, additive, backward-compatible;
+  **no rules change / no deploy needed** (the generic manager-admin update rule
+  covers it). Writes: `ScheduleCubit.setDayNote`/`setLeave` →
+  repo/datasource dotted-path updates (`FieldValue.delete()` to clear).
+- **Grid:** day-info footer row (leave pills `Ahmed · Sick`, note pill) under
+  every day; tap it / the day header → the **day sheet**
+  (`day_details_sheet.dart`: note editor + add/remove leave + staffing facts).
+  Bigger cells (136×140), quiet per-cell staffing count, empty cells read a
+  small dashed **"Open"**, today's column adds a subtle tint, weekend
+  (Thu/Fri/Sat) headers carry `till 00:30` (`ScheduleShift.timeRangeOn`).
+- **Insight strip** adds **short rest** (night → next-morning) and **on leave
+  & assigned** fact chips (click-to-highlight, per-chip amber dot + tooltip);
+  a compact **week summary** line (morning/night/leave/open/people totals)
+  sits under the grid.
+- **Schedule Health** (`domain/schedule_health.dart`, pure + unit-tested):
+  weekly pattern analysis per person (grouped shift runs = healthy; flags
+  morning↔night ping-pong, short rests, 6–7-day runs, uneven team load) →
+  Healthy/Fair/Strained + recommendations in a collapsed expandable card.
+  **Advisory only — never blocks anything.**
+- **Final View is a real presentation mode** (`presentation` flag through
+  grid/cell/chip): no dashed placeholders / hover / drag / editing indicators /
+  empty-state icons; all names shown (no "+N more"), leave + notes included,
+  em-dash empty slots — screenshot/PDF/print ready. PNG export unchanged.
+- Desktop toolbar aligned to the grid's 24px padding (more usable width).
+- Moving/switching someone onto a leave day = confirm-not-block; assign picker
+  captions `On leave · <type>`.
+
+Verification: 48 schedule tests (incl. new `schedule_health_test`,
+`weekly_schedule_model_test`) — full suite **460 pass / 2 pre-existing splash
+failures** (verified on clean tree). `flutter analyze`: 0 new.
+**Follow-ups:** employee-facing leave on My Schedule; employee leave request
+flow (managers mark `pending` manually); cross-week short-rest detection.
 
 ---
 
@@ -2794,6 +2836,8 @@ week's Sunday), so a week is addressed directly without a query.
 | `branchId`    | string     | owning branch                                              |
 | `weekStart`   | Timestamp  | Sunday 00:00 that starts the week                          |
 | `assignments` | map        | `{ <day>: { <shift>: [uid, …] } }` — `day` = `sunday`…`saturday`, `shift` = `morning`/`night` |
+| `dayNotes`    | map?       | `{ <day>: text }` — the manager's pinned day note (Schedule 5.0); absent days have no entry; cleared via `FieldValue.delete()` |
+| `leave`       | map?       | `{ <day>: { <uid>: <type> } }` — day-level absences (Schedule 5.0); `type` = `annual` / `sick` / `dayOff` / `pending` (`LeaveType`); unknown values dropped on read |
 | `createdBy`   | string?    | uid of the manager/admin who created it                    |
 | `createdAt`, `updatedAt` | Timestamp | server timestamps; assign/remove use nested `arrayUnion`/`arrayRemove` |
 

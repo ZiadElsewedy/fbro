@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
@@ -9,12 +10,15 @@ UserEntity _member(String uid) => UserEntity(
     uid: uid, email: '$uid@drop.test', authProvider: 'password');
 
 WeeklyScheduleEntity _schedule(
-        Map<ScheduleDay, Map<ScheduleShift, List<String>>> assignments) =>
+  Map<ScheduleDay, Map<ScheduleShift, List<String>>> assignments, {
+  Map<ScheduleDay, Map<String, LeaveType>> leave = const {},
+}) =>
     WeeklyScheduleEntity(
       id: 'b1_2026-06-14',
       branchId: 'b1',
       weekStart: DateTime(2026, 6, 14),
       assignments: assignments,
+      leave: leave,
     );
 
 void main() {
@@ -118,6 +122,78 @@ void main() {
       };
       expect(computeScheduleInsights(_schedule(conflicted), four).allClear,
           isFalse);
+    });
+
+    test('flags night → next-morning turnarounds as short rest', () {
+      final insights = computeScheduleInsights(
+        _schedule({
+          ScheduleDay.sunday: {
+            ScheduleShift.night: ['u1', 'u2'],
+          },
+          ScheduleDay.monday: {
+            ScheduleShift.morning: ['u1'], // u1 worked last night
+          },
+        }),
+        members,
+      );
+
+      expect(insights.shortRestCount, 1);
+      expect(insights.shortRestByDay[ScheduleDay.monday], {'u1'});
+      // Both halves of the pair highlight: Sunday night + Monday morning.
+      expect(
+          insights.shortRestSlots,
+          containsAll({
+            (ScheduleDay.sunday, ScheduleShift.night),
+            (ScheduleDay.monday, ScheduleShift.morning),
+          }));
+      expect(insights.allClear, isFalse);
+    });
+
+    test('flags people assigned while marked on leave; counts leave entries',
+        () {
+      final insights = computeScheduleInsights(
+        _schedule(
+          {
+            ScheduleDay.monday: {
+              ScheduleShift.morning: ['u1'],
+            },
+          },
+          leave: const {
+            ScheduleDay.monday: {'u1': LeaveType.sick},
+            ScheduleDay.tuesday: {
+              'u2': LeaveType.annual, // away, not assigned → no clash
+              'ghost': LeaveType.dayOff, // orphan → never counted
+            },
+          },
+        ),
+        members,
+      );
+
+      expect(insights.leaveEntries, 2);
+      expect(insights.leaveClashCount, 1);
+      expect(insights.leaveClashByDay[ScheduleDay.monday], {'u1'});
+      expect(insights.leaveClashSlots,
+          {(ScheduleDay.monday, ScheduleShift.morning)});
+    });
+
+    test('week summary totals count valid assignments and distinct people',
+        () {
+      final insights = computeScheduleInsights(
+        _schedule({
+          ScheduleDay.sunday: {
+            ScheduleShift.morning: ['u1', 'u2', 'ghost'],
+            ScheduleShift.night: ['u3'],
+          },
+          ScheduleDay.monday: {
+            ScheduleShift.morning: ['u1'],
+          },
+        }),
+        members,
+      );
+
+      expect(insights.morningAssignments, 3); // ghost excluded
+      expect(insights.nightAssignments, 1);
+      expect(insights.scheduledPeople, 3); // u1 counted once
     });
   });
 }

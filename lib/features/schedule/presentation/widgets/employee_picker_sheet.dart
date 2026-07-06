@@ -16,6 +16,7 @@ Future<void> showEmployeePicker({
   required List<UserEntity> employees,
   required bool Function(UserEntity) isAssigned,
   required void Function(UserEntity) onPick,
+  String? Function(UserEntity)? subtitleFor,
 }) {
   return showModalBottomSheet(
     context: context,
@@ -30,6 +31,7 @@ Future<void> showEmployeePicker({
       employees: employees,
       isAssigned: isAssigned,
       onPick: onPick,
+      subtitleFor: subtitleFor,
     ),
   );
 }
@@ -41,6 +43,7 @@ class _EmployeePickerSheet extends StatelessWidget {
     required this.employees,
     required this.isAssigned,
     required this.onPick,
+    this.subtitleFor,
   });
 
   final String title;
@@ -48,6 +51,10 @@ class _EmployeePickerSheet extends StatelessWidget {
   final List<UserEntity> employees;
   final bool Function(UserEntity) isAssigned;
   final void Function(UserEntity) onPick;
+
+  /// Optional per-row caption (e.g. "On leave · Sick leave") — information
+  /// for the picker's judgment, never a disabled row.
+  final String? Function(UserEntity)? subtitleFor;
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +93,7 @@ class _EmployeePickerSheet extends StatelessWidget {
                   final assigned = isAssigned(u);
                   return EmployeeRow(
                     user: u,
+                    subtitle: subtitleFor?.call(u),
                     onTap: assigned ? null : () => onPick(u),
                     trailing: Icon(
                       assigned

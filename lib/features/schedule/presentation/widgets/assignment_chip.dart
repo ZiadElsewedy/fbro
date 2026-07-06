@@ -37,6 +37,8 @@ class AssignmentChip extends StatefulWidget {
     required this.day,
     required this.shift,
     this.conflicted = false,
+    this.cautionNote,
+    this.presentation = false,
     this.canEdit = false,
     this.canMoveToOpposite = true,
     this.onRemove,
@@ -52,6 +54,15 @@ class AssignmentChip extends StatefulWidget {
 
   /// This person is on both shifts of this day (double-booked).
   final bool conflicted;
+
+  /// A soft wellbeing/availability warning for this assignment (e.g. "Short
+  /// rest — worked last night", "Marked on leave today"): amber dot +
+  /// tooltip. A red [conflicted] cue outranks it.
+  final String? cautionNote;
+
+  /// Read-only print/export rendering: the bare chip visual with no hover,
+  /// drag, menus or tooltips (Final View, Schedule 5.0).
+  final bool presentation;
 
   final bool canEdit;
 
@@ -175,6 +186,16 @@ class _AssignmentChipState extends State<AssignmentChip> {
                 shape: BoxShape.circle,
               ),
             ),
+          ] else if (widget.cautionNote != null) ...[
+            const SizedBox(width: 5),
+            Container(
+              width: 5,
+              height: 5,
+              decoration: const BoxDecoration(
+                color: AppColors.warning,
+                shape: BoxShape.circle,
+              ),
+            ),
           ],
         ],
       ),
@@ -183,6 +204,9 @@ class _AssignmentChipState extends State<AssignmentChip> {
 
   @override
   Widget build(BuildContext context) {
+    // Print/export: the plain visual, nothing interactive layered on.
+    if (widget.presentation) return _visual(hovered: false);
+
     final isDesktop = context.isDesktop;
 
     Widget content({bool swapTarget = false}) => MouseRegion(
@@ -221,6 +245,15 @@ class _AssignmentChipState extends State<AssignmentChip> {
         onAcceptWithDetails: (d) => widget.onSwapDrop!(d.data),
         builder: (context, candidates, _) =>
             content(swapTarget: candidates.isNotEmpty),
+      );
+    }
+
+    // Name the amber dot on hover — the cue itself stays tiny.
+    if (widget.cautionNote != null && !widget.conflicted) {
+      chip = Tooltip(
+        message: widget.cautionNote!,
+        waitDuration: const Duration(milliseconds: 400),
+        child: chip,
       );
     }
 

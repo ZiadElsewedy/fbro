@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 
@@ -29,6 +30,15 @@ class WeeklyScheduleEntity with _$WeeklyScheduleEntity {
     @Default(<ScheduleDay, Map<ScheduleShift, List<String>>>{})
     Map<ScheduleDay, Map<ScheduleShift, List<String>>> assignments,
 
+    /// Manager note pinned to a day (Inventory · Big delivery · …); at most
+    /// one short note per day — days without a note simply have no entry.
+    @Default(<ScheduleDay, String>{}) Map<ScheduleDay, String> dayNotes,
+
+    /// Day-level absences: `day → uid → leave type`. Leave is per **day**, not
+    /// per shift — a person on leave is away for the whole day.
+    @Default(<ScheduleDay, Map<String, LeaveType>>{})
+    Map<ScheduleDay, Map<String, LeaveType>> leave,
+
     /// uid of the manager/admin who created the schedule.
     String? createdBy,
     DateTime? createdAt,
@@ -53,4 +63,17 @@ class WeeklyScheduleEntity with _$WeeklyScheduleEntity {
   Set<String> employeesOn(ScheduleDay day) => {
         for (final shift in ScheduleShift.values) ...employeesFor(day, shift),
       };
+
+  /// The manager's note for [day], or null when there is none.
+  String? noteFor(ScheduleDay day) {
+    final note = dayNotes[day];
+    return (note == null || note.trim().isEmpty) ? null : note;
+  }
+
+  /// Everyone away on [day] (`uid → leave type`; never null).
+  Map<String, LeaveType> leaveOn(ScheduleDay day) =>
+      leave[day] ?? const <String, LeaveType>{};
+
+  /// [uid]'s leave on [day], or null when they're available.
+  LeaveType? leaveTypeOf(String uid, ScheduleDay day) => leaveOn(day)[uid];
 }

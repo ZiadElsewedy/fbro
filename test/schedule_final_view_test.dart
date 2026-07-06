@@ -42,6 +42,14 @@ void main() {
     expect(find.text('Salah A.'), findsOneWidget);
     expect(find.text('assignment'), findsOneWidget);
     expect(find.byType(Draggable), findsNothing);
+
+    // Presentation mode (Schedule 5.0): no editing affordances in the print —
+    // empty slots are quiet em-dashes, never "Open"/assign placeholders.
+    expect(find.text('Open'), findsNothing);
+    expect(find.text('+ Assign'), findsNothing);
+    expect(find.text('—'), findsNWidgets(13));
+    // Weekend headers state the late close (Thu · Fri · Sat).
+    expect(find.text('till 00:30'), findsNWidgets(3));
   });
 
   testWidgets('keeps back and real PNG export actions visible', (tester) async {

@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:drop/core/constants/app_constants.dart';
+import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/enums/swap_status.dart';
@@ -33,6 +34,21 @@ abstract class ScheduleRemoteDataSource {
     required ScheduleDay day,
     required ScheduleShift shift,
     required String employeeId,
+  });
+
+  /// Sets (or clears, when [note] is empty) the manager note pinned to [day].
+  Future<void> setDayNote({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String note,
+  });
+
+  /// Marks [employeeId] on [type] leave for [day]; a null [type] clears it.
+  Future<void> setLeave({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String employeeId,
+    required LeaveType? type,
   });
 
   // ── Shift swaps ──
@@ -165,6 +181,43 @@ class ScheduleRemoteDataSourceImpl implements ScheduleRemoteDataSource {
       });
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to remove the employee.');
+    }
+  }
+
+  @override
+  Future<void> setDayNote({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String note,
+  }) async {
+    try {
+      // Same targeted dotted-path pattern as assignEmployee — an empty note
+      // deletes the field so absent days stay absent in the doc.
+      await _schedules.doc(scheduleId).update({
+        'dayNotes.${day.value}':
+            note.trim().isEmpty ? FieldValue.delete() : note.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to save the day note.');
+    }
+  }
+
+  @override
+  Future<void> setLeave({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String employeeId,
+    required LeaveType? type,
+  }) async {
+    try {
+      await _schedules.doc(scheduleId).update({
+        'leave.${day.value}.$employeeId':
+            type == null ? FieldValue.delete() : type.value,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to update the leave entry.');
     }
   }
 

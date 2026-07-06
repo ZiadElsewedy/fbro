@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/theme/app_colors.dart';
@@ -16,10 +17,15 @@ import 'package:drop/features/schedule/presentation/widgets/shift_cell.dart';
 /// days stay usable and tappable on a phone (per the mobile constraint).
 ///
 /// Every assigned person renders as an individual chip (drag / right-click /
-/// tap target); [insights] drive per-chip conflict cues and, when
+/// tap target); [insights] drive per-chip conflict/caution cues and, when
 /// [activeInsight] is set, dim every slot outside that insight's highlight.
 /// No staffing quota / target is implied. Orphaned (broken) references are
 /// excluded and flagged instead, so cells reflect real, current people.
+///
+/// Schedule 5.0 adds a **day-info footer row** (leave entries + the manager's
+/// day note — tap it or a day header to edit), weekend "till 00:30" header
+/// tags (Thu/Fri/Sat nights run late) and a [presentation] mode that renders
+/// the print-clean roster used by the Final View.
 class ScheduleGrid extends StatelessWidget {
   const ScheduleGrid({
     super.key,
@@ -30,15 +36,18 @@ class ScheduleGrid extends StatelessWidget {
     this.insights,
     this.activeInsight,
     this.canEdit = false,
+    this.presentation = false,
+    this.onDayTap,
     this.onMoveChip,
     this.onRemoveChip,
     this.onSwapChip,
     this.onChipActions,
     this.onChipSwapWith,
     this.railWidth = 78,
-    this.cellWidth = 128,
-    this.cellHeight = 122,
-    this.headerHeight = 50,
+    this.cellWidth = 136,
+    this.cellHeight = 140,
+    this.headerHeight = 64,
+    this.dayInfoHeight = 46,
   });
 
   final WeeklyScheduleEntity schedule;
@@ -49,7 +58,8 @@ class ScheduleGrid extends StatelessWidget {
   /// shows both Morning and Night.
   final ScheduleShift? filter;
 
-  /// Week facts (open / one-person / double-booked), computed by the view.
+  /// Week facts (open / one-person / double-booked / short-rest / leave),
+  /// computed by the view.
   final ScheduleInsights? insights;
 
   /// The insight the user selected on the strip — its slots stay lit, the
@@ -57,6 +67,14 @@ class ScheduleGrid extends StatelessWidget {
   final ScheduleInsightKind? activeInsight;
 
   final bool canEdit;
+
+  /// Read-only print/export rendering (Final View): clean cells, no editing
+  /// affordances anywhere.
+  final bool presentation;
+
+  /// A day header / day-info cell was tapped (editor: opens the day sheet
+  /// for notes + leave).
+  final void Function(ScheduleDay day)? onDayTap;
 
   /// Desktop drag-to-move: [data]'s person leaves their source slot for the
   /// drop cell's (day, shift).
@@ -96,16 +114,36 @@ class ScheduleGrid extends StatelessWidget {
   final double cellWidth;
   final double cellHeight;
   final double headerHeight;
+  final double dayInfoHeight;
+
+  /// Whether the week carries any resolvable leave entry or day note.
+  bool get _hasDayInfo {
+    for (final day in ScheduleDay.values) {
+      if (schedule.noteFor(day) != null) return true;
+      for (final uid in schedule.leaveOn(day).keys) {
+        if (userForUid(uid, members) != null) return true;
+      }
+    }
+    return false;
+  }
+
+  /// The day-info footer renders always in the editor (it's the entry point
+  /// for adding leave/notes) but only when it has content on a read-only /
+  /// printed roster — an empty row would be print noise.
+  bool get showsDayInfo => canEdit || _hasDayInfo;
 
   /// Total intrinsic height for [filter] — lets callers embed the grid in a
   /// scroll view without unbounded-height surprises.
   double get height =>
-      headerHeight + (filter == null ? cellHeight * 2 : cellHeight);
+      headerHeight +
+      (filter == null ? cellHeight * 2 : cellHeight) +
+      (showsDayInfo ? dayInfoHeight : 0);
 
   @override
   Widget build(BuildContext context) {
     final today = ScheduleDay.today();
     final shifts = filter == null ? ScheduleShift.values : [filter!];
+    final withDayInfo = showsDayInfo;
     return SizedBox(
       height: height,
       child: LayoutBuilder(
@@ -136,6 +174,13 @@ class ScheduleGrid extends StatelessWidget {
                       _cell(d, s, d == today, cellW),
                   ],
                 ),
+              if (withDayInfo)
+                Row(
+                  children: [
+                    for (final d in ScheduleDay.values)
+                      _dayInfoCell(d, d == today, cellW),
+                  ],
+                ),
             ],
           );
 
@@ -147,6 +192,7 @@ class ScheduleGrid extends StatelessWidget {
                 children: [
                   SizedBox(width: railWidth, height: headerHeight),
                   for (final s in shifts) _rail(s),
+                  if (withDayInfo) _dayInfoRail(),
                 ],
               ),
               Expanded(
@@ -216,9 +262,29 @@ class ScheduleGrid extends StatelessWidget {
     );
   }
 
+  Widget _dayInfoRail() {
+    return SizedBox(
+      width: railWidth,
+      height: dayInfoHeight,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Leave &\nnotes',
+            style: AppTypography.caption.copyWith(
+              height: 1.15,
+              fontSize: 10,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _dayHeader(ScheduleDay day, bool isToday, double cellWidth) {
     final date = schedule.weekStart.add(Duration(days: day.index));
-    return SizedBox(
+    final header = SizedBox(
       width: cellWidth,
       height: headerHeight,
       child: Column(
@@ -252,8 +318,30 @@ class ScheduleGrid extends StatelessWidget {
               ),
             ),
           ),
+          // Weekend nights run late — say so where the day is named
+          // (items: weekend closing time + weekend badge). Non-weekend days
+          // keep an empty spacer so the date circles stay on one line.
+          SizedBox(
+            height: 13,
+            child: day.isWeekend
+                ? Text(
+                    'till 00:30',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textTertiary,
+                      fontSize: 9.5,
+                      height: 1.3,
+                    ),
+                  )
+                : null,
+          ),
         ],
       ),
+    );
+    if (presentation || onDayTap == null) return header;
+    return InkWell(
+      onTap: () => onDayTap!(day),
+      borderRadius: BorderRadius.circular(10),
+      child: header,
     );
   }
 
@@ -285,8 +373,15 @@ class ScheduleGrid extends StatelessWidget {
       height: cellHeight,
       onTap: () => onCellTap(day, shift),
       canEdit: canEdit,
+      presentation: presentation,
       dimmed: dimmed,
       conflictedUids: insights?.doubleBookedByDay[day] ?? const {},
+      // Short rest is a morning-side cue (they worked last night); a leave
+      // clash marks the person on whichever shift they were given.
+      shortRestUids: shift == ScheduleShift.morning
+          ? (insights?.shortRestByDay[day] ?? const {})
+          : const {},
+      leaveClashUids: insights?.leaveClashByDay[day] ?? const {},
       oppositeUids: oppositeUids,
       onDropChip: onMoveChip == null
           ? null
@@ -310,6 +405,104 @@ class ScheduleGrid extends StatelessWidget {
       onChipSwapWith: onChipSwapWith == null
           ? null
           : (uid) => onChipSwapWith!(day, shift, uid),
+    );
+  }
+
+  // ── Day-info footer (Schedule 5.0: leave + day notes) ────────────
+  Widget _dayInfoCell(ScheduleDay day, bool isToday, double cellWidth) {
+    final leave = <(UserEntity, LeaveType)>[
+      for (final entry in schedule.leaveOn(day).entries)
+        if (userForUid(entry.key, members) != null)
+          (userForUid(entry.key, members)!, entry.value),
+    ];
+    final note = schedule.noteFor(day);
+
+    final content = Container(
+      width: cellWidth,
+      height: dayInfoHeight,
+      padding: const EdgeInsets.all(4),
+      child: (leave.isEmpty && note == null)
+          ? null
+          : ClipRect(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Wrap(
+                  spacing: 3,
+                  runSpacing: 3,
+                  children: [
+                    for (final (user, type) in leave) _leavePill(user, type),
+                    if (note != null) _notePill(note),
+                  ],
+                ),
+              ),
+            ),
+    );
+    if (presentation || onDayTap == null) return content;
+    return InkWell(
+      onTap: () => onDayTap!(day),
+      borderRadius: BorderRadius.circular(10),
+      child: content,
+    );
+  }
+
+  /// `Ahmed · Sick` — leave at a glance, no details needed. A pending
+  /// request renders hollow (question, not settled absence).
+  Widget _leavePill(UserEntity user, LeaveType type) {
+    final firstName = shortName(user).split(' ').first;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: type.isPending ? Colors.transparent : AppColors.darkSurfaceElevated,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Text(
+        '$firstName · ${type.shortLabel}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.caption.copyWith(
+          color: type.isPending
+              ? AppColors.textTertiary
+              : AppColors.textSecondary,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          fontStyle: type.isPending ? FontStyle.italic : null,
+          height: 1.1,
+        ),
+      ),
+    );
+  }
+
+  Widget _notePill(String note) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.sticky_note_2_outlined,
+            size: 10,
+            color: AppColors.textTertiary,
+          ),
+          const SizedBox(width: 3),
+          Flexible(
+            child: Text(
+              note,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 10,
+                height: 1.1,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

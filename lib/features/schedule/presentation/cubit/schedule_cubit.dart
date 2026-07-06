@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/errors/failures.dart';
@@ -182,6 +183,24 @@ class ScheduleCubit extends Cubit<ScheduleState> {
     }
     return ok;
   }
+
+  /// Pins a manager note to [day] (empty [note] clears it) — Schedule 5.0.
+  Future<bool> setDayNote(ScheduleDay day, String note) =>
+      _mutate(() => _repository.setDayNote(
+            scheduleId: ScheduleWeek.docId(_branchId, _weekStart),
+            day: day,
+            note: note,
+          ));
+
+  /// Marks [uid] on [type] leave for [day]; null [type] clears the entry —
+  /// Schedule 5.0. Leave is day-level (whole day), not per shift.
+  Future<bool> setLeave(ScheduleDay day, String uid, LeaveType? type) =>
+      _mutate(() => _repository.setLeave(
+            scheduleId: ScheduleWeek.docId(_branchId, _weekStart),
+            day: day,
+            employeeId: uid,
+            type: type,
+          ));
 
   // ── Undo (Schedule 4.0) ────────────────────────────────────────
   /// The inverse of the last direct roster edit (move / exchange / remove),
