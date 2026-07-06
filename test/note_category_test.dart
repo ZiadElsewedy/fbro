@@ -19,7 +19,9 @@ void main() {
     expect(activityTitle('noteWarning'), 'Warning');
     expect(activityTitle('noteIssue'), 'Issue');
     expect(activityColor('note'), AppColors.textTertiary);
-    expect(activityColor('noteWarning'), AppColors.warning);
-    expect(activityColor('noteIssue'), AppColors.error);
+    // Warnings/issues wear the soft state palette (shared with the living
+    // borders) — amber for warnings, soft red for issues.
+    expect(activityColor('noteWarning'), kStateInReview);
+    expect(activityColor('noteIssue'), kStateRejected);
   });
 }

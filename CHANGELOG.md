@@ -12,6 +12,44 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-07-06 — Task Details activity timeline rework: hero head + ledger rows)
+
+The Task Details **activity timeline** was rebuilt from a stack of heavy
+per-event cards into a **flight-recorder** read (new
+`presentation/widgets/activity_timeline.dart`, replacing the private
+`_ActivityTimeline`/`_EventCard` in `task_details_screen.dart`; used by both
+the mobile and desktop layouts):
+
+- **Hero current-status card** at the head — `CURRENT STATUS` eyebrow, big
+  state-coloured title, "Approved by / Submitted by …" actor line with avatar +
+  quiet hairline role chip, relative **and wall-clock** time (new
+  `clockTime()` in `activity_format.dart`), note callout + media. The head
+  node carries a slow **breathing glow only while the task is in flight**
+  (pending/started/completed/in-review/rework); terminal states sit still —
+  same philosophy as the cards' living borders. One animation controller
+  total.
+- **History as compact ledger rows** — no per-event card chrome (borders /
+  shadows / repeated panels deleted): state-coloured node + title, tiny
+  avatar + `name · Role`, right-aligned relative + exact time, notes as
+  quote-lines with a state-coloured accent edge, media as micro-thumbnails
+  (`+N` overflow + "3 photos · 1 video" summary). Roughly 60% less vertical
+  space per event; submission rows still open the `SubmissionDetailsSheet`.
+- **Colour-blended spine** — each connecting segment fades this event's state
+  colour into the next one's, so a rework loop literally reads as colour flow
+  (amber → red → purple …).
+- **Fold for long histories** — past 8 history rows the timeline folds behind
+  "Show N earlier events" (head + 6 newest stay visible).
+- **Soft state palette centralised** — the living-border hues are now public
+  `kState*` consts in `activity_format.dart` (canonical; `task_card.dart`
+  aliases them) and `activityColor` maps every activity kind onto them
+  (started → purple, created/assigned → baby blue, rework/issue → soft red
+  `#F87171`, review/warning → amber, approved → green, completed → neutral).
+  Admin feed dots + task-feed expansion timelines inherit the same hues.
+- Tests: new `activity_timeline_test.dart` (palette pins, `clockTime`, hero +
+  ledger render, fold/expand) + `note_category_test.dart` expectations aligned
+  to the soft palette. 467 passing (2 pre-existing splash-centering failures
+  unrelated to this change).
+
 ### Added (2026-07-06 — Schedule 5.0: leave & day notes, health analysis, presentation Final View)
 
 A usability/operations upgrade of the manager/admin **Schedule** surface — same

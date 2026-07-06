@@ -11,8 +11,32 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-06 (Schedule 5.0 — leave & day notes · health analysis · presentation Final View)
+**Last updated:** 2026-07-06 (Task Details activity timeline rework · Schedule 5.0)
 **Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Task Details activity timeline rework (2026-07-06)
+
+The Task Details timeline is now a **flight recorder**, not a wall of cards
+(new [`activity_timeline.dart`](lib/features/task/presentation/widgets/activity_timeline.dart),
+both mobile + desktop layouts):
+
+- **Hero current-status card** at the head (eyebrow + state-coloured title +
+  actor/role chip + relative·wall-clock time); the head node **breathes only
+  while the task is in flight** — terminal states sit still (living-border
+  philosophy, one controller total).
+- **History = compact ledger rows** (node + title + `name · Role` + exact
+  time; notes as accent-edged quote-lines; media as micro-thumbs) on a
+  **colour-blended spine** (each segment fades into the next event's state
+  colour). Long histories fold behind "Show N earlier events" (>8 rows).
+- Submission events still open the `SubmissionDetailsSheet`.
+- **Palette centralised:** living-border `kState*` consts now live in
+  `activity_format.dart` (canonical; `task_card.dart` aliases) and
+  `activityColor` maps all activity kinds onto them — admin feed dots +
+  task-feed expansion inherit the same soft hues.
+- Tests: `activity_timeline_test.dart` + updated `note_category_test.dart`;
+  467 passing (2 pre-existing splash-centering failures, unrelated).
 
 ---
 

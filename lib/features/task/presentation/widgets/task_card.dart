@@ -12,6 +12,7 @@ import 'package:drop/core/widgets/status_badge.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
+import 'package:drop/features/task/presentation/activity_format.dart';
 import 'package:drop/features/task/presentation/widgets/live_status_border.dart';
 import 'package:drop/features/task/presentation/widgets/task_badge.dart';
 import 'package:drop/features/task/presentation/widgets/task_surface.dart';
@@ -218,11 +219,13 @@ bool _isOverdue(TaskEntity task) {
 /// The per-state living-border orbit palette — soft, premium, slightly muted so
 /// each colour blends naturally with the dark dashboard (no neon, no excess
 /// saturation). Applied consistently wherever a task's live state is shown.
-const Color _statePending = Color(0xFF7DD3FC); // baby blue
-const Color _stateInProgress = Color(0xFFA78BFA); // purple
-const Color _stateInReview = Color(0xFFF59E0B); // amber
-const Color _stateRejected = Color(0xFFF87171); // soft red
-const Color _stateOverdue = Color(0xFFFB923C); // orange
+/// Canonical constants live in `activity_format.dart` (shared with the
+/// activity timeline + feed dots) so the hues change in exactly one place.
+const Color _statePending = kStatePending; // baby blue
+const Color _stateInProgress = kStateInProgress; // purple
+const Color _stateInReview = kStateInReview; // amber
+const Color _stateRejected = kStateRejected; // soft red
+const Color _stateOverdue = kStateOverdue; // orange
 
 /// The **per-state** orbit colour for a task ([LiveStatusBorder.color]) — held
 /// persistently while that state lasts, eased smoothly on a state change:

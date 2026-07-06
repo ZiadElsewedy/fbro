@@ -6,6 +6,15 @@ import 'package:drop/core/theme/app_colors.dart';
 /// Details activity timeline and the admin recent-activity feed so the mapping
 /// lives in exactly one place.
 
+/// The soft per-state palette — muted, premium, no neon — shared by the
+/// living-border orbit (task cards), the activity timeline and the activity
+/// feed dots so a state always wears the same colour everywhere.
+const Color kStatePending = Color(0xFF7DD3FC); // baby blue
+const Color kStateInProgress = Color(0xFFA78BFA); // purple
+const Color kStateInReview = Color(0xFFF59E0B); // amber
+const Color kStateRejected = Color(0xFFF87171); // soft red
+const Color kStateOverdue = Color(0xFFFB923C); // orange
+
 /// Human-readable title for a task activity entry (its post-transition status).
 String activityTitle(String status) => switch (status) {
       'pending' => 'Task created',
@@ -22,12 +31,15 @@ String activityTitle(String status) => switch (status) {
       _ => status,
     };
 
-/// Dot / accent colour for a task activity entry.
+/// Dot / accent colour for a task activity entry — the soft state palette, so
+/// the timeline reads in the same hues as the cards' living borders.
 Color activityColor(String status) => switch (status) {
       'approved' => AppColors.success,
-      'rejected' || 'noteIssue' => AppColors.error,
-      'waitingReview' || 'noteWarning' => AppColors.warning,
-      'started' || 'assigned' => AppColors.textPrimary,
+      'rejected' || 'noteIssue' => kStateRejected,
+      'waitingReview' || 'noteWarning' => kStateInReview,
+      'started' => kStateInProgress,
+      'pending' || 'assigned' => kStatePending,
+      'completed' => AppColors.textSecondary,
       _ => AppColors.textTertiary,
     };
 
@@ -60,4 +72,12 @@ String relativeTime(DateTime dt) {
   if (diff.inDays < 1) return '${diff.inHours}h ago';
   if (diff.inDays < 7) return '${diff.inDays}d ago';
   return '${dt.day} ${_months[dt.month - 1]}';
+}
+
+/// Wall-clock time ("1:43 AM") — pairs with [relativeTime] on timeline rows so
+/// ops can see the exact moment, not just "2m ago".
+String clockTime(DateTime dt) {
+  final h12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+  final ampm = dt.hour < 12 ? 'AM' : 'PM';
+  return '$h12:${dt.minute.toString().padLeft(2, '0')} $ampm';
 }
