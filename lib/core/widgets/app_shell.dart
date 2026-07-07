@@ -123,6 +123,12 @@ class AppShell extends StatelessWidget {
       label: 'Cases',
       route: RouteNames.cases,
     );
+    const requests = SidebarItem(
+      icon: Icons.approval_outlined,
+      activeIcon: Icons.approval_rounded,
+      label: 'Requests',
+      route: RouteNames.requests,
+    );
 
     switch (role) {
       case UserRole.admin:
@@ -148,6 +154,7 @@ class AppShell extends StatelessWidget {
             ),
             communications,
             cases,
+            requests,
             notifications,
           ]),
           SidebarSection(title: 'Administration', items: [
@@ -200,6 +207,7 @@ class AppShell extends StatelessWidget {
             ),
             communications,
             cases,
+            requests,
             notifications,
           ]),
         ];
@@ -225,6 +233,7 @@ class AppShell extends StatelessWidget {
               route: RouteNames.mySchedule,
             ),
             cases,
+            requests,
             notifications,
           ]),
         ];

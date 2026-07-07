@@ -1,0 +1,262 @@
+import 'package:flutter/material.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
+import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/features/requests/domain/entities/request_entity.dart';
+import 'package:drop/features/requests/presentation/request_format.dart';
+
+/// A single request row in the inbox — communicates, at a glance: type (icon +
+/// name), status, requester, branch, time, and a one-line summary. Premium
+/// monochrome: a soft surface, hairline border, a status-tinted type tile, and a
+/// status dot. Deliberately restrained — no information overload.
+class RequestCard extends StatelessWidget {
+  const RequestCard({
+    super.key,
+    required this.request,
+    required this.onTap,
+    this.branchName,
+    this.showRequester = true,
+    this.selected = false,
+  });
+
+  final RequestEntity request;
+  final VoidCallback onTap;
+  final String? branchName;
+
+  /// Hidden on an employee's own list (they know it's theirs).
+  final bool showRequester;
+
+  /// Desktop split-pane selected state (subtle emphasis).
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = RequestFormat.statusColor(request.status);
+    final pendingFor = request.pendingFor;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppRadius.lgAll,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: selected ? AppColors.darkSurfaceElevated : AppColors.darkSurface,
+            borderRadius: AppRadius.lgAll,
+            border: Border.all(
+              color: selected ? AppColors.primary.withAlpha(60) : AppColors.darkBorder,
+            ),
+          ),
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _TypeTile(request: request, tint: statusColor),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            request.type.label,
+                            style: AppTypography.label.copyWith(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        _StatusPill(request: request),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      request.summary,
+                      style: AppTypography.bodySmall
+                          .copyWith(color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    _MetaRow(
+                      request: request,
+                      branchName: branchName,
+                      showRequester: showRequester,
+                      pendingFor: pendingFor,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TypeTile extends StatelessWidget {
+  const _TypeTile({required this.request, required this.tint});
+  final RequestEntity request;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: tint.withAlpha(28),
+        borderRadius: AppRadius.mdAll,
+        border: Border.all(color: tint.withAlpha(60)),
+      ),
+      child: Icon(RequestFormat.icon(request.type), size: 20, color: tint),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.request});
+  final RequestEntity request;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = RequestFormat.statusColor(request.status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withAlpha(30),
+        borderRadius: AppRadius.fullAll,
+        border: Border.all(color: color.withAlpha(90)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(RequestFormat.statusIcon(request.status), size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            request.status.label,
+            style: AppTypography.labelSmall
+                .copyWith(color: color, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaRow extends StatelessWidget {
+  const _MetaRow({
+    required this.request,
+    required this.branchName,
+    required this.showRequester,
+    required this.pendingFor,
+  });
+
+  final RequestEntity request;
+  final String? branchName;
+  final bool showRequester;
+  final Duration? pendingFor;
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = <Widget>[];
+
+    if (request.priority.isHigh) {
+      parts.add(_MetaChip(
+        icon: Icons.priority_high_rounded,
+        label: 'High',
+        color: RequestFormat.priorityColor(request.priority),
+        emphasize: true,
+      ));
+    }
+    if (showRequester && (request.requesterName ?? '').trim().isNotEmpty) {
+      parts.add(_MetaText(icon: Icons.person_outline_rounded, text: request.requesterName!.trim()));
+    }
+    final branch = branchName?.trim();
+    if (branch != null && branch.isNotEmpty) {
+      parts.add(_MetaText(icon: Icons.storefront_outlined, text: branch));
+    }
+    // For a pending request show how long it's been waiting; else its ref + time.
+    if (request.status.isPending && pendingFor != null) {
+      parts.add(_MetaText(
+        icon: Icons.schedule_rounded,
+        text: RequestFormat.waitingLabel(pendingFor!),
+        color: RequestFormat.statusColor(request.status),
+      ));
+    } else {
+      parts.add(_MetaText(
+        icon: Icons.schedule_rounded,
+        text: RequestFormat.relativeTime(request.lastActivityAt),
+      ));
+    }
+
+    return Wrap(
+      spacing: AppSpacing.md,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: parts,
+    );
+  }
+}
+
+class _MetaText extends StatelessWidget {
+  const _MetaText({required this.icon, required this.text, this.color});
+  final IconData icon;
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? AppColors.textTertiary;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: c),
+        const SizedBox(width: 4),
+        Text(text, style: AppTypography.labelSmall.copyWith(color: c)),
+      ],
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.emphasize = false,
+  });
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool emphasize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withAlpha(emphasize ? 30 : 0),
+        borderRadius: AppRadius.smAll,
+        border: Border.all(color: color.withAlpha(70)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 2),
+          Text(label,
+              style: AppTypography.labelSmall
+                  .copyWith(color: color, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}

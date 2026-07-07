@@ -1,0 +1,243 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:drop/core/enums/request_priority.dart';
+import 'package:drop/core/enums/request_type.dart';
+import 'package:drop/core/errors/failures.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/branch/domain/repositories/branch_repository.dart';
+import 'package:drop/features/requests/domain/entities/request_entity.dart';
+import 'package:drop/features/requests/domain/repositories/request_repository.dart';
+import 'package:drop/features/requests/domain/usecases/create_request.dart';
+import 'package:drop/features/requests/domain/usecases/upload_request_attachment.dart';
+import 'package:drop/features/task/domain/entities/task_attachment.dart';
+import 'package:drop/features/task/presentation/cubit/task_cubit.dart'
+    show PickedAttachment;
+import 'requests_list_state.dart';
+
+/// Drives the Operations Requests inbox (the list) for all three roles. Unlike
+/// Cases there is **no privacy split**, so every role reads a single realtime
+/// stream (no one-shot collectionGroup):
+///   admin    → every request;
+///   manager  → own-branch requests (includes any they filed themselves);
+///   employee → their own requests (`requesterId == uid`).
+///
+/// Filing a request lives here (mirrors `CaseListCubit.openCase`); the per-request
+/// timeline + decisions live in [RequestDetailCubit]. Notifications are produced
+/// **server-side** by the `onRequest*` Cloud Functions.
+class RequestsListCubit extends Cubit<RequestsListState> {
+  final RequestRepository _repository;
+  final BranchRepository _branchRepository;
+  final CreateRequest _createRequest;
+  final UploadRequestAttachment _uploadAttachment;
+
+  UserEntity? _user;
+  StreamSubscription<List<RequestEntity>>? _sub;
+  bool _mutating = false;
+  String? _selectedId;
+  final Map<String, String> _branchNames = {};
+
+  Map<String, String> get branchNames => Map.unmodifiable(_branchNames);
+  String? get selectedId => _selectedId;
+
+  RequestsListCubit({
+    required this._repository,
+    required this._branchRepository,
+    required this._createRequest,
+    required this._uploadAttachment,
+  }) : super(const RequestsListState.initial());
+
+  List<RequestEntity> get _requests =>
+      state.maybeWhen(loaded: (r, _, _, _) => r, orElse: () => const []);
+
+  RequestEntity? requestById(String id) {
+    for (final r in _requests) {
+      if (r.id == id) return r;
+    }
+    return null;
+  }
+
+  static String _scopeKey(UserEntity u) =>
+      '${u.uid}:${u.role.value}:${u.branchId ?? ''}';
+
+  Future<void> load(UserEntity user, {bool forceRefresh = false}) async {
+    final inError = state.maybeWhen(error: (_) => true, orElse: () => false);
+    final sameScope = _user != null && _scopeKey(_user!) == _scopeKey(user);
+    if (!forceRefresh && !inError && _sub != null && sameScope) return;
+
+    if (!sameScope) {
+      _branchNames.clear();
+      _selectedId = null;
+    }
+    _user = user;
+    _loadBranchNames();
+
+    final hasData =
+        state.maybeWhen(loaded: (_, _, _, _) => true, orElse: () => false);
+    if (!hasData) emit(const RequestsListState.loading());
+
+    await _sub?.cancel();
+    _sub = null;
+
+    developer.log(
+      '[REQUESTS] load: role=${user.role.value}, uid=${user.uid}, '
+      'branch=${user.branchId ?? '-'}',
+      name: 'REQUESTS',
+    );
+
+    final Stream<List<RequestEntity>> stream;
+    if (user.role.isAdmin) {
+      stream = _repository.watchAllRequests();
+    } else if (user.role.isManager) {
+      stream = _repository.watchBranchRequests(user.branchId ?? '');
+    } else {
+      stream = _repository.watchMyRequests(user.uid);
+    }
+    _subscribe(stream);
+  }
+
+  void _subscribe(Stream<List<RequestEntity>> stream) {
+    _sub = stream.listen(
+      (requests) => _emitLoaded(requests),
+      onError: (Object error, StackTrace st) {
+        developer.log('[REQUESTS] stream error: $error',
+            name: 'REQUESTS', error: error, stackTrace: st);
+        emit(const RequestsListState.error(
+            'Failed to load requests. Please try again.'));
+      },
+    );
+  }
+
+  void _emitLoaded(List<RequestEntity> requests) {
+    if (isClosed) return;
+    emit(RequestsListState.loaded(
+      requests,
+      busy: _mutating,
+      branchNames: Map.of(_branchNames),
+      selectedId: _selectedId,
+    ));
+  }
+
+  Future<void> refresh() async {
+    final user = _user;
+    if (user != null) await load(user, forceRefresh: true);
+  }
+
+  /// Select a request for the desktop split-pane's right side.
+  void select(String? requestId) {
+    _selectedId = requestId;
+    _emitLoaded(_requests);
+  }
+
+  Future<void> _loadBranchNames() async {
+    try {
+      final list = await _branchRepository.getBranches();
+      for (final b in list) {
+        _branchNames[b.id] = b.name;
+      }
+      if (!isClosed) {
+        state.mapOrNull(
+          loaded: (s) => emit(s.copyWith(branchNames: Map.of(_branchNames))),
+        );
+      }
+    } catch (_) {}
+  }
+
+  // ─── Filing a request ──────────────────────────────────────────
+  /// Files a new request. Pre-generates the id so opening media uploads under it
+  /// BEFORE the doc is written (so `onRequestCreated` sees the attachments when it
+  /// builds the opening event). Returns the created request, or null on failure.
+  Future<RequestEntity?> submitRequest({
+    required RequestType type,
+    required Map<String, dynamic> details,
+    RequestPriority priority = RequestPriority.normal,
+    List<PickedAttachment> attachments = const [],
+  }) async {
+    final user = _user;
+    if (user == null || _mutating) return null;
+    _mutating = true;
+    _emitLoaded(_requests);
+
+    try {
+      final requestId = _repository.newRequestId();
+      final uploaded = <TaskAttachment>[];
+      if (attachments.isNotEmpty) {
+        uploaded.addAll(await Future.wait([
+          for (final a in attachments)
+            _uploadAttachment(
+              requestId: requestId,
+              file: a.file,
+              type: a.type,
+              uploadedBy: user.uid,
+              uploadedByName: user.displayName,
+              durationMs: a.durationMs,
+            ),
+        ]));
+      }
+      final entity = RequestEntity(
+        id: requestId,
+        branchId: user.branchId,
+        type: type,
+        approvalPolicy: type.approvalPolicy,
+        priority: priority,
+        requesterId: user.uid,
+        requesterName: user.displayName,
+        requesterRole: user.role,
+        details: details,
+        attachments: uploaded,
+        // Optimistic preview so the row has content before `onRequestCreated`.
+        lastEventPreview: RequestEntity(
+          id: requestId,
+          type: type,
+          requesterId: user.uid,
+          details: details,
+        ).summary,
+      );
+      final created = await _createRequest(entity);
+      return created;
+    } on Failure catch (e) {
+      emit(RequestsListState.error(e.message));
+      return null;
+    } catch (_) {
+      emit(const RequestsListState.error(
+          'Something went wrong filing your request.'));
+      return null;
+    } finally {
+      _mutating = false;
+      _emitLoaded(_requests);
+    }
+  }
+
+  /// Fetches a single request by id (a deep-link not in the current scoped list).
+  Future<RequestEntity?> fetchRequest(String requestId) async {
+    try {
+      return await _repository.getRequest(requestId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> deleteRequest(String requestId) async {
+    if (_user == null || _mutating) return;
+    _mutating = true;
+    _emitLoaded(_requests);
+    try {
+      await _repository.deleteRequest(requestId);
+      if (_selectedId == requestId) _selectedId = null;
+    } on Failure catch (e) {
+      emit(RequestsListState.error(e.message));
+    } catch (_) {
+      emit(const RequestsListState.error('Failed to delete the request.'));
+    } finally {
+      _mutating = false;
+      _emitLoaded(_requests);
+    }
+  }
+
+  @override
+  Future<void> close() {
+    _sub?.cancel();
+    return super.close();
+  }
+}

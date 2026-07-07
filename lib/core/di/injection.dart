@@ -81,6 +81,15 @@ import 'package:drop/features/cases/domain/usecases/send_case_message.dart';
 import 'package:drop/features/cases/domain/usecases/upload_case_attachment.dart';
 import 'package:drop/features/cases/presentation/cubit/case_conversation_cubit.dart';
 import 'package:drop/features/cases/presentation/cubit/case_list_cubit.dart';
+import 'package:drop/features/requests/data/datasources/request_remote_datasource.dart';
+import 'package:drop/features/requests/data/repositories/request_repository_impl.dart';
+import 'package:drop/features/requests/domain/repositories/request_repository.dart';
+import 'package:drop/features/requests/domain/usecases/add_request_comment.dart';
+import 'package:drop/features/requests/domain/usecases/change_request_status.dart';
+import 'package:drop/features/requests/domain/usecases/create_request.dart';
+import 'package:drop/features/requests/domain/usecases/upload_request_attachment.dart';
+import 'package:drop/features/requests/presentation/cubit/request_detail_cubit.dart';
+import 'package:drop/features/requests/presentation/cubit/requests_list_cubit.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart' show UserEntity;
 
 class AppDependencies {
@@ -142,6 +151,31 @@ class AppDependencies {
         uploadCaseAttachment: _uploadCaseAttachment,
         user: user,
         caseId: caseId,
+      );
+
+  /// Operations Requests — the inbox list cubit (singleton, app-wide).
+  static late final RequestsListCubit requestsListCubit;
+
+  // Operations Requests — repository + write use cases, kept so a fresh per-request
+  // [RequestDetailCubit] can be built on demand (one per opened request).
+  static late final RequestRepository _requestRepository;
+  static late final ChangeRequestStatus _changeRequestStatus;
+  static late final AddRequestComment _addRequestComment;
+  static late final UploadRequestAttachment _uploadRequestAttachment;
+
+  /// Builds a fresh detail cubit for [requestId] (owned + disposed by its
+  /// `BlocProvider`; re-created when the selected request changes).
+  static RequestDetailCubit createRequestDetailCubit(
+    String requestId,
+    UserEntity? user,
+  ) =>
+      RequestDetailCubit(
+        repository: _requestRepository,
+        changeStatus: _changeRequestStatus,
+        addComment: _addRequestComment,
+        uploadAttachment: _uploadRequestAttachment,
+        user: user,
+        requestId: requestId,
       );
 
   /// Phase 3 task foundation, activated by the Phase 4 [taskCubit] + use cases.
@@ -252,6 +286,29 @@ class AppDependencies {
       uploadCaseAttachment: uploadCaseAttachment,
       getUsersByBranch: GetUsersByBranch(authRepository),
       seenStore: CaseSeenStore(),
+    );
+
+    // ─── Operations Requests (in-the-moment approvals) ──────────────────
+    // Same hybrid as Cases: the list cubit reads a single role-scoped realtime
+    // stream + files new requests (use cases for the write); the per-request
+    // detail cubit is built on demand via [createRequestDetailCubit]. Reuses
+    // branchRepository for branch names. Notifications are produced server-side
+    // by the `onRequest*` Cloud Functions.
+    final RequestRepository requestRepository = RequestRepositoryImpl(
+      RequestRemoteDataSourceImpl(
+        FirebaseFirestore.instance,
+        FirebaseStorage.instance,
+      ),
+    );
+    _requestRepository = requestRepository;
+    _uploadRequestAttachment = UploadRequestAttachment(requestRepository);
+    _changeRequestStatus = ChangeRequestStatus(requestRepository);
+    _addRequestComment = AddRequestComment(requestRepository);
+    requestsListCubit = RequestsListCubit(
+      repository: requestRepository,
+      branchRepository: branchRepository,
+      createRequest: CreateRequest(requestRepository),
+      uploadAttachment: _uploadRequestAttachment,
     );
 
     // ─── Admin module (Phase 5) ───────────────────────────────
