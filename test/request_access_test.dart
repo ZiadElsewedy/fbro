@@ -25,7 +25,6 @@ void main() {
         id: 'r1',
         branchId: branch,
         type: type,
-        approvalPolicy: type.approvalPolicy,
         status: status,
         requesterId: requesterId,
       );
@@ -57,22 +56,22 @@ void main() {
   });
 
   group('canDecideRequest', () {
-    test('own-branch manager decides a manager-policy request', () {
-      final r = request(type: RequestType.leaveStore, branch: 'b1');
+    test('an own-branch manager can decide any request in their branch', () {
+      final r = request(type: RequestType.cashRequest, branch: 'b1');
       expect(
           canDecideRequest(user('mgr', UserRole.manager, branch: 'b1'), r),
           isTrue);
     });
 
-    test('manager CANNOT decide an admin-only (cash) request', () {
-      final r = request(type: RequestType.cashRequest, branch: 'b1');
+    test('a manager of another branch cannot decide', () {
+      final r = request(branch: 'b1');
       expect(
-          canDecideRequest(user('mgr', UserRole.manager, branch: 'b1'), r),
+          canDecideRequest(user('mgr', UserRole.manager, branch: 'b2'), r),
           isFalse);
     });
 
-    test('admin can decide even an admin-only request', () {
-      final r = request(type: RequestType.cashRequest, branch: 'b1');
+    test('any admin can decide', () {
+      final r = request(branch: 'b1');
       expect(canDecideRequest(user('admin', UserRole.admin), r), isTrue);
     });
 
@@ -84,31 +83,15 @@ void main() {
     });
   });
 
-  group('canCancelRequest', () {
-    test('requester can cancel only while pending', () {
-      final pending = request(requesterId: 'emp1', status: RequestStatus.pending);
-      final approved =
-          request(requesterId: 'emp1', status: RequestStatus.approved);
-      final u = user('emp1', UserRole.employee, branch: 'b1');
-      expect(canCancelRequest(u, pending), isTrue);
-      expect(canCancelRequest(u, approved), isFalse);
-    });
-
-    test('a manager cannot cancel someone else\'s request', () {
-      final r = request(requesterId: 'emp1', status: RequestStatus.pending);
-      expect(
-          canCancelRequest(user('mgr', UserRole.manager, branch: 'b1'), r),
-          isFalse);
-    });
-  });
-
   group('canCommentOnRequest', () {
-    test('participants can comment while active, not once terminal', () {
-      final active = request(status: RequestStatus.pending);
-      final done = request(status: RequestStatus.completed);
+    test('participants can comment while pending, not once decided', () {
+      final pending = request(status: RequestStatus.pending);
+      final approved = request(status: RequestStatus.approved);
+      final rejected = request(status: RequestStatus.rejected);
       final mgr = user('mgr', UserRole.manager, branch: 'b1');
-      expect(canCommentOnRequest(mgr, active), isTrue);
-      expect(canCommentOnRequest(mgr, done), isFalse);
+      expect(canCommentOnRequest(mgr, pending), isTrue);
+      expect(canCommentOnRequest(mgr, approved), isFalse);
+      expect(canCommentOnRequest(mgr, rejected), isFalse);
     });
   });
 }

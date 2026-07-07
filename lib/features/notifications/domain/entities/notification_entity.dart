@@ -46,6 +46,7 @@ class NotificationEntity with _$NotificationEntity {
   // ─── Typed payload reads ───────────────────────────────────────
   String? get taskId => payload['taskId'] as String?;
   String? get caseId => payload['caseId'] as String?;
+  String? get requestId => payload['requestId'] as String?;
   String? get broadcastId => payload['broadcastId'] as String?;
   String? get category => payload['category'] as String?;
   int? get revisionNumber => (payload['revisionNumber'] as num?)?.toInt();

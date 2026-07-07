@@ -12,6 +12,84 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-07-08 — Requests simplified to a lean approval, not a ticket)
+
+Owner ruling ([[project_requests_simplicity]]): a Request is "someone asking
+approval before doing something" — it must feel like sending a message that
+needs a yes/no, **not** a Jira/helpdesk ticket. Stripped everything that made it
+feel like a ticketing platform. Flow is now only **Create → Pending → Approved /
+Rejected**.
+
+- **Statuses → 3.** `RequestStatus` is now `pending / approved / rejected`
+  (dropped `completed` + `cancelled`). `approved`/`rejected` are terminal;
+  `isActive` = pending. `RequestEventKind` lost `completed`/`cancelled`.
+- **Form → Type + one message.** Deleted the per-type dynamic schema
+  (`request_schema.dart`, `request_field_spec.dart`, `dynamic_request_form.dart`).
+  A request now captures a single free-text **message** (`details['message']`);
+  `RequestEntity.summary`/`message` read it. Create screen = pick type → one
+  message field → optional attachments → submit. Type-picker cards resized
+  (`GridView.extent`, no more giant tiles).
+- **Removed priority + approvalPolicy.** Deleted `RequestPriority` +
+  `RequestApprovalPolicy` (enums, entity/model fields, ordering, card chip,
+  create toggle, detail meta). Deciding is simply admin (global) or the
+  own-branch manager — `canDecideRequest` no longer consults a policy; the
+  `firestore.rules` update gate dropped the `adminOnly`/`cancelled` clauses.
+- **Metrics slimmed** to Pending/Approved/Rejected counts that double as the KPI
+  filters (dropped avg-approval-time, top-type, "done today").
+- **Detail actions** are just Approve / Reject (no complete/cancel); the detail
+  shows a **Message** card; a decided request is read-only.
+- **Cloud Functions** (`onRequestCreated`/`onRequestUpdated`): approver routing is
+  now "branch managers + admins" (no policy); dropped the priority tag and the
+  `completed`/`cancelled` lifecycle branches. `refCode` (REQ-######) + the
+  submitted/decision events + notifications are unchanged.
+- **Kept intentionally:** the server `refCode` sequence (invisible, doesn't make
+  the UX feel like a ticket) and the `requestCompleted`/`requestCancelled`
+  notification enum values (harmless back-compat for any already-sent notices).
+- **Verified live** (macOS): file a request → Pending → open → Approve → the
+  decision chip + read-only lock render, `REQ-000001` assigned. Tests: the 8
+  request suites updated/trimmed (36→ still green); full suite 535 pass (3
+  pre-existing failures are in the separate in-progress notifications/splash
+  work, not requests).
+
+### Fixed (2026-07-08 — Requests screen froze on open (empty-state infinite height))
+
+Opening **Requests** (or any list rendering an empty state as a `ListView`
+child) hard-froze the desktop app. This is the *real* cause of the "clicking
+Requests freezes" report — distinct from, and not fixed by, the earlier
+`AnimatedDropLogo` sidebar change below.
+
+- **Root cause:** `DropEmptyState` / `AppEmptyState` use the "fill the viewport,
+  still scroll" idiom (`LayoutBuilder` → `SingleChildScrollView` →
+  `ConstrainedBox(minHeight: constraints.maxHeight)`). That is correct as a
+  direct `RefreshIndicator` child (bounded height), but `RequestsScreen` renders
+  the empty state **inside its `ListView`**, which gives children *unbounded*
+  height. `minHeight` became `Infinity` → `BoxConstraints forces an infinite
+  height` re-thrown **every frame**, drowning the UI thread = the freeze.
+  Reproduced live: the assertion flooded the log the instant Requests opened;
+  gone after the fix.
+- **Fixed:** both empty-state widgets now clamp `minHeight` to `0` when
+  `constraints.maxHeight` is not finite (`isFinite ? maxHeight : 0`) — identical
+  behaviour in the normal bounded case, safe when nested in any scrollable.
+- **Scope:** two core widgets only (`drop_empty_state.dart`,
+  `app_empty_state.dart`); no route, schema, rules, repository, cubit, DI, or
+  function change. Protects every empty-list surface app-wide.
+
+### Fixed (2026-07-07 — Desktop sidebar idle freeze when clicking Reports/Requests)
+
+Clicking the old Reports/Requests area on macOS desktop could look like the app
+froze even though the target route was not crashing. The live process had an
+empty `last_crash.log`, the widget tree was still on `AdminShell`, and sampling
+showed Flutter frame/path work at idle.
+
+- **Root cause:** persistent `AppSidebar` chrome mounted `AnimatedDropLogo`, so
+  the forever-running shimmer kept the desktop UI/raster pipeline hot while the
+  user was idle or navigating.
+- **Fixed:** `AppSidebar` now uses static `DropLogo` again; `AnimatedDropLogo`
+  stays limited to transient brand surfaces. `brand_chrome_test.dart` now asserts
+  the sidebar does not mount `AnimatedDropLogo`.
+- **Scope:** no route, schema, rules, repository, cubit, DI, function,
+  dependency, or generated-file change.
+
 ### Added (2026-07-07 — Configurable shift hours (end times are data, not code))
 
 The night-shift close is no longer a hardcoded `weekend → 00:30`; shift hours are
@@ -546,9 +624,9 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   the window centre (padding is `EdgeInsets.zero`, so the macOS title bar adds
   no offset).
 - **Changed** `AppSidebar`'s brand header from the static `DropLogo` to the
-  shimmering `AnimatedDropLogo` (owner-requested 2026-07-05) — **reverses the
-  2026-07-02 "chrome marks stay static" scoping** for the persistent desktop
-  sidebar; Splash/Login keep their existing treatment.
+  shimmering `AnimatedDropLogo` (owner-requested 2026-07-05) — **reversed on
+  2026-07-07** after the persistent desktop animation was root-caused as an idle
+  freeze/CPU issue; Splash/Login keep their animated treatment.
 - **Fixed** mismatched card heights on the admin dashboard's Overview grid
   (e.g. the "Managers" metric card sitting visibly shorter than its row
   siblings): `DashboardMetricCard` now reserves the trend line's height even

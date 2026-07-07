@@ -21,9 +21,9 @@ import 'request_detail_state.dart';
 /// detail route (mobile). Streams **both** the request doc (header / status /
 /// terminal read-only gate) and its `requests/{id}/events` timeline in realtime,
 /// so every role sees decisions + comments live. A comment is a single event
-/// `add` (no whole-array rewrite). Decisions are guarded by the pure
-/// [canDecideRequest] / [canCancelRequest] predicates so the cubit never issues a
-/// write the Firestore rule would reject.
+/// `add` (no whole-array rewrite). The approve/reject decision is guarded by the
+/// pure [canDecideRequest] predicate so the cubit never issues a write the
+/// Firestore rule would reject.
 class RequestDetailCubit extends Cubit<RequestDetailState> {
   final RequestRepository _repository;
   final ChangeRequestStatus _changeStatus;
@@ -116,27 +116,6 @@ class RequestDetailCubit extends Cubit<RequestDetailState> {
 
   Future<void> approve() => _transition(RequestStatus.approved);
   Future<void> reject() => _transition(RequestStatus.rejected);
-  Future<void> complete() => _transition(RequestStatus.completed);
-
-  /// The requester withdrawing their own still-pending request.
-  Future<void> cancel() async {
-    final user = _user;
-    final r = _request;
-    if (user == null || r == null || _busy) return;
-    if (!canCancelRequest(user, r)) return;
-    _busy = true;
-    _emit();
-    try {
-      await _changeStatus(requestId, RequestStatus.cancelled);
-    } on Failure catch (e) {
-      emit(RequestDetailState.error(e.message));
-    } catch (_) {
-      emit(const RequestDetailState.error('Failed to cancel the request.'));
-    } finally {
-      _busy = false;
-      _emit();
-    }
-  }
 
   // ─── Comment (single event create) ─────────────────────────────
   /// Returns whether the comment was posted. The composer keys its input-clearing

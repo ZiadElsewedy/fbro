@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:drop/core/enums/request_priority.dart';
 import 'package:drop/core/enums/request_type.dart';
 import 'package:drop/core/errors/failures.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
@@ -151,7 +150,6 @@ class RequestsListCubit extends Cubit<RequestsListState> {
   Future<RequestEntity?> submitRequest({
     required RequestType type,
     required Map<String, dynamic> details,
-    RequestPriority priority = RequestPriority.normal,
     List<PickedAttachment> attachments = const [],
   }) async {
     final user = _user;
@@ -175,24 +173,18 @@ class RequestsListCubit extends Cubit<RequestsListState> {
             ),
         ]));
       }
+      final message = (details['message'] ?? '').toString().trim();
       final entity = RequestEntity(
         id: requestId,
         branchId: user.branchId,
         type: type,
-        approvalPolicy: type.approvalPolicy,
-        priority: priority,
         requesterId: user.uid,
         requesterName: user.displayName,
         requesterRole: user.role,
         details: details,
         attachments: uploaded,
         // Optimistic preview so the row has content before `onRequestCreated`.
-        lastEventPreview: RequestEntity(
-          id: requestId,
-          type: type,
-          requesterId: user.uid,
-          details: details,
-        ).summary,
+        lastEventPreview: message.isNotEmpty ? message : type.label,
       );
       final created = await _createRequest(entity);
       return created;

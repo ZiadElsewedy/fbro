@@ -93,7 +93,6 @@ class _Loaded extends StatelessWidget {
     final cubit = context.read<RequestDetailCubit>();
     final u = user;
     final canDecide = u != null && canDecideRequest(u, request);
-    final canCancel = u != null && canCancelRequest(u, request);
     final canComment = u != null && canCommentOnRequest(u, request);
     final branchName = request.branchId == null
         ? null
@@ -131,12 +130,9 @@ class _Loaded extends StatelessWidget {
           _ActionBar(
             request: request,
             canDecide: canDecide,
-            canCancel: canCancel,
             busy: busy,
             onApprove: cubit.approve,
             onReject: () => _confirmReject(context, cubit),
-            onComplete: cubit.complete,
-            onCancel: () => _confirmCancel(context, cubit),
           ),
           RequestComposer(
             sending: busy,
@@ -163,19 +159,6 @@ class _Loaded extends StatelessWidget {
       destructive: true,
     );
     if (ok) await cubit.reject();
-  }
-
-  Future<void> _confirmCancel(
-      BuildContext context, RequestDetailCubit cubit) async {
-    final ok = await showConfirmDialog(
-      context,
-      title: 'Cancel request?',
-      message: 'This withdraws your request. This can’t be undone.',
-      confirmLabel: 'Cancel request',
-      cancelLabel: 'Keep',
-      destructive: true,
-    );
-    if (ok) await cubit.cancel();
   }
 }
 
@@ -247,12 +230,6 @@ class _HeaderCard extends StatelessWidget {
                     icon: Icons.schedule_rounded,
                     label: 'Submitted',
                     value: RequestFormat.fullStamp(request.createdAt)),
-              if (request.priority.isHigh)
-                _MetaItem(
-                    icon: Icons.priority_high_rounded,
-                    label: 'Priority',
-                    value: 'High',
-                    color: RequestFormat.priorityColor(request.priority)),
               if ((request.decidedByName ?? '').trim().isNotEmpty)
                 _MetaItem(
                     icon: RequestFormat.statusIcon(request.status),
@@ -331,48 +308,25 @@ class _MetaItem extends StatelessWidget {
   }
 }
 
-// ─── Dynamic details ─────────────────────────────────────────────
+// ─── Message ─────────────────────────────────────────────────────
 class _DetailsCard extends StatelessWidget {
   const _DetailsCard({required this.request});
   final RequestEntity request;
 
   @override
   Widget build(BuildContext context) {
-    final rows = RequestFormat.detailRows(request);
-    if (rows.isEmpty) return const SizedBox.shrink();
+    final message = request.message;
+    if (message.isEmpty) return const SizedBox.shrink();
     return _Surface(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _CardTitle(icon: Icons.assignment_outlined, label: 'Request details'),
+          _CardTitle(icon: Icons.notes_rounded, label: 'Message'),
           const SizedBox(height: AppSpacing.md),
-          for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) const SizedBox(height: AppSpacing.md),
-            _DetailRow(label: rows[i].label, value: rows[i].value),
-          ],
+          Text(message,
+              style: AppTypography.body.copyWith(color: AppColors.textPrimary)),
         ],
       ),
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: AppTypography.labelSmall
-                .copyWith(color: AppColors.textTertiary)),
-        const SizedBox(height: 2),
-        Text(value,
-            style: AppTypography.body.copyWith(color: AppColors.textPrimary)),
-      ],
     );
   }
 }
@@ -402,28 +356,32 @@ class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.request,
     required this.canDecide,
-    required this.canCancel,
     required this.busy,
     required this.onApprove,
     required this.onReject,
-    required this.onComplete,
-    required this.onCancel,
   });
 
   final RequestEntity request;
   final bool canDecide;
-  final bool canCancel;
   final bool busy;
   final VoidCallback onApprove;
   final VoidCallback onReject;
-  final VoidCallback onComplete;
-  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
-    final children = <Widget>[];
-    if (canDecide && request.status.isPending) {
-      children.addAll([
+    // The only decision is approve / reject, only by an approver, only while
+    // the request is still pending.
+    if (!(canDecide && request.status.isPending)) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, AppSpacing.sm,
+          AppSpacing.pagePadding, AppSpacing.sm),
+      decoration: const BoxDecoration(
+        color: AppColors.darkBg,
+        border: Border(top: BorderSide(color: AppColors.darkBorder)),
+      ),
+      child: Row(children: [
         Expanded(
           child: PremiumButton(
             label: 'Approve',
@@ -441,41 +399,7 @@ class _ActionBar extends StatelessWidget {
             onPressed: busy ? null : onReject,
           ),
         ),
-      ]);
-    } else if (canDecide && request.status.isApproved) {
-      children.add(
-        Expanded(
-          child: PremiumButton(
-            label: 'Mark completed',
-            icon: Icons.task_alt_rounded,
-            style: PremiumButtonStyle.filled,
-            onPressed: busy ? null : onComplete,
-          ),
-        ),
-      );
-    } else if (canCancel) {
-      children.add(
-        Expanded(
-          child: PremiumButton(
-            label: 'Cancel request',
-            icon: Icons.block_rounded,
-            tone: AppColors.error,
-            style: PremiumButtonStyle.ghost,
-            onPressed: busy ? null : onCancel,
-          ),
-        ),
-      );
-    }
-    if (children.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.pagePadding, AppSpacing.sm, AppSpacing.pagePadding, AppSpacing.sm),
-      decoration: const BoxDecoration(
-        color: AppColors.darkBg,
-        border: Border(top: BorderSide(color: AppColors.darkBorder)),
-      ),
-      child: Row(children: children),
+      ]),
     );
   }
 }

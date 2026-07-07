@@ -168,14 +168,6 @@ class _MetaRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final parts = <Widget>[];
 
-    if (request.priority.isHigh) {
-      parts.add(_MetaChip(
-        icon: Icons.priority_high_rounded,
-        label: 'High',
-        color: RequestFormat.priorityColor(request.priority),
-        emphasize: true,
-      ));
-    }
     if (showRequester && (request.requesterName ?? '').trim().isNotEmpty) {
       parts.add(_MetaText(icon: Icons.person_outline_rounded, text: request.requesterName!.trim()));
     }
@@ -226,37 +218,3 @@ class _MetaText extends StatelessWidget {
   }
 }
 
-class _MetaChip extends StatelessWidget {
-  const _MetaChip({
-    required this.icon,
-    required this.label,
-    required this.color,
-    this.emphasize = false,
-  });
-  final IconData icon;
-  final String label;
-  final Color color;
-  final bool emphasize;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withAlpha(emphasize ? 30 : 0),
-        borderRadius: AppRadius.smAll,
-        border: Border.all(color: color.withAlpha(70)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: color),
-          const SizedBox(width: 2),
-          Text(label,
-              style: AppTypography.labelSmall
-                  .copyWith(color: color, fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-}

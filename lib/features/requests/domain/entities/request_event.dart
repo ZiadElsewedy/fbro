@@ -7,13 +7,11 @@ part 'request_event.freezed.dart';
 /// event-driven**: every lifecycle transition and every comment is one immutable
 /// document in `requests/{id}/events`, so extending it is a single enum value.
 ///
-/// [submitted]        — the request itself (opening): summary + details +
-///                      opening attachments. Written by `onRequestCreated`.
+/// [submitted]        — the request itself (opening): message + opening
+///                      attachments. Written by `onRequestCreated`.
 /// [comment]          — a normal reply from a participant (requester / approver).
 /// [approved] /
-/// [rejected] /
-/// [completed] /
-/// [cancelled]        — lifecycle markers, written server-side by
+/// [rejected]         — decision markers, written server-side by
 ///                      `onRequestUpdated`; rendered as centered system chips.
 /// [attachmentAdded]  — media added to an existing request (a comment carrying
 ///                      only attachments).
@@ -22,8 +20,6 @@ enum RequestEventKind {
   comment,
   approved,
   rejected,
-  completed,
-  cancelled,
   attachmentAdded;
 
   String get value => name;
@@ -32,12 +28,10 @@ enum RequestEventKind {
   bool get isComment => this == RequestEventKind.comment;
   bool get isAttachmentAdded => this == RequestEventKind.attachmentAdded;
 
-  /// A lifecycle/status marker rendered as a centered chip, not a bubble.
+  /// A decision/status marker rendered as a centered chip, not a bubble.
   bool get isSystem =>
       this == RequestEventKind.approved ||
-      this == RequestEventKind.rejected ||
-      this == RequestEventKind.completed ||
-      this == RequestEventKind.cancelled;
+      this == RequestEventKind.rejected;
 
   /// A message-style event that aligns to a side + can carry text/media.
   bool get isMessage =>

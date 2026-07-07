@@ -23,21 +23,13 @@ bool canAccessRequest(UserEntity user, RequestEntity request) =>
     user.role.isAdmin ||
     _isOwnBranchManager(user, request);
 
-/// Whether the viewer can DECIDE this request (approve / reject / complete),
-/// honoring its [RequestApprovalPolicy] (admin-only blocks managers). Mirrors the
-/// `requests` update gate.
+/// Whether the viewer can DECIDE this request (approve / reject) — any admin
+/// (global) or the request's own-branch manager. Mirrors the `requests` update
+/// gate.
 bool canDecideRequest(UserEntity user, RequestEntity request) =>
-    request.approvalPolicy.canDecide(
-      user.role,
-      isOwnBranchManager: _isOwnBranchManager(user, request),
-    );
-
-/// Whether the viewer may cancel this request — only the requester, only while
-/// it is still pending.
-bool canCancelRequest(UserEntity user, RequestEntity request) =>
-    viewerIsRequester(user, request) && request.status.requesterCanCancel;
+    user.role.isAdmin || _isOwnBranchManager(user, request);
 
 /// Whether the viewer may post a comment — anyone with access, while the request
-/// is still active (a terminal request is a read-only record).
+/// is still active (a decided request is a read-only record).
 bool canCommentOnRequest(UserEntity user, RequestEntity request) =>
     request.isActive && canAccessRequest(user, request);

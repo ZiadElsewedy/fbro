@@ -156,9 +156,6 @@ class RequestRemoteDataSourceImpl implements RequestRemoteDataSource {
         data['decidedByName'] = decidedByName;
         data['decidedAt'] = FieldValue.serverTimestamp();
       }
-      if (to.isCompleted) {
-        data['completedAt'] = FieldValue.serverTimestamp();
-      }
       await _requests.doc(requestId).update(data);
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to update the request.');

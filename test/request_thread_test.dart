@@ -15,7 +15,7 @@ void main() {
         type: RequestType.maintenance,
         requesterId: 'u1',
         requesterName: 'Sara',
-        details: const {'location': 'Front door', 'description': 'Lock jammed'},
+        details: const {'message': 'Lock jammed'},
         attachments: attachments,
         createdAt: created,
       );
@@ -35,8 +35,8 @@ void main() {
       expect(thread.first.id, kSyntheticSubmittedId);
       expect(thread.first.kind, RequestEventKind.submitted);
       expect(thread.first.actor, RequestEventActor.requester);
-      // summary = first non-empty textual field; for maintenance that's location.
-      expect(thread.first.text, 'Front door');
+      // summary = the message the requester wrote.
+      expect(thread.first.text, 'Lock jammed');
       expect(thread.length, 2);
     });
 

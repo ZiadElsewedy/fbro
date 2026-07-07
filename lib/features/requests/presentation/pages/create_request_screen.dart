@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:drop/core/enums/request_priority.dart';
 import 'package:drop/core/enums/request_type.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/core/theme/app_colors.dart';
@@ -11,14 +10,14 @@ import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/premium_button.dart';
 import 'package:drop/features/requests/presentation/cubit/requests_list_cubit.dart';
 import 'package:drop/features/requests/presentation/request_format.dart';
-import 'package:drop/features/requests/presentation/widgets/dynamic_request_form.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart'
     show PickedAttachment;
 import 'package:drop/features/task/presentation/widgets/attachment_picker.dart';
 
-/// The fast, premium request-filing flow — pick a type, fill only the fields
-/// that type needs, optionally raise priority / attach a photo, submit. Two clean
-/// steps so it takes well under 20 seconds. Reachable from `/requests/create`.
+/// The fast, premium request-filing flow — pick a type, write one short
+/// message/reason, optionally attach a photo, submit. Deliberately just two
+/// clean steps (it should feel like sending a message that needs approval, not
+/// filling a form). Reachable from `/requests/create`.
 class CreateRequestScreen extends StatefulWidget {
   const CreateRequestScreen({super.key, this.initialType});
 
@@ -31,16 +30,17 @@ class CreateRequestScreen extends StatefulWidget {
 
 class _CreateRequestScreenState extends State<CreateRequestScreen> {
   RequestType? _type;
-  Map<String, dynamic> _values = const {};
-  bool _valid = false;
-  bool _high = false;
+  final TextEditingController _message = TextEditingController();
   List<PickedAttachment> _attachments = const [];
   bool _submitting = false;
+
+  bool get _valid => _message.text.trim().isNotEmpty;
 
   @override
   void initState() {
     super.initState();
     _type = widget.initialType;
+    _message.addListener(() => setState(() {}));
     // Ensure the app-wide cubit knows the user (idempotent) so submit works even
     // when the create screen is the first requests surface visited.
     final user = context.currentUser;
@@ -51,11 +51,10 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
     }
   }
 
-  void _onFormChanged(Map<String, dynamic> values, bool valid) {
-    setState(() {
-      _values = values;
-      _valid = valid;
-    });
+  @override
+  void dispose() {
+    _message.dispose();
+    super.dispose();
   }
 
   Future<void> _submit() async {
@@ -64,8 +63,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
     setState(() => _submitting = true);
     final created = await context.read<RequestsListCubit>().submitRequest(
           type: type,
-          details: _values,
-          priority: _high ? RequestPriority.high : RequestPriority.normal,
+          details: {'message': _message.text.trim()},
           attachments: _attachments,
         );
     if (!mounted) return;
@@ -83,16 +81,16 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
     final type = _type;
     return AdaptiveScaffold(
       title: type == null ? 'New Request' : type.label,
-      subtitle: type == null
-          ? 'What do you need approved?'
-          : 'Fill in the details',
+      subtitle:
+          type == null ? 'What do you need approved?' : 'Add a short reason',
+      contentMaxWidth: 640,
       leading: type != null && widget.initialType == null
           ? IconButton(
               icon: const Icon(Icons.arrow_back_rounded),
               onPressed: () => setState(() {
                 _type = null;
-                _valid = false;
-                _values = const {};
+                _message.clear();
+                _attachments = const [];
               }),
             )
           : null,
@@ -102,9 +100,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
 
   void _pick(RequestType type) => setState(() {
         _type = type;
-        _valid = false;
-        _values = const {};
-        _high = false;
+        _message.clear();
         _attachments = const [];
       });
 
@@ -115,14 +111,37 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
       children: [
         _TypeSummary(type: type),
         const SizedBox(height: AppSpacing.xl),
-        DynamicRequestForm(
-          key: ValueKey(type),
-          type: type,
-          onChanged: _onFormChanged,
-        ),
-        _PriorityToggle(
-          high: _high,
-          onChanged: (v) => setState(() => _high = v),
+        Text('Message',
+            style: AppTypography.label.copyWith(
+                color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+        const SizedBox(height: AppSpacing.sm),
+        TextField(
+          controller: _message,
+          minLines: 3,
+          maxLines: 6,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          style: AppTypography.body.copyWith(color: AppColors.textPrimary),
+          decoration: InputDecoration(
+            hintText: 'What do you need, and why? Keep it short.',
+            hintStyle:
+                AppTypography.body.copyWith(color: AppColors.textTertiary),
+            filled: true,
+            fillColor: AppColors.darkSurface,
+            contentPadding: const EdgeInsets.all(AppSpacing.md),
+            border: OutlineInputBorder(
+              borderRadius: AppRadius.mdAll,
+              borderSide: const BorderSide(color: AppColors.darkBorder),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: AppRadius.mdAll,
+              borderSide: const BorderSide(color: AppColors.darkBorder),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: AppRadius.mdAll,
+              borderSide: BorderSide(color: AppColors.primary.withAlpha(120)),
+            ),
+          ),
         ),
         const SizedBox(height: AppSpacing.xl),
         AttachmentPickerField(
@@ -190,65 +209,18 @@ class _TypeSummary extends StatelessWidget {
   }
 }
 
-class _PriorityToggle extends StatelessWidget {
-  const _PriorityToggle({required this.high, required this.onChanged});
-  final bool high;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = RequestFormat.priorityColor(RequestPriority.high);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface,
-        borderRadius: AppRadius.mdAll,
-        border: Border.all(
-            color: high ? color.withAlpha(90) : AppColors.darkBorder),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.priority_high_rounded,
-              size: 18, color: high ? color : AppColors.textSecondary),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Mark as high priority',
-                    style: AppTypography.label
-                        .copyWith(color: AppColors.textPrimary)),
-                Text('Floats to the top of the approver’s queue',
-                    style: AppTypography.labelSmall
-                        .copyWith(color: AppColors.textTertiary)),
-              ],
-            ),
-          ),
-          Switch(
-            value: high,
-            onChanged: onChanged,
-            activeThumbColor: AppColors.onPrimary,
-            activeTrackColor: color,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _TypePicker extends StatelessWidget {
   const _TypePicker({required this.onPick});
   final ValueChanged<RequestType> onPick;
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
+    return GridView.extent(
       padding: const EdgeInsets.all(AppSpacing.lg),
-      crossAxisCount: 2,
+      maxCrossAxisExtent: 260,
       mainAxisSpacing: AppSpacing.md,
       crossAxisSpacing: AppSpacing.md,
-      childAspectRatio: 1.05,
+      childAspectRatio: 1.5,
       children: [
         for (final type in RequestType.values)
           _TypeTileCard(type: type, onTap: () => onPick(type)),

@@ -211,14 +211,6 @@ class _KpiStrip extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.sm),
         _Kpi(
-          value: metrics.completedToday,
-          label: 'Done today',
-          status: RequestStatus.completed,
-          active: active,
-          onTap: onFilter,
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        _Kpi(
           value: metrics.rejected,
           label: 'Rejected',
           status: RequestStatus.rejected,

@@ -151,6 +151,15 @@ class NotificationTile extends StatelessWidget {
       case NotificationType.caseUpdated:
       case NotificationType.caseReplied:
         return ('Case', AppColors.textSecondary);
+      case NotificationType.requestApproved:
+      case NotificationType.requestCompleted:
+        return ('Request', AppColors.success);
+      case NotificationType.requestRejected:
+      case NotificationType.requestCancelled:
+        return ('Request', AppColors.error);
+      case NotificationType.requestSubmitted:
+      case NotificationType.requestCommented:
+        return ('Request', AppColors.textSecondary);
     }
   }
 
@@ -190,6 +199,18 @@ class NotificationTile extends StatelessWidget {
       case NotificationType.caseClosed:
         return Icons.check_circle_outline_rounded;
       case NotificationType.caseReplied:
+        return Icons.chat_bubble_outline_rounded;
+      case NotificationType.requestSubmitted:
+        return Icons.approval_outlined;
+      case NotificationType.requestApproved:
+        return Icons.check_circle_outline_rounded;
+      case NotificationType.requestRejected:
+        return Icons.cancel_outlined;
+      case NotificationType.requestCompleted:
+        return Icons.task_alt_rounded;
+      case NotificationType.requestCancelled:
+        return Icons.block_rounded;
+      case NotificationType.requestCommented:
         return Icons.chat_bubble_outline_rounded;
     }
   }

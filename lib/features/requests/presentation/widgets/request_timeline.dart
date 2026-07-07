@@ -10,9 +10,8 @@ import 'package:drop/features/task/presentation/widgets/attachment_gallery.dart'
 
 /// The request activity timeline — a premium issue-tracker feed. Every event is
 /// one row: the opening submission + comments render as side-aligned bubbles;
-/// lifecycle transitions (approved / rejected / completed / cancelled) render as
-/// centered system chips on a connecting spine. [viewerId] aligns the viewer's
-/// own comments to the right.
+/// the decision (approved / rejected) renders as a centered system chip on a
+/// connecting spine. [viewerId] aligns the viewer's own comments to the right.
 class RequestTimeline extends StatelessWidget {
   const RequestTimeline({
     super.key,
@@ -201,16 +200,12 @@ class _SystemMarker extends StatelessWidget {
   RequestStatus? _statusFor(RequestEventKind kind) => switch (kind) {
         RequestEventKind.approved => RequestStatus.approved,
         RequestEventKind.rejected => RequestStatus.rejected,
-        RequestEventKind.completed => RequestStatus.completed,
-        RequestEventKind.cancelled => RequestStatus.cancelled,
         _ => null,
       };
 
   IconData _icon(RequestEventKind kind) => switch (kind) {
         RequestEventKind.approved => Icons.check_circle_outline_rounded,
         RequestEventKind.rejected => Icons.cancel_outlined,
-        RequestEventKind.completed => Icons.task_alt_rounded,
-        RequestEventKind.cancelled => Icons.block_rounded,
         _ => Icons.circle_outlined,
       };
 
@@ -219,8 +214,6 @@ class _SystemMarker extends StatelessWidget {
     final base = switch (event.kind) {
       RequestEventKind.approved => 'Approved',
       RequestEventKind.rejected => 'Rejected',
-      RequestEventKind.completed => 'Completed',
-      RequestEventKind.cancelled => 'Cancelled',
       _ => 'Updated',
     };
     return who.isEmpty ? base : '$base by $who';

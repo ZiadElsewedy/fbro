@@ -29,7 +29,13 @@ class AppEmptyState extends StatelessWidget {
       builder: (context, constraints) => SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          // Fill the viewport when height is bounded (the normal
+          // RefreshIndicator-child use). When nested inside another scrollable
+          // (e.g. a ListView), height is unbounded — fall back to sizing to
+          // content instead of forcing an infinite height (which crashes).
+          constraints: BoxConstraints(
+              minHeight:
+                  constraints.maxHeight.isFinite ? constraints.maxHeight : 0),
           child: Center(
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.pagePadding),

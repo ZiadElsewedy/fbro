@@ -1,8 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drop/core/enums/attachment_type.dart';
-import 'package:drop/core/enums/request_approval_policy.dart';
-import 'package:drop/core/enums/request_priority.dart';
 import 'package:drop/core/enums/request_status.dart';
 import 'package:drop/core/enums/request_type.dart';
 import 'package:drop/core/enums/user_role.dart';
@@ -18,38 +16,49 @@ void main() {
         id: 'r1',
         branchId: 'b1',
         type: RequestType.stockRequest,
-        approvalPolicy: RequestApprovalPolicy.managerOrAdmin,
         status: RequestStatus.pending,
-        priority: RequestPriority.high,
         requesterId: 'u1',
         requesterName: 'Sara',
         requesterRole: UserRole.employee,
-        details: const {'product': 'Air Max', 'quantity': 3},
+        details: const {'message': 'Need 3 boxes of Air Max'},
       );
 
       final map = RequestModel.fromEntity(entity).toMap();
       expect(map['type'], 'stockRequest');
-      expect(map['approvalPolicy'], 'managerOrAdmin');
       expect(map['status'], 'pending');
-      expect(map['priority'], 'high');
       expect(map['requesterId'], 'u1');
       expect(map['requesterRole'], 'employee');
-      expect((map['details'] as Map)['quantity'], 3);
+      expect((map['details'] as Map)['message'], 'Need 3 boxes of Air Max');
     });
 
     test('fromMap restores enums and defaults leniently', () {
       final model = RequestModel.fromMap({
         'type': 'unknownType',
         'status': 'garbage',
-        'priority': null,
-        'approvalPolicy': 'nope',
         'requesterId': 'u9',
       }, id: 'r2');
       expect(model.type, RequestType.other);
       expect(model.status, RequestStatus.pending);
-      expect(model.priority, RequestPriority.normal);
-      expect(model.approvalPolicy, RequestApprovalPolicy.managerOrAdmin);
       expect(model.id, 'r2');
+    });
+
+    test('entity exposes the message + summary from details', () {
+      final entity = RequestEntity(
+        id: 'r1',
+        type: RequestType.leaveStore,
+        requesterId: 'u1',
+        details: const {'message': 'Step out for lunch'},
+      );
+      expect(entity.message, 'Step out for lunch');
+      expect(entity.summary, 'Step out for lunch');
+
+      final empty = RequestEntity(
+        id: 'r2',
+        type: RequestType.leaveStore,
+        requesterId: 'u1',
+      );
+      expect(empty.message, isEmpty);
+      expect(empty.summary, RequestType.leaveStore.label);
     });
 
     test('details normalize Timestamp → DateTime on read', () {
@@ -57,10 +66,10 @@ void main() {
       final model = RequestModel.fromMap({
         'type': 'leaveStore',
         'requesterId': 'u1',
-        'details': {'reason': 'lunch', 'returnBy': ts},
+        'details': {'message': 'lunch', 'when': ts},
       }, id: 'r3');
-      expect(model.details['returnBy'], isA<DateTime>());
-      expect((model.details['returnBy'] as DateTime).hour, 16);
+      expect(model.details['when'], isA<DateTime>());
+      expect((model.details['when'] as DateTime).hour, 16);
     });
 
     test('details normalize DateTime → Timestamp on write', () {
@@ -68,10 +77,10 @@ void main() {
         id: 'r4',
         type: RequestType.leaveStore,
         requesterId: 'u1',
-        details: {'returnBy': DateTime(2026, 7, 7, 16, 30)},
+        details: {'when': DateTime(2026, 7, 7, 16, 30)},
       );
       final map = model.toMap();
-      expect((map['details'] as Map)['returnBy'], isA<Timestamp>());
+      expect((map['details'] as Map)['when'], isA<Timestamp>());
     });
 
     test('attachments round-trip through the embedded (de)serializer', () {

@@ -1,16 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:drop/core/enums/request_priority.dart';
 import 'package:drop/core/enums/request_status.dart';
 import 'package:drop/core/enums/request_type.dart';
 import 'package:drop/core/theme/app_colors.dart';
-import 'package:drop/features/requests/domain/entities/request_entity.dart';
-import 'package:drop/features/requests/domain/request_field_spec.dart';
-import 'package:drop/features/requests/domain/request_schema.dart';
 
 /// Presentation-only formatting for Operations Requests — icons, the single
-/// status→colour source, priority styling, relative time, and turning the dynamic
-/// `details` map into labelled, human-readable rows. Kept out of the domain so the
-/// enums stay Flutter-free (mirrors `activity_format.dart` for tasks).
+/// status→colour source, and relative time. Kept out of the domain so the enums
+/// stay Flutter-free (mirrors `activity_format.dart` for tasks).
 class RequestFormat {
   const RequestFormat._();
 
@@ -31,24 +26,14 @@ class RequestFormat {
   // ─── Status → colour (the ONE source, like taskStatusColor) ────
   static Color statusColor(RequestStatus status) => switch (status) {
         RequestStatus.pending => AppColors.warning, // awaiting a decision
-        RequestStatus.approved => AppColors.success, // granted, in progress
-        RequestStatus.completed => AppColors.textSecondary, // done, archived
+        RequestStatus.approved => AppColors.success, // granted
         RequestStatus.rejected => AppColors.error,
-        RequestStatus.cancelled => AppColors.textTertiary,
       };
 
   static IconData statusIcon(RequestStatus status) => switch (status) {
         RequestStatus.pending => Icons.hourglass_top_rounded,
         RequestStatus.approved => Icons.check_circle_outline_rounded,
-        RequestStatus.completed => Icons.task_alt_rounded,
         RequestStatus.rejected => Icons.cancel_outlined,
-        RequestStatus.cancelled => Icons.block_rounded,
-      };
-
-  static Color priorityColor(RequestPriority p) => switch (p) {
-        RequestPriority.high => AppColors.warning,
-        RequestPriority.normal => AppColors.textSecondary,
-        RequestPriority.low => AppColors.textTertiary,
       };
 
   // ─── Relative time ("2m", "3h", "Yesterday", "6 Jul") ──────────
@@ -88,50 +73,4 @@ class RequestFormat {
   /// A precise "6 Jul · 4:30 PM" stamp for the detail header.
   static String fullStamp(DateTime? d) =>
       d == null ? '' : '${dateLabel(d)} · ${timeOfDay(d)}';
-
-  /// Approval-time metric label ("2h 15m", "3d").
-  static String durationLabel(Duration d) {
-    if (d.inMinutes < 60) return '${d.inMinutes}m';
-    if (d.inHours < 24) {
-      final m = d.inMinutes % 60;
-      return m == 0 ? '${d.inHours}h' : '${d.inHours}h ${m}m';
-    }
-    return '${d.inDays}d';
-  }
-
-  // ─── Dynamic details → labelled rows ───────────────────────────
-  /// Turns a request's `details` map into ordered (label, value) rows for the
-  /// detail view, skipping empties and formatting dates/times/numbers per the
-  /// schema. Values were normalized to `DateTime`/`num`/`String` at the model
-  /// boundary, so there is no string parsing here.
-  static List<({String label, String value})> detailRows(RequestEntity r) {
-    final rows = <({String label, String value})>[];
-    for (final spec in RequestSchema.fieldsFor(r.type)) {
-      final raw = r.details[spec.key];
-      final value = _formatValue(raw, spec.kind);
-      if (value.isEmpty) continue;
-      rows.add((label: spec.label, value: value));
-    }
-    return rows;
-  }
-
-  static String _formatValue(dynamic raw, RequestFieldKind kind) {
-    if (raw == null) return '';
-    switch (kind) {
-      case RequestFieldKind.time:
-        return raw is DateTime ? timeOfDay(raw) : raw.toString();
-      case RequestFieldKind.date:
-        return raw is DateTime ? dateLabel(raw) : raw.toString();
-      case RequestFieldKind.number:
-        if (raw is num) {
-          return raw == raw.roundToDouble()
-              ? raw.toInt().toString()
-              : raw.toString();
-        }
-        return raw.toString().trim();
-      case RequestFieldKind.text:
-      case RequestFieldKind.multiline:
-        return raw.toString().trim();
-    }
-  }
 }

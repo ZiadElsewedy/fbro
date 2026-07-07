@@ -101,7 +101,6 @@ void main() {
         id: 'r1',
         branchId: branch,
         type: type,
-        approvalPolicy: type.approvalPolicy,
         status: status,
         requesterId: requester,
       );
@@ -147,10 +146,10 @@ void main() {
     await cubit.close();
   });
 
-  test('a manager CANNOT approve an admin-only cash request', () async {
+  test('a manager of another branch CANNOT approve', () async {
     final repo = _FakeRequestRepository();
-    final cubit = build(repo, u('mgr', UserRole.manager, branch: 'b1'));
-    repo.pushRequest(req(type: RequestType.cashRequest));
+    final cubit = build(repo, u('mgr', UserRole.manager, branch: 'b2'));
+    repo.pushRequest(req(branch: 'b1'));
     await Future<void>.delayed(Duration.zero);
 
     await cubit.approve();
@@ -158,30 +157,13 @@ void main() {
     await cubit.close();
   });
 
-  test('approve is rejected when the request is not pending', () async {
+  test('approve is rejected when the request is already decided', () async {
     final repo = _FakeRequestRepository();
     final cubit = build(repo, u('mgr', UserRole.manager, branch: 'b1'));
-    repo.pushRequest(req(status: RequestStatus.completed));
+    repo.pushRequest(req(status: RequestStatus.approved));
     await Future<void>.delayed(Duration.zero);
 
     await cubit.approve();
-    expect(repo.statusChanges, isEmpty);
-    await cubit.close();
-  });
-
-  test('the requester can cancel a pending request; not once approved',
-      () async {
-    final repo = _FakeRequestRepository();
-    final cubit = build(repo, u('emp1', UserRole.employee, branch: 'b1'));
-    repo.pushRequest(req(requester: 'emp1'));
-    await Future<void>.delayed(Duration.zero);
-    await cubit.cancel();
-    expect(repo.statusChanges.single.to, RequestStatus.cancelled);
-
-    repo.statusChanges.clear();
-    repo.pushRequest(req(requester: 'emp1', status: RequestStatus.approved));
-    await Future<void>.delayed(Duration.zero);
-    await cubit.cancel();
     expect(repo.statusChanges, isEmpty);
     await cubit.close();
   });
