@@ -97,7 +97,7 @@ class ShiftDetailsSheet extends StatelessWidget {
               const LinearProgressIndicator(minHeight: 2),
             ],
             const SizedBox(height: AppSpacing.md),
-            _header(date),
+            _header(date, schedule),
             const SizedBox(height: AppSpacing.lg),
             _assignedSummary(assigned.length),
             const SizedBox(height: AppSpacing.lg),
@@ -149,7 +149,7 @@ class ShiftDetailsSheet extends StatelessWidget {
   }
 
   // ── Header ───────────────────────────────────────────────────────
-  Widget _header(DateTime date) {
+  Widget _header(DateTime date, WeeklyScheduleEntity schedule) {
     final isMorning = shift == ScheduleShift.morning;
     return Row(
       children: [
@@ -175,8 +175,11 @@ class ShiftDetailsSheet extends StatelessWidget {
               Text('${day.label} · ${shift.label} Shift',
                   style: AppTypography.h3),
               const SizedBox(height: 2),
-              // Weekend nights (Thu/Fri/Sat) run till 00:30.
-              Text('${_dateLabel(date)} · ${shift.timeRangeOn(day)}',
+              // The real configured hours for this (day, shift) — overnight
+              // closes come from the schedule, not a hardcoded weekend rule.
+              Text(
+                  '${_dateLabel(date)} · '
+                  '${schedule.hoursFor(day, shift).format(separator: '→')}',
                   style: AppTypography.caption),
             ],
           ),

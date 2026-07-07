@@ -11,6 +11,7 @@ import 'package:drop/features/auth/presentation/cubit/auth_state.dart';
 import 'package:drop/features/schedule/domain/entities/shift_swap_entity.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
 import 'package:drop/features/schedule/domain/schedule_week.dart';
+import 'package:drop/features/schedule/domain/shift_hours.dart';
 import 'package:drop/features/schedule/presentation/cubit/schedule_cubit.dart';
 import 'package:drop/features/schedule/presentation/cubit/schedule_state.dart';
 import 'package:drop/features/schedule/presentation/cubit/shift_swap_cubit.dart';
@@ -94,6 +95,7 @@ WeeklyScheduleEntity _week({
   Map<ScheduleDay, Map<ScheduleShift, List<String>>> assignments = const {},
   Map<ScheduleDay, Map<String, LeaveType>> leave = const {},
   Map<ScheduleDay, String> dayNotes = const {},
+  Map<ScheduleDay, Map<ScheduleShift, ShiftHours>> shiftHours = const {},
 }) {
   final start = weekStart ?? ScheduleWeek.currentWeekStart();
   return WeeklyScheduleEntity(
@@ -103,6 +105,7 @@ WeeklyScheduleEntity _week({
     assignments: assignments,
     leave: leave,
     dayNotes: dayNotes,
+    shiftHours: shiftHours,
   );
 }
 
@@ -221,6 +224,38 @@ void main() {
         reason: 'the note text is not printed on the card, only an indicator');
     expect(find.text('16:30 → 00:30'), findsAtLeastNWidgets(1));
     expect(find.textContaining('23:00'), findsNothing);
+
+    await _unmount(tester);
+  });
+
+  testWidgets(
+      'a configured overnight close is what the employee sees (Saturday 01:00)',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    // The business change lives in data, not code: Saturday night → 01:00.
+    await _pump(
+      tester,
+      schedule: _week(
+        assignments: {
+          ScheduleDay.saturday: {
+            ScheduleShift.night: ['u1'],
+          },
+        },
+        shiftHours: {
+          ScheduleDay.saturday: {
+            ScheduleShift.night: const ShiftHours(990, 1500), // 16:30 → 01:00
+          },
+        },
+      ),
+    );
+
+    // The row shows the configured close, not the standing weekend default.
+    expect(find.text('16:30 → 01:00'), findsAtLeastNWidgets(1));
+    expect(find.textContaining('00:30'), findsNothing,
+        reason: 'the configured override replaces the standing default');
 
     await _unmount(tester);
   });

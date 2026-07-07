@@ -11,8 +11,43 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-07 (Multi-line day notes + premium employee shift sheet)
+**Last updated:** 2026-07-07 (Configurable shift hours — end times are data)
 **Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Configurable shift hours — end times are data, not code (2026-07-07)
+
+The hardcoded `weekend → 00:30` is gone. Shift hours are configurable per
+(day, shift), editable in-app, and the same value drives display + live status.
+
+- **`ShiftHours`** (`domain/shift_hours.dart`): start/end minutes past midnight,
+  **end > 1440 for overnight** (00:30 = 1470, 01:00 = 1500) — the single source
+  of truth for crossing midnight. `ShiftHours.standard(day, shift)` is the
+  overridable standing baseline.
+- **Per-week overrides** on `weekly_schedules/{id}.shiftHours` (additive like
+  `dayNotes`/`leave`; **no rules change**), resolved via
+  `WeeklyScheduleEntity.hoursFor(day, shift)` (override ?? standard). Write path:
+  `ScheduleCubit.setShiftHours` → repo/datasource dotted-path
+  `shiftHours.<day>.<shift>` (`fromMap`/`toMap` round-trip tested).
+- **Manager/admin editor**: day sheet *Shift hours* section — configured
+  `16:30 → 01:00` per shift, *Custom* badge when overridden, time-picker edit
+  (end ≤ start ⇒ next-day overnight) + reset-to-default.
+- **Config-driven timing**: `ShiftWindow.startOf/endOf/phaseOf/nightSpillEnd`
+  take the resolved `ShiftHours`, so live status is **On now** until the
+  configured close, past midnight (Fri → 00:30, Sat → 01:00). Employee hero
+  countdown, week rows, shift sheet + manager shift-details/day-sheet header all
+  render `hoursFor(...)` in arrow form `16:30 → 01:00`. Sunday small-hours seam
+  still uses standing Saturday-night hours (only the prev-week Sat-night crew is
+  cached — `previousSaturdayNight`).
+- **Visual refinement** (frozen layout, existing tokens): configured time reads
+  at **secondary** with **tabular figures** on every time/countdown label —
+  aligned down the column, no digit jitter.
+
+Verification: `flutter analyze` 0 new; suite **504 pass / 2 pre-existing splash
+failures**. Tests: `shift_hours_test.dart` (value object, overnight, parse
+guards, `hoursFor` override, Firestore round-trip), `shift_window_test.dart`
+(overnight phase), employee-display override test (Saturday `16:30 → 01:00`).
 
 ---
 
@@ -27,13 +62,14 @@ Owner-directed, mockup-driven enhancement inside the frozen premium UI:
 - **Cards stay glanceable:** today hero + week rows show a **"Note / N notes"
   indicator**, never the note text (owner: don't duplicate notes on the card).
 - **Premium tap-to-open shift sheet** (`_ShiftDetailsSheet` rebuilt): day ·
-  shift · **arrow time `16:30 → 00:30`** · **notes as bullets** (un-truncated) ·
-  manager · team · **Swap Shift** when eligible. Off/leave days → note +
-  manager only.
+  shift · **arrow time** from `schedule.hoursFor(...)` · **notes as bullets**
+  (un-truncated) · manager · team · **Swap Shift** when eligible. Off/leave
+  days → note + manager only.
 - **Rows/hero tap → the sheet**; inline `Swap`/`Today`/`Past`/`—` fillers
   removed from week rows (Swap now lives in the sheet), chevron marks a
-  tappable row. `_arrowRange` gives employee surfaces the arrow separator;
-  the manager/admin/desktop grid keeps the en-dash (frozen, out of scope).
+  tappable row. `_arrowRange` gives employee surfaces the arrow separator from
+  the loaded `ShiftHours`; manager/admin surfaces keep their existing en-dash
+  styling.
 
 Verification: `flutter analyze` 0 new; suite **489 pass / 2 pre-existing
 splash failures**. Test gotcha unchanged: the countdown pill owns a minute
@@ -51,10 +87,11 @@ improvements** inside its design language. The functional wins were kept:
 
 - **Live shift-status pill** in the hero (`In 4h 30m` always / `On now · till
   00:30` / quiet `Ended`), minute-aligned tick so it never goes stale.
-- **Structural midnight math:** `ScheduleShift.startMinutes`/`endMinutesOn` +
-  pure [`shift_window.dart`](lib/features/schedule/domain/shift_window.dart) —
-  weekend nights stay **active past midnight till 00:30**, and during the
-  00:00–00:30 tail the hero keeps showing the running night shift instead of
+- **Structural midnight math:** `ShiftHours` +
+  `WeeklyScheduleEntity.hoursFor(...)` + pure
+  [`shift_window.dart`](lib/features/schedule/domain/shift_window.dart) —
+  configured overnight shifts stay **active past midnight until their end**,
+  and during the tail the hero keeps showing the running night shift instead of
   flipping to "Day Off" (Sat→Sun seam via `ScheduleCubit.previousSaturdayNight`;
   test fakes must stub that getter — `implements`-fakes throw on concrete
   members).
@@ -2460,7 +2497,7 @@ stretched-mobile on desktop anymore.**
 | Account access   | ✅ Complete    | `isActive` is the sole access gate; inactive accounts are signed out/blocked. Admins provision accounts via `createUserAccount` |
 | Roles & routing  | ✅ Complete    | `UserRole` enum, role dispatch + guards; **admin ⊇ manager** hierarchy + branch-scoped access model (admin global · manager own-branch · employee self) |
 | Shifts (Phase 2) | ❌ Removed (Phase 10) | The unused `shift` foundation (data/domain + placeholder screens + `shifts/{shiftId}` rules + `/admin\|manager/shifts`·`/my-shift` routes + DI) was **deleted** as dead code. The **Weekly Schedule** (Phase 7) is the production roster |
-| Weekly Schedule (Phase 7, +2026-06-20 grid redesign) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit`. **Manager/admin view is now a weekly assignment grid** (`ScheduleGrid` + `ShiftCell`) — each cell shows **assigned head-count** (monochrome density tint + "Empty" state, **no staffing quota/target**); cell tap → `ShiftDetailsSheet` (assign/remove/resolve, conflicts). Single-surface screens (tabs removed). Employee keeps the My-Week view. Roster `day → morning/night → employees`; `weekly_schedules/{id}` rules |
+| Weekly Schedule (Phase 7, +Schedule 5.x) | ✅ Complete | `schedule` feature: `WeeklyScheduleEntity` + `ScheduleCubit` + `ShiftSwapCubit`. Manager/admin use the weekly schedule surface (`ScheduleGrid`/`ShiftCell`, day details, leave/notes, Final View export); employee uses the owner-frozen premium My Week hero/week rows + shift sheet. Roster `day → morning/night → employees`; week doc also carries `dayNotes`, `leave`, and `shiftHours` overrides; `weekly_schedules/{id}` rules |
 | Shift Swap (Phase 7, +2026-06-20 hardening & grid) | ✅ Complete | `ShiftSwapEntity` + `ShiftSwapCubit`: employee requests → coworker approves → manager approves → schedule auto-updates; `shift_swaps/{id}` rules. Statuses pending/employeeApproved/managerApproved/rejected. **future-shifts-only** validation (`SwapEligibility`) in domain + cubit + UI + rules; admin all-branch visibility via `getAllSwaps()` / `pendingSwaps()`. **Swap tab removed** — surfaced as a floating `SwapAlertCard` → queue modal (reuses `SwapListView`, now showing submitted-time) inside the schedule grid |
 | Tasks (Phase 3–4, +Stabilization, +Phase 9, +Workflow Upgrade, +Media Upgrade, +Shift Assignment) | ✅ Full operations workflow | Full vertical slice: `TaskCubit` + use cases, functional employee/manager/admin screens, client-side status-transition rules, **live Firestore streams**, admin branch dropdown, multi-assignee, checklist+completion gate. **Workflow Upgrade (2026-06-18):** recurring tasks, activity timeline (`ActivityEntry[]`), Task Details Screen, employee My Tasks redesign. **Media Upgrade (2026-06-20):** **multiple images + videos per submission**, attached to **task events** — `TaskAttachment` entity + `AttachmentType`; `ActivityEntry.attachments[]`; Storage `tasks/{id}/attachments/{id}.<ext>` (no overwrite); `AttachmentPickerField` (gallery/camera + limits), `AttachmentGallery` + fullscreen `AttachmentViewer` (zoom images, `video_player`). Legacy `proofImageUrl` kept in sync for back-compat. **Shift Assignment (2026-07-01):** a task can target a **shift** (Morning/Night) instead of named employees — visible only to whoever's rostered on it *today* (`canUserAccessTask`); recurring shift routines use a proper **template → generated daily instance** split (`recurringTaskTemplates` + `generateShiftTaskInstances` Cloud Function), not the per-task `RecurrenceConfig`. ⚠️ Needs `firestore:rules,firestore:indexes,functions` deploy to fully activate (see Known gaps) |
 | Task / Checklist Templates (Stabilization, +Phase 9) | ✅ Complete | Reusable blueprints ("Open Shop", "Close Shop"). **Phase 9:** templates are now **checklists** — `TaskTemplateEntity.checklistItems` (`ChecklistItemTemplate`: id/title/isRequired) with a checklist editor; creating a task generates its `checklist`. `task_templates/{id}` rules (admin global/any · manager own-branch). New Task → Blank vs. From a template + Manage Templates sheet |
@@ -2930,6 +2967,7 @@ week's Sunday), so a week is addressed directly without a query.
 | `assignments` | map        | `{ <day>: { <shift>: [uid, …] } }` — `day` = `sunday`…`saturday`, `shift` = `morning`/`night` |
 | `dayNotes`    | map?       | `{ <day>: text }` — the manager's pinned day note (Schedule 5.0); absent days have no entry; cleared via `FieldValue.delete()` |
 | `leave`       | map?       | `{ <day>: { <uid>: <type> } }` — day-level absences (Schedule 5.0); `type` = `annual` / `sick` / `dayOff` / `pending` (`LeaveType`); unknown values dropped on read |
+| `shiftHours`  | map?       | `{ <day>: { <shift>: { start, end } } }` — per-week shift-hour overrides in minutes after the slot day's midnight (`end` may exceed 1440 for overnight); omitted/cleared slots fall back to `ShiftHours.standard` |
 | `createdBy`   | string?    | uid of the manager/admin who created it                    |
 | `createdAt`, `updatedAt` | Timestamp | server timestamps; assign/remove use nested `arrayUnion`/`arrayRemove` |
 

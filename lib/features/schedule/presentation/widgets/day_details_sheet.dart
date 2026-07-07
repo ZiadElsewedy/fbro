@@ -9,6 +9,7 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
+import 'package:drop/features/schedule/domain/shift_hours.dart';
 import 'package:drop/features/schedule/presentation/cubit/schedule_cubit.dart';
 import 'package:drop/features/schedule/presentation/cubit/schedule_state.dart';
 import 'package:drop/features/schedule/presentation/widgets/employee_picker_sheet.dart';
@@ -123,7 +124,7 @@ class _DayDetailsSheetState extends State<DayDetailsSheet> {
               const LinearProgressIndicator(minHeight: 2),
             ],
             const SizedBox(height: AppSpacing.md),
-            _header(date),
+            _header(date, schedule),
             const SizedBox(height: AppSpacing.lg),
             _staffingLine(morning.length, night.length),
             const SizedBox(height: AppSpacing.lg),
@@ -132,6 +133,8 @@ class _DayDetailsSheetState extends State<DayDetailsSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _shiftHoursSection(context, schedule),
+                    const SizedBox(height: AppSpacing.lg),
                     _sectionLabel('Day notes'),
                     const SizedBox(height: 2),
                     Text('One instruction per line — each becomes a bullet '
@@ -182,7 +185,13 @@ class _DayDetailsSheetState extends State<DayDetailsSheet> {
   }
 
   // ── Header ───────────────────────────────────────────────────────
-  Widget _header(DateTime date) {
+  Widget _header(DateTime date, WeeklyScheduleEntity schedule) {
+    // The subtitle names the configured night close (not a hardcoded 00:30) so
+    // an overnight day reads its real hours right in the header.
+    final night = schedule.hoursFor(day, ScheduleShift.night);
+    final subtitle = night.crossesMidnight
+        ? '${_dateLabel(date)} · night runs till ${night.endLabel}'
+        : _dateLabel(date);
     return Row(
       children: [
         Container(
@@ -203,17 +212,113 @@ class _DayDetailsSheetState extends State<DayDetailsSheet> {
             children: [
               Text(day.label, style: AppTypography.h3),
               const SizedBox(height: 2),
-              Text(
-                day.isWeekend
-                    ? '${_dateLabel(date)} · weekend — night runs till 00:30'
-                    : _dateLabel(date),
-                style: AppTypography.caption,
-              ),
+              Text(subtitle, style: AppTypography.caption),
             ],
           ),
         ),
       ],
     );
+  }
+
+  // ── Shift hours (configurable end times) ─────────────────────────
+  /// The day's shift hours — read for everyone, **editable** by managers/admins.
+  /// The end time is data, not a hardcoded weekend rule: a manager can push a
+  /// Friday/Saturday (or a Ramadan/holiday) close later here, no code change.
+  Widget _shiftHoursSection(BuildContext context, WeeklyScheduleEntity schedule) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel('Shift hours'),
+        const SizedBox(height: AppSpacing.xs),
+        for (final shift in ScheduleShift.values)
+          _shiftHoursRow(context, schedule, shift),
+      ],
+    );
+  }
+
+  Widget _shiftHoursRow(
+      BuildContext context, WeeklyScheduleEntity schedule, ScheduleShift shift) {
+    final hours = schedule.hoursFor(day, shift);
+    final custom = schedule.hasHoursOverride(day, shift);
+    final isMorning = shift == ScheduleShift.morning;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.xs),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
+      decoration: BoxDecoration(
+        color: AppColors.darkBg,
+        borderRadius: AppRadius.mdAll,
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(isMorning ? Icons.wb_sunny_rounded : Icons.nightlight_round,
+              size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: AppSpacing.sm),
+          Text(shift.label, style: AppTypography.label),
+          const SizedBox(width: AppSpacing.sm),
+          // The real configured time, arrow form.
+          Text(hours.format(separator: '→'),
+              style: AppTypography.label.copyWith(
+                color: AppColors.textSecondary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              )),
+          if (custom) ...[
+            const SizedBox(width: AppSpacing.sm),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.primarySurface,
+                borderRadius: AppRadius.fullAll,
+              ),
+              child: Text('Custom',
+                  style: AppTypography.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ],
+          const Spacer(),
+          if (widget.canEdit) ...[
+            if (custom)
+              _RowAction(
+                icon: Icons.settings_backup_restore_rounded,
+                tooltip: 'Reset to default',
+                onTap: () => context
+                    .read<ScheduleCubit>()
+                    .setShiftHours(day, shift, null),
+              ),
+            if (custom) const SizedBox(width: 6),
+            _RowAction(
+              icon: Icons.schedule_rounded,
+              tooltip: 'Edit end time',
+              onTap: () => _editShiftEnd(context, hours, shift),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Pick a new **end** time for [shift] (start times are stable in this
+  /// business). An end earlier than the start is read as the next day, so
+  /// 01:00 becomes an overnight close (past-midnight = minutes over 1440).
+  Future<void> _editShiftEnd(
+      BuildContext context, ShiftHours hours, ScheduleShift shift) async {
+    final cubit = context.read<ScheduleCubit>();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+          hour: (hours.endMinutes % 1440) ~/ 60,
+          minute: (hours.endMinutes % 1440) % 60),
+      helpText: 'Set the ${shift.label.toLowerCase()} shift end time',
+    );
+    if (picked == null) return;
+    var end = picked.hour * 60 + picked.minute;
+    // End at/before start → it closes the next day (overnight).
+    if (end <= hours.startMinutes) end += 1440;
+    await cubit.setShiftHours(
+        day, shift, ShiftHours(hours.startMinutes, end));
   }
 
   /// Neutral staffing facts for the day — counts, never targets.

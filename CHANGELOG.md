@@ -12,6 +12,68 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-07-07 — Configurable shift hours (end times are data, not code))
+
+The night-shift close is no longer a hardcoded `weekend → 00:30`; shift hours are
+**configurable per (day, shift)** and editable in-app, with the same value flowing
+to every surface and to the live countdown.
+
+- **New domain `ShiftHours`** (`domain/shift_hours.dart`) — start/end as minutes
+  past midnight; **end may exceed 1440 for overnight** (00:30 = 1470, 01:00 =
+  1500), the single source of truth for *"does it cross midnight and until when"*.
+  `format()`, `crossesMidnight`, `toMap`/`fromMap` (guarded), and
+  `ShiftHours.standard(day, shift)` (the standing baseline, overridable).
+- **Per-week overrides on the schedule doc** — additive
+  `weekly_schedules/{id}.shiftHours = { <day>: { <shift>: {start,end} } }` (like
+  `dayNotes`/`leave`; **no rules change**), resolved through
+  `WeeklyScheduleEntity.hoursFor(day, shift)` (override ?? standard). Per-week
+  storage is the natural home for the stated future needs (Ramadan, holidays,
+  seasonal, special events); the `hoursFor` seam lets a branch-level standing
+  layer slot in later without touching call sites.
+- **Manager/admin editor** in the day sheet (`day_details_sheet.dart` → new
+  *Shift hours* section): each shift shows its configured `16:30 → 01:00`, a
+  *Custom* badge when overridden, an **edit** action (time picker — an end
+  at/before the start is read as the next day, so 01:00 becomes overnight) and a
+  **reset to default**. Writes via `ScheduleCubit.setShiftHours` →
+  repository/datasource (dotted-path `shiftHours.<day>.<shift>`).
+- **Config-driven everywhere** — `ShiftWindow` (`startOf`/`endOf`/`phaseOf`/
+  `nightSpillEnd`) takes the resolved `ShiftHours`, so the live status is
+  **On now** until the configured close (Friday until 00:30, Saturday until
+  01:00, past midnight). The employee hero countdown, week rows, and shift sheet,
+  plus the manager shift-details sheet and day-sheet header, all render
+  `hoursFor(day, shift)` (arrow form `16:30 → 01:00`). The old hardcoded
+  weekend branch and the tiny "till 00:30" label are gone.
+- **Visual refinement** (frozen layout, existing tokens only): the configured
+  time now reads at **secondary** (not the dimmest tertiary) with **tabular
+  figures** on every time/countdown label, so times align down the week column
+  and the live countdown never nudges the label as digits change.
+
+Tests: `shift_hours_test.dart` (value object, overnight formatting, parse
+guards, `standard` defaults, `hoursFor` override resolution, Firestore
+round-trip), `shift_window_test.dart` (configured overnight phase past midnight),
+and an employee-display test that a configured Saturday 01:00 renders
+`16:30 → 01:00`. Suite: **504 pass / 2 pre-existing splash failures**;
+`flutter analyze` 0 new.
+
+### Fixed (2026-07-07 — My Schedule shift-window API mismatch)
+
+- Fixed the two analyzer errors in `my_schedule_screen.dart` caused by stale
+  calls to removed `ShiftWindow.spillingNightFrom` and `ShiftWindow.phase`
+  helpers. The employee hero now uses `ShiftWindow.nightSpillEnd` and
+  `ShiftWindow.phaseOf` with the loaded schedule's `ShiftHours`.
+- Added `ShiftWindow.startOf(...)` so configured start times participate in
+  phase/countdown math alongside configured end times.
+- Employee My Week time displays now format from
+  `WeeklyScheduleEntity.hoursFor(...)`: hero countdown, week rows, next-shift
+  start labels and the shift detail sheet all stay aligned with `shiftHours`
+  overrides. The previous-week Saturday tail still falls back to standing hours
+  because only that previous crew set is cached.
+
+Tests: `flutter analyze lib/features/schedule/domain/shift_window.dart
+lib/features/schedule/presentation/pages/my_schedule_screen.dart
+test/shift_window_test.dart`; `flutter test test/shift_window_test.dart
+test/my_schedule_tab_test.dart`.
+
 ### Added (2026-07-07 — Multi-line day notes + premium employee shift sheet)
 
 Owner-directed enhancement (mockup-driven, inside the frozen premium UI): the
@@ -38,9 +100,9 @@ notes bullets · manager · team · **Swap Shift**).
   `—` trailing widgets are gone from the week rows (Swap moved into the sheet);
   a chevron marks a row that opens details. Plain off days with nothing to show
   stay inert.
-- **Arrow time on employee surfaces:** `_arrowRange` renders `16:30 → 00:30`
-  on the hero countdown, week rows and sheet; the manager/admin/desktop grid
-  keeps the en-dash `ScheduleShift.timeRangeOn` (frozen, out of scope).
+- **Arrow time on employee surfaces:** `_arrowRange` renders the loaded
+  `ShiftHours` with the arrow separator on the hero countdown, week rows and
+  sheet; manager/admin surfaces keep their existing en-dash styling.
 
 Tests: `noteLinesFor` split cases + reworked widget tests (note indicator on
 card / bullets in the sheet, arrow times, Swap offered in the sheet on today's
@@ -62,13 +124,14 @@ into the premium UI:
   while it runs, quiet `Ended` after — re-rendered on a minute-aligned tick so
   it never goes stale.
 - **Fixed — weekend/midnight time math is structural:**
-  `ScheduleShift.startMinutes`/`endMinutesOn` + pure
+  `ShiftHours` + `WeeklyScheduleEntity.hoursFor(...)` + pure
   [`shift_window.dart`](lib/features/schedule/domain/shift_window.dart)
-  (start/end/phase on `[start, end)`, spill detection; unit-tested). Weekend
-  nights are **active past midnight until 00:30** (naive same-day math read
-  "ended" all evening), and during the 00:00–00:30 tail the hero **keeps
-  showing the running night shift** instead of flipping to "Day Off" — the
-  Sat→Sun tail crosses the week seam via `ScheduleCubit.previousSaturdayNight`.
+  (configured start/end/phase on `[start, end)`, spill detection; unit-tested).
+  Overnight shifts are **active past midnight until their configured end**
+  (naive same-day math read "ended" all evening), and during the small-hours
+  tail the hero **keeps showing the running night shift** instead of flipping to
+  "Day Off" — the Sat→Sun tail crosses the week seam via
+  `ScheduleCubit.previousSaturdayNight`.
 - **Fixed — today's still-future shift is swappable:** the week row's
   redundant "Today" pill no longer eats the action slot when the shift hasn't
   started (the row is already highlighted + filled day chip); it still shows
@@ -133,13 +196,13 @@ the mobile and desktop layouts):
 A usability/operations upgrade of the manager/admin **Schedule** surface — same
 monochrome design language, architecture and interactions; 16-point owner brief.
 
-- **Leave & day notes (schema, additive):** `weekly_schedules/{id}` gains
-  `dayNotes { <day>: text }` and `leave { <day>: { <uid>: <type> } }` — new
-  `LeaveType` enum (**annual · sick · dayOff · pending**; unknown values are
-  dropped on read, legacy docs parse to empty maps, empty maps are omitted on
-  write). Leave is **day-level** (a person is away for the day, not one shift).
-  New repo/datasource writes `setDayNote` / `setLeave` (dotted-path updates +
-  `FieldValue.delete()` for clears) + `ScheduleCubit.setDayNote`/`setLeave`
+- **Leave, day notes and shift-hour overrides (schema, additive):**
+  `weekly_schedules/{id}` gains `dayNotes { <day>: text }`,
+  `leave { <day>: { <uid>: <type> } }`, and
+  `shiftHours { <day>: { <shift>: { start, end } } }`. Leave is day-level;
+  `ShiftHours` stores minutes after the slot day's midnight, with overnight
+  ends allowed past 1440. New repo/datasource writes `setDayNote` / `setLeave`
+  / `setShiftHours` (dotted-path updates + `FieldValue.delete()` for clears)
   through the existing `_mutate` busy cycle. **No rules change needed** — the
   generic manager/admin `weekly_schedules` update rule already covers the new
   fields. No deploy required.
@@ -153,9 +216,9 @@ monochrome design language, architecture and interactions; 16-point owner brief.
   carries a **quiet corner count** (staffing at a glance); empty editor cells
   are a small dashed **"Open"** (the old icon + "No one" placeholder removed);
   today's column adds a whisper of white tint on top of the existing ring.
-  **Weekend (Thu/Fri/Sat)** day headers carry a `till 00:30` tag —
-  `ScheduleDay.isWeekend` + `ScheduleShift.timeRangeOn(day)` (night weekend =
-  `16:30 – 00:30`; weekdays unchanged; shift-details sheet uses per-day hours).
+  day headers carry late-close tags from `WeeklyScheduleEntity.hoursFor(...)`
+  (`ShiftHours.standard` keeps Thu/Fri/Sat nights at `16:30 – 00:30`; overrides
+  can extend or adjust individual slots).
 - **Insights (extended, still one pass per build):** new facts **short rest**
   (night → next-day morning, ~8–9.5h turnaround; amber) and **on leave &
   assigned** (red) join open/one-person/double-booked on the clickable insight
@@ -186,11 +249,10 @@ monochrome design language, architecture and interactions; 16-point owner brief.
   now tells the same story as the manager grid — week rows and the today hero
   name a recorded leave instead of a generic "Off"/"Day Off" (**Annual Leave ·
   Sick Leave · Day Off · Leave Requested**, matching icon), show the manager's
-  day note, and every night time-label is weekend-aware via
-  `timeRangeOn(day)` (Thu/Fri/Sat = `16:30 – 00:30` — the hero countdown row,
-  week rows, the employee shift sheet and the swap **exchange preview** all
-  updated; previously they showed the wrong 23:00 close on weekends). A person
-  rostered *and* marked away sees "Also marked … — check with your manager".
+  day note, and every night time-label is schedule-aware via
+  `WeeklyScheduleEntity.hoursFor(...)` (default Thu/Fri/Sat =
+  `16:30 – 00:30`; overrides can differ). A person rostered *and* marked away
+  sees "Also marked … — check with your manager".
 - **Cross-week short rest:** `ScheduleCubit` now also loads the **previous
   week's Saturday-night crew** (third parallel read, best-effort — a missing
   week or failed read = empty set, never fails the load; exposed as cubit

@@ -24,18 +24,30 @@ class ShiftWindow {
     DateTime weekStart,
     ScheduleDay day,
     ScheduleShift shift,
-  ) =>
-      SwapEligibility.slotStart(weekStart, day, shift);
+  ) => SwapEligibility.slotStart(weekStart, day, shift);
 
-  /// The slot's end instant, from its configured [hours] — past midnight for an
-  /// overnight shift.
-  static DateTime endOf(
+  /// The slot's configured start instant from [hours].
+  static DateTime startOf(
     DateTime weekStart,
     ScheduleDay day,
     ShiftHours hours,
   ) {
-    final base = DateTime(weekStart.year, weekStart.month, weekStart.day)
-        .add(Duration(days: day.index));
+    final base = DateTime(
+      weekStart.year,
+      weekStart.month,
+      weekStart.day,
+    ).add(Duration(days: day.index));
+    return base.add(Duration(minutes: hours.startMinutes));
+  }
+
+  /// The slot's end instant, from its configured [hours] — past midnight for an
+  /// overnight shift.
+  static DateTime endOf(DateTime weekStart, ScheduleDay day, ShiftHours hours) {
+    final base = DateTime(
+      weekStart.year,
+      weekStart.month,
+      weekStart.day,
+    ).add(Duration(days: day.index));
     return base.add(Duration(minutes: hours.endMinutes));
   }
 
@@ -48,7 +60,9 @@ class ShiftWindow {
     ShiftHours hours,
     DateTime now,
   ) {
-    if (now.isBefore(start(weekStart, day, shift))) return ShiftPhase.upcoming;
+    if (now.isBefore(startOf(weekStart, day, hours))) {
+      return ShiftPhase.upcoming;
+    }
     if (now.isBefore(endOf(weekStart, day, hours))) return ShiftPhase.active;
     return ShiftPhase.finished;
   }
@@ -67,8 +81,9 @@ class ShiftWindow {
     if (now.hour >= 6) return null;
     if (!yesterdayNightHours.crossesMidnight) return null;
     final todayMidnight = DateTime(now.year, now.month, now.day);
-    final end =
-        todayMidnight.add(Duration(minutes: yesterdayNightHours.endMinutes - 1440));
+    final end = todayMidnight.add(
+      Duration(minutes: yesterdayNightHours.endMinutes - 1440),
+    );
     return now.isBefore(end) ? end : null;
   }
 }
