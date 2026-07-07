@@ -23,7 +23,8 @@ class Breakpoints {
 
   /// Comfortable maximum content width so dashboards and forms don't sprawl
   /// edge-to-edge on very wide windows (Linear/Notion-style centred column).
-  static const double contentMaxWidth = 1280;
+  /// Kept fairly tight so cards/heroes read premium rather than oversized.
+  static const double contentMaxWidth = 1120;
 
   /// Width of the persistent desktop navigation sidebar.
   static const double sidebarWidth = 256;

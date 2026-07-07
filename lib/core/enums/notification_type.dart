@@ -30,7 +30,16 @@ enum NotificationType {
   swapRequested, // → the target coworker
   swapAccepted, // → the branch manager/admin (needs review)
   swapApproved, // → both employees (schedule exchanged)
-  swapRejected; // → both employees (declined)
+  swapRejected, // → both employees (declined)
+  // ── Case Management (server-side `onCaseCreated` / `onCaseUpdated` /
+  //    `onCaseMessageCreated`) ──
+  // Produced SERVER-SIDE via the Admin SDK (a manager can't read a confidential
+  // reporter's identity to notify them client-side), so these are deliberately
+  // NOT in the client `sendNotification` whitelist.
+  caseOpened, // → the routed recipients (branch manager / admin)
+  caseUpdated, // → the reporter (status moved: in discussion / waiting response)
+  caseClosed, // → the reporter (closed)
+  caseReplied; // → the other party (a new reply in the conversation)
 
   String get value => name;
 

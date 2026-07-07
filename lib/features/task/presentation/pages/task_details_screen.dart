@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:drop/core/enums/task_assignment_type.dart';
 import 'package:drop/core/enums/task_priority.dart';
 import 'package:drop/core/enums/task_status.dart';
 import 'package:drop/core/enums/user_role.dart';
@@ -11,7 +12,6 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
-import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
@@ -20,17 +20,15 @@ import 'package:drop/features/branch/domain/entities/branch_entity.dart';
 import 'package:drop/features/branch/presentation/cubit/branch_cubit.dart';
 import 'package:drop/features/auth/presentation/widgets/app_button.dart';
 import 'package:drop/features/auth/presentation/widgets/app_text_field.dart';
-import 'package:drop/features/task/domain/entities/activity_entry.dart';
 import 'package:drop/features/task/domain/entities/checklist_item.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
-import 'package:drop/features/task/presentation/activity_format.dart';
 import 'package:drop/features/task/presentation/attachment_format.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
 import 'package:drop/features/task/presentation/cubit/task_state.dart';
 import 'package:drop/features/task/presentation/submission_progress.dart';
+import 'package:drop/features/task/presentation/widgets/activity_timeline.dart';
 import 'package:drop/features/task/presentation/widgets/attachment_gallery.dart';
 import 'package:drop/features/task/presentation/widgets/attachment_picker.dart';
-import 'package:drop/features/task/presentation/widgets/submission_details_sheet.dart';
 import 'package:drop/features/task/presentation/widgets/submission_loading_overlay.dart';
 import 'package:drop/features/task/presentation/widgets/task_action_sheets.dart';
 import 'package:drop/features/task/presentation/widgets/task_card.dart';
@@ -329,7 +327,7 @@ class _DetailsView extends StatelessWidget {
             _Section(
               icon: Icons.timeline_rounded,
               title: 'Activity',
-              child: _ActivityTimeline(
+              child: ActivityTimeline(
                 task: task,
                 directory: directory,
                 cubit: cubit,
@@ -476,7 +474,7 @@ class _DetailsView extends StatelessWidget {
                 _Section(
                   icon: Icons.timeline_rounded,
                   title: 'Activity',
-                  child: _ActivityTimeline(
+                  child: ActivityTimeline(
                     task: task,
                     directory: directory,
                     cubit: cubit,
@@ -845,6 +843,21 @@ class _AssigneeBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final assignees = resolveAssignees(task, directory);
+    if (task.assignmentType == TaskAssignmentType.shift) {
+      // Shift Assignment feature: targets whoever's rostered on task.shift,
+      // not a named assignee — assigneeIds is always empty here.
+      return Row(
+        children: [
+          const Icon(Icons.schedule_rounded,
+              size: 16, color: AppColors.textTertiary),
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            task.shift == null ? 'Shift task' : '${task.shift!.label} Shift',
+            style: AppTypography.body,
+          ),
+        ],
+      );
+    }
     if (task.assigneeIds.isEmpty) {
       return Text('Unassigned',
           style: AppTypography.body.copyWith(color: AppColors.textTertiary));
@@ -1093,284 +1106,6 @@ class _SubmittedBlock extends StatelessWidget {
             if (notes.isNotEmpty) const SizedBox(height: AppSpacing.md),
             AttachmentGallery(attachments: media, tileSize: 84),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Activity timeline ──────────────────────────────────────────────
-
-class _ActivityTimeline extends StatelessWidget {
-  const _ActivityTimeline({
-    required this.task,
-    required this.directory,
-    required this.cubit,
-    required this.canReview,
-  });
-  final TaskEntity task;
-  final Map<String, UserEntity> directory;
-  final TaskCubit cubit;
-  final bool canReview;
-
-  /// Submission-related events open the deep review surface on tap.
-  static bool _isSubmission(String status) =>
-      status == 'completed' || status == 'waitingReview';
-
-  @override
-  Widget build(BuildContext context) {
-    // Newest first — rendered purely from the event list (no hardcoded
-    // sequence), so missing/optional steps and rework loops just work.
-    final log = task.activityLog;
-    final rows = <Widget>[];
-    var pos = 0; // render order (newest first) — drives the entrance stagger
-    for (var i = log.length - 1; i >= 0; i--) {
-      final entry = log[i];
-      final media = attachmentsForEvent(entry, task);
-      rows.add(EntranceFade(
-        delay: staggerDelay(pos++),
-        offset: 10,
-        child: _EventCard(
-          entry: entry,
-          actor: directory[entry.actorId],
-          attachmentSummary: media.isEmpty ? null : attachmentSummary(media),
-          isLast: i == 0,
-          // The newest entry (rendered first) is the task's CURRENT state — the
-          // V2 timeline gives it prominent emphasis.
-          isHead: i == log.length - 1,
-          onTap: _isSubmission(entry.status)
-              ? () => showSubmissionDetailsSheet(
-                    context: context,
-                    task: task,
-                    submissionIndex: i,
-                    cubit: cubit,
-                    canReview: canReview,
-                  )
-              : null,
-        ),
-      ));
-    }
-    return Column(children: rows);
-  }
-}
-
-/// A **summary** timeline event card — status, actor, timestamp, an attachment
-/// summary ("2 photos · 1 video") and a truncated note preview. Submission-
-/// related cards are tappable and open the [SubmissionDetailsSheet] (the deep
-/// review surface) — the timeline itself stays lightweight for scanning.
-class _EventCard extends StatelessWidget {
-  const _EventCard({
-    required this.entry,
-    required this.actor,
-    required this.attachmentSummary,
-    required this.isLast,
-    required this.isHead,
-    required this.onTap,
-  });
-
-  final ActivityEntry entry;
-  final UserEntity? actor;
-  final String? attachmentSummary;
-  final bool isLast;
-
-  /// The most recent event — the task's current state. Drives the prominent
-  /// "current step" treatment (larger node, accent ring + glow, CURRENT pill).
-  final bool isHead;
-  final VoidCallback? onTap;
-
-  String get _actorName =>
-      entry.actorName ??
-      (actor != null ? (actor!.displayName ?? actor!.email) : 'Someone');
-
-  String? get _roleLabel => switch (actor?.role) {
-        UserRole.admin => 'Admin',
-        UserRole.manager => 'Manager',
-        UserRole.employee => 'Employee',
-        null => null,
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    final color = activityColor(entry.status);
-    final note = entry.note ?? '';
-
-    final card = Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        // The current step reads as an accent-tinted, glowing surface; older
-        // steps recede onto the flat elevated surface (premium hierarchy).
-        color: isHead ? color.withAlpha(20) : AppColors.darkSurfaceElevated,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isHead ? color.withAlpha(110) : AppColors.darkBorder,
-          width: isHead ? 1.5 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isHead ? color.withAlpha(34) : Colors.black.withAlpha(46),
-            blurRadius: isHead ? 18 : 7,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Title + (CURRENT pill on the head) + timestamp + chevron.
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  activityTitle(entry.status),
-                  style: AppTypography.label.copyWith(
-                    color: color,
-                    fontSize: isHead ? 14 : 13,
-                    fontWeight: isHead ? FontWeight.w700 : FontWeight.w600,
-                  ),
-                ),
-              ),
-              if (isHead) ...[
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: color.withAlpha(38),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: color.withAlpha(120)),
-                  ),
-                  child: Text('CURRENT',
-                      style: AppTypography.caption.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 9,
-                        letterSpacing: 0.5,
-                      )),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-              ],
-              Text(relativeTime(entry.at), style: AppTypography.caption),
-              if (onTap != null) ...[
-                const SizedBox(width: 2),
-                const Icon(Icons.chevron_right_rounded,
-                    size: 16, color: AppColors.textTertiary),
-              ],
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          // Actor
-          Row(
-            children: [
-              if (actor != null)
-                UserAvatar.fromUser(actor!, size: 20)
-              else
-                UserAvatar(name: _actorName, size: 20),
-              const SizedBox(width: AppSpacing.sm),
-              Flexible(
-                child: Text(
-                  _roleLabel != null ? '$_actorName · $_roleLabel' : _actorName,
-                  style: AppTypography.caption
-                      .copyWith(color: AppColors.textSecondary),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          // Attachment summary (not the media itself — that's in the sheet)
-          if (attachmentSummary != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                const Icon(Icons.perm_media_outlined,
-                    size: 13, color: AppColors.textTertiary),
-                const SizedBox(width: 5),
-                Text(attachmentSummary!, style: AppTypography.caption),
-              ],
-            ),
-          ],
-          // Note preview — in a subtle callout surface.
-          if (note.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm, vertical: 7),
-              decoration: BoxDecoration(
-                color: AppColors.darkSurface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.darkBorder),
-              ),
-              child: Text(
-                '“$note”',
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.caption
-                    .copyWith(color: AppColors.textSecondary, height: 1.4),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-
-    // The connecting spine below the head is accent-tinted at the top, fading to
-    // the neutral border — a clear "you are here, this is the history below" read.
-    final lineTop = isHead ? color.withAlpha(130) : AppColors.darkBorder;
-
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Spine: prominent node for the current step ─────────
-          Column(
-            children: [
-              Container(
-                width: isHead ? 34 : 26,
-                height: isHead ? 34 : 26,
-                decoration: BoxDecoration(
-                  color: color.withAlpha(isHead ? 45 : 26),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: color.withAlpha(isHead ? 165 : 85),
-                    width: isHead ? 2 : 1,
-                  ),
-                  boxShadow: isHead
-                      ? [BoxShadow(color: color.withAlpha(70), blurRadius: 12)]
-                      : null,
-                ),
-                child: Icon(activityIcon(entry.status),
-                    size: isHead ? 18 : 14, color: color),
-              ),
-              if (!isLast)
-                Expanded(
-                  child: Container(
-                    width: 2,
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [lineTop, AppColors.darkBorder],
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(width: AppSpacing.md),
-          // ── Summary card ───────────────────────────────────────
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: isLast ? 0 : AppSpacing.md),
-              child: onTap == null
-                  ? card
-                  : InkWell(
-                      onTap: onTap,
-                      borderRadius: BorderRadius.circular(14),
-                      child: card,
-                    ),
-            ),
-          ),
         ],
       ),
     );

@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to **DROP — Operations Management System** (Dart package id
-`fbro`) are recorded here. After every completed feature, append a short summary
+`drop`) are recorded here. After every completed feature, append a short summary
 of what was **added / removed / fixed / refactored**. See
 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for architecture.
 
@@ -11,6 +11,1730 @@ and [Semantic Versioning](https://semver.org).
 ---
 
 ## [Unreleased]
+
+### Added (2026-07-07 — Configurable shift hours (end times are data, not code))
+
+The night-shift close is no longer a hardcoded `weekend → 00:30`; shift hours are
+**configurable per (day, shift)** and editable in-app, with the same value flowing
+to every surface and to the live countdown.
+
+- **New domain `ShiftHours`** (`domain/shift_hours.dart`) — start/end as minutes
+  past midnight; **end may exceed 1440 for overnight** (00:30 = 1470, 01:00 =
+  1500), the single source of truth for *"does it cross midnight and until when"*.
+  `format()`, `crossesMidnight`, `toMap`/`fromMap` (guarded), and
+  `ShiftHours.standard(day, shift)` (the standing baseline, overridable).
+- **Per-week overrides on the schedule doc** — additive
+  `weekly_schedules/{id}.shiftHours = { <day>: { <shift>: {start,end} } }` (like
+  `dayNotes`/`leave`; **no rules change**), resolved through
+  `WeeklyScheduleEntity.hoursFor(day, shift)` (override ?? standard). Per-week
+  storage is the natural home for the stated future needs (Ramadan, holidays,
+  seasonal, special events); the `hoursFor` seam lets a branch-level standing
+  layer slot in later without touching call sites.
+- **Manager/admin editor** in the day sheet (`day_details_sheet.dart` → new
+  *Shift hours* section): each shift shows its configured `16:30 → 01:00`, a
+  *Custom* badge when overridden, an **edit** action (time picker — an end
+  at/before the start is read as the next day, so 01:00 becomes overnight) and a
+  **reset to default**. Writes via `ScheduleCubit.setShiftHours` →
+  repository/datasource (dotted-path `shiftHours.<day>.<shift>`).
+- **Config-driven everywhere** — `ShiftWindow` (`startOf`/`endOf`/`phaseOf`/
+  `nightSpillEnd`) takes the resolved `ShiftHours`, so the live status is
+  **On now** until the configured close (Friday until 00:30, Saturday until
+  01:00, past midnight). The employee hero countdown, week rows, and shift sheet,
+  plus the manager shift-details sheet and day-sheet header, all render
+  `hoursFor(day, shift)` (arrow form `16:30 → 01:00`). The old hardcoded
+  weekend branch and the tiny "till 00:30" label are gone.
+- **Visual refinement** (frozen layout, existing tokens only): the configured
+  time now reads at **secondary** (not the dimmest tertiary) with **tabular
+  figures** on every time/countdown label, so times align down the week column
+  and the live countdown never nudges the label as digits change.
+
+Tests: `shift_hours_test.dart` (value object, overnight formatting, parse
+guards, `standard` defaults, `hoursFor` override resolution, Firestore
+round-trip), `shift_window_test.dart` (configured overnight phase past midnight),
+and an employee-display test that a configured Saturday 01:00 renders
+`16:30 → 01:00`. Suite: **504 pass / 2 pre-existing splash failures**;
+`flutter analyze` 0 new.
+
+### Fixed (2026-07-07 — My Schedule shift-window API mismatch)
+
+- Fixed the two analyzer errors in `my_schedule_screen.dart` caused by stale
+  calls to removed `ShiftWindow.spillingNightFrom` and `ShiftWindow.phase`
+  helpers. The employee hero now uses `ShiftWindow.nightSpillEnd` and
+  `ShiftWindow.phaseOf` with the loaded schedule's `ShiftHours`.
+- Added `ShiftWindow.startOf(...)` so configured start times participate in
+  phase/countdown math alongside configured end times.
+- Employee My Week time displays now format from
+  `WeeklyScheduleEntity.hoursFor(...)`: hero countdown, week rows, next-shift
+  start labels and the shift detail sheet all stay aligned with `shiftHours`
+  overrides. The previous-week Saturday tail still falls back to standing hours
+  because only that previous crew set is cached.
+
+Tests: `flutter analyze lib/features/schedule/domain/shift_window.dart
+lib/features/schedule/presentation/pages/my_schedule_screen.dart
+test/shift_window_test.dart`; `flutter test test/shift_window_test.dart
+test/my_schedule_tab_test.dart`.
+
+### Added (2026-07-07 — Multi-line day notes + premium employee shift sheet)
+
+Owner-directed enhancement (mockup-driven, inside the frozen premium UI): the
+day note becomes a **multi-line briefing shown as bullets**, and the employee's
+tap-to-open shift sheet is upgraded to the mockup (day · shift · arrow time ·
+notes bullets · manager · team · **Swap Shift**).
+
+- **Notes are now multi-line, no schema change.** `dayNotes.<day>` stays a
+  single string; the manager types **one instruction per line** and each line
+  renders as a bullet (`WeeklyScheduleEntity.noteLinesFor`, unit-tested).
+  Manager entry (`day_details_sheet.dart`) is now a 3–8 line field, cap raised
+  120 → 600 chars, Enter inserts a newline, explicit save. No Firestore rules
+  change (verified: no note-length constraint).
+- **Cards stay clean and glanceable.** The full note text is no longer printed
+  on the today hero or week rows — each shows a quiet **"Note / N notes"
+  indicator** instead; the full bulleted note lives only in the sheet (owner
+  ruling: don't duplicate notes on the card).
+- **Premium shift sheet** (`_ShiftDetailsSheet` rebuilt): day + shift title,
+  **arrow time `16:30 → 00:30`**, **Notes as bullets** (un-truncated), manager,
+  teammates, and a **Swap Shift** button when the slot is still requestable and
+  a coworker holds the opposite shift. Handles off/leave days too (note +
+  manager, no time/team/swap).
+- **Rows/hero are now tappable → the sheet.** The inline `Swap`/`Today`/`Past`/
+  `—` trailing widgets are gone from the week rows (Swap moved into the sheet);
+  a chevron marks a row that opens details. Plain off days with nothing to show
+  stay inert.
+- **Arrow time on employee surfaces:** `_arrowRange` renders the loaded
+  `ShiftHours` with the arrow separator on the hero countdown, week rows and
+  sheet; manager/admin surfaces keep their existing en-dash styling.
+
+Tests: `noteLinesFor` split cases + reworked widget tests (note indicator on
+card / bullets in the sheet, arrow times, Swap offered in the sheet on today's
+future shift, clean rows). Suite: **489 pass / 2 pre-existing splash
+failures**. `flutter analyze`: 0 new.
+
+### Changed (2026-07-07 — Employee My Week: premium UI kept by owner ruling + live improvements)
+
+An answer-first minimal rework of the employee My Week tab was built and
+**reverted the same session by owner ruling** — the premium hero/week-cards UI
+is THE employee schedule UI on every tier, and the owner wants **visible
+craft, not reduction** ("something that clearly had work spent on it"). The
+mobile schedule UI is now **frozen except for incremental improvements** inside
+its design language. The functional wins from the rework were kept and folded
+into the premium UI:
+
+- **Added — live shift-status pill** (hero countdown row): `In 4h 30m` before
+  the shift (always, not only <2h; `In 2d` beyond 48h), `On now · till 00:30`
+  while it runs, quiet `Ended` after — re-rendered on a minute-aligned tick so
+  it never goes stale.
+- **Fixed — weekend/midnight time math is structural:**
+  `ShiftHours` + `WeeklyScheduleEntity.hoursFor(...)` + pure
+  [`shift_window.dart`](lib/features/schedule/domain/shift_window.dart)
+  (configured start/end/phase on `[start, end)`, spill detection; unit-tested).
+  Overnight shifts are **active past midnight until their configured end**
+  (naive same-day math read "ended" all evening), and during the small-hours
+  tail the hero **keeps showing the running night shift** instead of flipping to
+  "Day Off" — the Sat→Sun tail crosses the week seam via
+  `ScheduleCubit.previousSaturdayNight`.
+- **Fixed — today's still-future shift is swappable:** the week row's
+  redundant "Today" pill no longer eats the action slot when the shift hasn't
+  started (the row is already highlighted + filled day chip); it still shows
+  for today's started shift.
+- **Added — "Next shift · Thursday Night · 16:30"** line on off/leave-day
+  heroes (new `WeeklyScheduleEntity.nextShiftAfter`, unit-tested); says
+  "No more shifts this week" when the week is done.
+- **Fixed — day notes never truncate:** hero + week-row notes wrap in full
+  (were single-line ellipsized 11px captions) — notes are first-class.
+- **Added — Swaps tab warning dot (phones):** while a pending swap on a
+  **still-future** slot targets the user (stale requests filtered via
+  `SwapEligibility`, so an unanswered old request never nags).
+
+Tests: `shift_window_test.dart` (midnight rollover, phases, spill window) +
+reworked `my_schedule_tab_test.dart` (swap-on-today via a next-week fixture,
+un-truncated notes, exact leave + next-shift line, tab-dot show/stale, both
+legacy regression tests kept; every test unmounts — the countdown pill owns a
+minute Timer). Suite: **487 pass / 2 pre-existing splash failures**.
+Deferred as before: Employee Home generic "Off today" when leave exists
+(follow-up task spawned).
+
+### Changed (2026-07-06 — Task Details activity timeline rework: hero head + ledger rows)
+
+The Task Details **activity timeline** was rebuilt from a stack of heavy
+per-event cards into a **flight-recorder** read (new
+`presentation/widgets/activity_timeline.dart`, replacing the private
+`_ActivityTimeline`/`_EventCard` in `task_details_screen.dart`; used by both
+the mobile and desktop layouts):
+
+- **Hero current-status card** at the head — `CURRENT STATUS` eyebrow, big
+  state-coloured title, "Approved by / Submitted by …" actor line with avatar +
+  quiet hairline role chip, relative **and wall-clock** time (new
+  `clockTime()` in `activity_format.dart`), note callout + media. The head
+  node carries a slow **breathing glow only while the task is in flight**
+  (pending/started/completed/in-review/rework); terminal states sit still —
+  same philosophy as the cards' living borders. One animation controller
+  total.
+- **History as compact ledger rows** — no per-event card chrome (borders /
+  shadows / repeated panels deleted): state-coloured node + title, tiny
+  avatar + `name · Role`, right-aligned relative + exact time, notes as
+  quote-lines with a state-coloured accent edge, media as micro-thumbnails
+  (`+N` overflow + "3 photos · 1 video" summary). Roughly 60% less vertical
+  space per event; submission rows still open the `SubmissionDetailsSheet`.
+- **Colour-blended spine** — each connecting segment fades this event's state
+  colour into the next one's, so a rework loop literally reads as colour flow
+  (amber → red → purple …).
+- **Fold for long histories** — past 8 history rows the timeline folds behind
+  "Show N earlier events" (head + 6 newest stay visible).
+- **Soft state palette centralised** — the living-border hues are now public
+  `kState*` consts in `activity_format.dart` (canonical; `task_card.dart`
+  aliases them) and `activityColor` maps every activity kind onto them
+  (started → purple, created/assigned → baby blue, rework/issue → soft red
+  `#F87171`, review/warning → amber, approved → green, completed → neutral).
+  Admin feed dots + task-feed expansion timelines inherit the same hues.
+- Tests: new `activity_timeline_test.dart` (palette pins, `clockTime`, hero +
+  ledger render, fold/expand) + `note_category_test.dart` expectations aligned
+  to the soft palette. 467 passing (2 pre-existing splash-centering failures
+  unrelated to this change).
+
+### Added (2026-07-06 — Schedule 5.0: leave & day notes, health analysis, presentation Final View)
+
+A usability/operations upgrade of the manager/admin **Schedule** surface — same
+monochrome design language, architecture and interactions; 16-point owner brief.
+
+- **Leave, day notes and shift-hour overrides (schema, additive):**
+  `weekly_schedules/{id}` gains `dayNotes { <day>: text }`,
+  `leave { <day>: { <uid>: <type> } }`, and
+  `shiftHours { <day>: { <shift>: { start, end } } }`. Leave is day-level;
+  `ShiftHours` stores minutes after the slot day's midnight, with overnight
+  ends allowed past 1440. New repo/datasource writes `setDayNote` / `setLeave`
+  / `setShiftHours` (dotted-path updates + `FieldValue.delete()` for clears)
+  through the existing `_mutate` busy cycle. **No rules change needed** — the
+  generic manager/admin `weekly_schedules` update rule already covers the new
+  fields. No deploy required.
+- **Grid (Schedule 5.0):** a new **day-info footer row** shows leave mini-pills
+  (`Ahmed · Sick`; *pending* renders hollow/italic) and the day-note pill
+  directly under each day — visible without opening anything; tap it or the day
+  header → the new **day sheet** (`day_details_sheet.dart`: date + weekend
+  hours, Morning/Night staffing facts, 120-char note editor, add/remove leave
+  via the shared employee picker + a type picker). Cells grew **128×122 →
+  136×140** (stretching to full width on desktop as before); every staffed cell
+  carries a **quiet corner count** (staffing at a glance); empty editor cells
+  are a small dashed **"Open"** (the old icon + "No one" placeholder removed);
+  today's column adds a whisper of white tint on top of the existing ring.
+  day headers carry late-close tags from `WeeklyScheduleEntity.hoursFor(...)`
+  (`ShiftHours.standard` keeps Thu/Fri/Sat nights at `16:30 – 00:30`; overrides
+  can extend or adjust individual slots).
+- **Insights (extended, still one pass per build):** new facts **short rest**
+  (night → next-day morning, ~8–9.5h turnaround; amber) and **on leave &
+  assigned** (red) join open/one-person/double-booked on the clickable insight
+  strip; affected chips get an **amber dot + tooltip**. Week totals power a new
+  compact **week summary** caption under the grid (`14 morning · 12 night · 2
+  on leave · 1 open · 6 people scheduled`).
+- **Schedule Health (new pure `domain/schedule_health.dart`):** week-level
+  wellbeing read per person — grouped-run analysis (M·M·M·off·N·N·N is the
+  healthy shape), **morning↔night ping-pong**, **night→morning short rests**,
+  **6/7-day runs**, team **workload spread** — scored 0–100 → **Healthy / Fair
+  / Strained** with actionable recommendations ("Group their morning shifts…").
+  Rendered as a collapsed one-row **Schedule Health card** under the grid
+  (`schedule_health_card.dart`), expandable to the findings. **Advice, never a
+  gate** — nothing blocks an edit or publish (facts-not-quotas ruling).
+- **Guarded edits:** moving/switching someone onto a day they're marked on
+  leave asks for explicit confirmation (same confirm-not-block pattern as
+  `wouldEmptySlot`); the assign picker rows caption `On leave · <type>`.
+- **Final View → presentation mode:** the export grid renders print-clean
+  (`presentation` flag on grid/cell/chip): **no dashed placeholders, hover/drag
+  affordances, editing indicators or empty-state icons** — empty slots are quiet
+  em-dashes, **all names render** (no "+N more" collapsing), leave + notes
+  print when present, weekend tags included, legend reduced to a single
+  *Today* dot, new *on leave* fact pill. Toolbar/PNG export flow unchanged.
+- **Width:** the desktop toolbar padding now matches the grid's 24px page
+  padding (was 40px) so the toolbar aligns with the week and the schedule uses
+  the full desktop width.
+- **Employee parity (same-day follow-up slice):** the employee **My Schedule**
+  now tells the same story as the manager grid — week rows and the today hero
+  name a recorded leave instead of a generic "Off"/"Day Off" (**Annual Leave ·
+  Sick Leave · Day Off · Leave Requested**, matching icon), show the manager's
+  day note, and every night time-label is schedule-aware via
+  `WeeklyScheduleEntity.hoursFor(...)` (default Thu/Fri/Sat =
+  `16:30 – 00:30`; overrides can differ). A person rostered *and* marked away
+  sees "Also marked … — check with your manager".
+- **Cross-week short rest:** `ScheduleCubit` now also loads the **previous
+  week's Saturday-night crew** (third parallel read, best-effort — a missing
+  week or failed read = empty set, never fails the load; exposed as cubit
+  context `previousSaturdayNight`, not in the freezed state). Insights + health
+  consume it, so **Saturday night (ends 00:30!) → Sunday morning** finally
+  counts as a short rest; only the Sunday-morning slot highlights (last week's
+  night isn't on this grid). Threaded into the Final View for consistent
+  printed cues.
+- **Tests:** `schedule_health_test` + `weekly_schedule_model_test` (new),
+  `schedule_grid_test` (+4: weekend tags, leave/notes strip + day-tap,
+  presentation, corner count), `schedule_insights_test` (+4 incl. cross-week),
+  `schedule_final_view_test` (presentation assertions), `my_schedule_tab_test`
+  (+1: employee leave/notes/weekend-hours row). Full suite: **463 pass, 2
+  fail** (the 2 = pre-existing desktop splash-framing tests, verified failing
+  on a clean tree). `flutter analyze`: 7 pre-existing infos, 0 new.
+- **Not in this slice (deliberate deferral):** an employee leave *request*
+  flow — managers record `pending` manually after a conversation. A
+  request→approve pipeline would duplicate the swap/Cases machinery for a
+  small team; revisit only if the manual flow proves painful in practice.
+
+### Changed (2026-07-06 — Living-border orbit: per-state colour palette)
+
+Reworked the `LiveStatusBorder` colour model back to **per-state persistent
+colours** with a **soft, muted palette** (owner spec — motion / architecture
+unchanged, colours only). The orbit now holds each state's own colour for as long
+as that state lasts and **eases smoothly to the new colour on a state change**
+(no snap), replacing the previous amber-persistent + transient-flash model.
+
+- **Palette** (`liveActivityColor(task)`, all soft + slightly desaturated to blend
+  with the dark dashboard): pending → **baby blue `#7DD3FC`** · started → **purple
+  `#A78BFA`** · in review → **amber `#F59E0B`** · rejected → **soft red `#F87171`**
+  · overdue → **orange `#FB923C`** (*takes precedence*) · approved / completed →
+  `null` (no orbit, only the static border).
+- **Widget:** dropped the transient-flash machinery (`flashColor` / `flashKey` /
+  the amber→state→amber envelope). `LiveStatusBorder` now takes just
+  `color`/`speed`/`pulse`; a `color` change drives a smooth `_Phase.changing`
+  colour ease (`Color.lerp` + `easeInOut`) over `transitionDuration`, then steady.
+  **Every bit of motion is byte-for-byte unchanged** — the corner-eased warp LUT,
+  +8% corner highlight, overdue pulse, comet, inner bloom, controllers, and perf
+  strategy (no rebuilds during animation, no heavy `paint()` allocations).
+- **Call sites** updated (task cards + Admin Task Queue) — removed the flash
+  args; the Task Queue orbit is orange when overdue else amber, from the same
+  shared palette.
+- **Tests** updated (`task_card_live_status_test.dart`, 11): per-state palette +
+  overdue override, per-state speed, pulse, and orbit pass-through / loop /
+  **smooth colour ease (no snap)** / graceful terminal fade-out. `flutter
+  analyze`: 7 pre-existing infos, 0 new. Full suite: **445 pass, 2 fail** (the 2 =
+  pre-existing desktop splash-framing tests).
+
+### Fixed (2026-07-05 — Recurring shift-task Save freeze)
+
+Fixed the app appearing frozen after **Save Recurring Shift Task**. The Manage
+sheet previously opened the Add form as a second modal bottom sheet; after Save,
+the stacked modal barriers could leave the underlying screen dimmed and
+input-blocked. Add now dismisses Manage before presenting the form, guaranteeing
+one modal route/barrier at a time and returning to Operations after Save.
+
+Also removed nonessential post-save latency: template persistence is now the
+Save boundary, while deterministic today-instance creation, roster resolution,
+and assignment notification run best-effort via an unawaited
+`_materializeTodayInstance`. The scheduled generator remains the fallback and
+duplicate prevention is unchanged. Added `recurring_shift_task_test.dart` to
+prove Save does not await a stalled instance write. No schema/rules/function,
+route, dependency, or deploy change.
+
+### Added / Refactored (2026-07-05 — Branch Operations premium KPI drill-downs)
+
+Made all four Branch Operations KPI cards — **Active tasks, Overdue, Pending
+review, Staff active** — accessible premium hover/press entry points. They open
+the new reusable `OperationsMetricScreen` through the cockpit's existing local
+`Navigator.push` pattern, with a distinct branded hero, supporting facts, live
+count and responsive content for each metric: prioritized active tasks,
+oldest-first overdue triage, the review queue, and today's staff roster with
+employee drill-downs. The faint bottom-right hero watermark now renders the
+real asset-backed `DropLogo`, while the leading plaque keeps its metric-specific
+icon; this uses a new opt-in `BrandWatermark.assetLogo` mode so existing branded
+heroes remain unchanged. Staff Active deliberately retains its existing meaning:
+**rostered today**, not clocked in.
+
+Refactored the three task classifications into public pure predicates in
+`branch_workload.dart`, shared by the headline aggregation and detail lists so
+their semantics cannot diverge. The screen reuses the inherited live
+`BranchOperationsCubit` / `TaskCubit`, `ManagerTaskCard`, and `WorkloadCard`.
+No new Cubit/state, backend query, repository/use case, DI, global route,
+dependency, schema/rules/function, or deploy change. Focused Operations suite:
+**14 pass**; `flutter analyze`: no new diagnostics (8 pre-existing infos in the
+current dirty tree).
+
+### Added (2026-07-05 — Communications feed bulk selection)
+
+The Communications Center Active and Archived feeds now provide per-card
+checkboxes and a **Select all / Clear all** control for the current view.
+Selected broadcasts can be confirmation-gated **Archive/Restore** or permanently
+**Delete**d; the responsive action row avoids phone-width overflow, disables
+itself while writes run, and clears selection when switching feed views.
+
+`BroadcastCubit.setArchivedMany` / `deleteBroadcasts` sequence the existing
+single-document repository operations, retaining the same permission and
+realtime-stream behavior. Client/Cubit only: no schema, rules, Cloud Function,
+route, DI, dependency, or new-file change. `broadcast_card_test.dart`: **3 pass**;
+`flutter analyze`: no new diagnostics (8 pre-existing infos in the current dirty
+tree).
+
+### Changed (2026-07-05 — Living-border orbit: amber default + transient state flash)
+
+Refined the `LiveStatusBorder` orbit into a premium **"living border"** per the
+owner's final spec (motion + colours only; no layout/logic change). The orbit is
+now **always a single persistent amber accent** (`#F59E0B`, matching the dashboard
+accent) — state colours are **transient**, flashed for one orbit on a state change,
+then it returns to amber. Reverses the previous per-state persistent colours
+(indigo/emerald/purple) — those are gone; the palette is now amber-family.
+
+- **Persistent accent.** `kLivingBorderAccent` (Amber 400) is the default orbit
+  colour in every steady state; `liveActivityColor(task)` returns it for any active
+  task, `null` when settled (approved/completed → no orbit).
+- **Transient state-change flash.** `liveFlashColor(task)` (all amber-family:
+  Amber 600 started · Amber 300 in-review · Amber-red rejected · Orange overdue) is
+  eased in over ~320 ms, held for **one full orbit**, then eased back to amber and
+  the loop continues in the accent. Driven by the reused `_seq` controller; a
+  `flashKey` (`(status, overdue)`) fires the flash on change.
+- **Per-state speed + overdue pulse.** `liveOrbitSpeed(task)` scales the lap time
+  (pending 1.0 · started 1.2 · review 0.9 · rejected 1.3 · overdue 1.1); overdue
+  adds a very subtle glow-**intensity** pulse (0.7–1.0×), never a speed change.
+- **Premium, non-constant motion.** New corner-eased warp — a per-size **phase→
+  distance LUT** (integrate 1/speed, dipping through each arc) so the head slows
+  slightly into each rounded corner and accelerates back out on the straights;
+  plus a subtle **corner brightness bump** (+8%) as it rounds a corner. Comet: 2 px,
+  80–120 px width-scaled, 30-step tail, round head, inner bloom clipped to the
+  interior (**no outer glow**).
+- **Perf strategy kept** (owner constraint): pass-through when inactive; no
+  per-frame rebuilds; two reused controllers; painter caches its `PathMetric`,
+  corner map + warp LUT by size, reuses its `Paint`s, precomputes the tail falloff.
+- **Dashboard scope (started).** Wired the living border onto the Admin Dashboard
+  **Task Queue card** (`_TaskStatusStrip`): amber orbit while the queue has work
+  needing attention, flashes orange as an overdue count changes, pulses when
+  overdue, no orbit when clear. Remaining actionable cards (Pending Actions, Active
+  Tasks, Waiting Review, Broadcast Sending, Sync chip) are a **follow-up** — the
+  Overview / Analytics / KPI stat cards stay static per spec.
+- **Tests +11** (`task_card_live_status_test.dart` — persistent amber, transient
+  flash colours, per-state speed, overdue pulse, flash key, and orbit
+  pass-through / loop / flash→steady / graceful terminal fade-out). `flutter
+  analyze`: 7 pre-existing infos, 0 new. Full suite: **445 pass, 2 fail** (the 2 =
+  pre-existing desktop splash-framing tests, unrelated).
+
+### Added (2026-07-05 — One-time employee Welcome / onboarding)
+
+A cinematic, once-per-account Welcome screen shown to a new **employee** right
+after profile completion (accountability · teamwork · one place for the work).
+Follows the established gated-flag pattern. **No rules/functions/deploy change**
+(the flag is a non-privileged self-write the `users` freeze-list rule already
+permits; the rules comment was tidied only).
+
+- **Added `UserEntity.hasCompletedOnboarding`** (`@Default(true)` — existing
+  users are never interrupted). `UserModel` round-trips it (legacy `?? true`;
+  excluded from `toMap` like the other provisioning flags). New
+  `setOnboardingCompleted` on datasource / repository / repository-impl.
+- **Added `AuthCubit.completeOnboarding()`**; `completeProfile()` now also seeds
+  `hasCompletedOnboarding:false` so a new employee is shown Welcome exactly once.
+- **Refactored** the router's first-login decision into a pure, unit-tested
+  `firstLoginLocation(user)` (temp-password → profile completion → employees'
+  `/welcome`), replacing three repetitive redirect blocks (behavior-preserving).
+- **Added `OnboardingWelcomePage`** (`/welcome`, outside the app shell) — strictly
+  monochrome, single-screen, staggered reveal (reuses `FadeSlideTransition` +
+  `AppButton`). Adaptive hero: launch Lottie on tablet/desktop, `AnimatedDropLogo`
+  on phones (same no-heavy-Lottie-on-phones split as the splash; bounded 480px
+  decode). New `RouteNames.welcome`.
+- **Tests +13** (`first_login_gate_test` 8, `onboarding_welcome_page_test` 3,
+  `user_model_test` +2). `flutter analyze`: 7 pre-existing infos, 0 new. Full
+  suite: **429 pass, 2 fail** (the 2 = pre-existing desktop splash-framing tests).
+
+### Added / Fixed (2026-07-05 — Mobile splash premium pass)
+
+Presentation-only; mobile cold-start splash only. No Firebase schema, rules,
+functions, route, Cubit, or new dependency. Desktop/tablet splash and the shared
+`_OperationsWordmark` / `_PremiumLoadingBar` widgets are untouched.
+
+- **Orchestrated staggered entrance.** The brand group now reveals as one
+  choreographed sequence off the single intro controller — the logo blooms
+  first, `OPERATIONS` rises in a beat behind it, then the loading bar draws in —
+  instead of the wordmark and bar appearing at full opacity from frame 1. Driven
+  by a pure `_reveal(v, start, end, curve)` window mapper.
+- **Animated hero logo.** The mobile splash now uses `AnimatedDropLogo` (the
+  monochrome light-sweep) as the hero, matching the desktop splash + login brand
+  panel; it previously used the static `DropLogo`.
+- **Breathing atmosphere.** New `_AmbientBackdrop` — a layered, strictly
+  monochrome backdrop (faint wide halo for depth + a soft central pool that
+  slowly breathes in radius/intensity) so the screen feels alive during the
+  bootstrap wait instead of frozen. Replaces the flat single-radial background
+  and the per-logo glow box (one light source now, not two).
+- **Coverage.** New `test/splash_mobile_test.dart` (animated hero + OPERATIONS
+  present · completion hand-off after the ~1.8s intro · animation-gated startup
+  error stays visible through the entrance + Retry) — **3 pass**. `flutter
+  analyze`: 7 pre-existing infos, 0 new. Full suite: **416 pass, 2 fail**.
+- ⚠️ **Pre-existing (not from this change):** `test/splash_centering_test.dart`
+  has 2 red **desktop** framing tests — the by-eye `kLogoManualNudgeX = 120` /
+  `kLogoManualScale = 1.50` tuning (2026-07-05) doesn't match the combined-bbox
+  centering math the test still asserts. Verified red at HEAD with this change
+  stashed. Needs the owner to reconcile the tuning with the test (separate,
+  desktop-only follow-up).
+
+### Added / Fixed (2026-07-05 — Schedule Final View + PNG export)
+
+Client/presentation-only; no Firebase schema, rules, functions, route-name,
+Cubit, or new dependency (`path_provider` reused).
+
+- **Added a `Final view` action** to the manager/admin schedule toolbar. It
+  opens the currently loaded branch/week and active shift filter as an opaque
+  root-navigator preview, covering the persistent desktop sidebar and all edit
+  chrome.
+- **Fixed the initial screenshot-mode implementation:** `Save PNG` now captures
+  an isolated 1600×900 `RepaintBoundary` at 1.5× and writes a real 2400×1350
+  PNG to Downloads; the previous button only hid controls and saved nothing.
+- Added the macOS sandbox `files.downloads.read-write` entitlement in both
+  debug and release; without it the automatic Downloads write was denied.
+- **Added a persistent Back action** (plus Escape) in a responsive toolbar that
+  is structurally outside the capture boundary, so navigation controls and the
+  desktop sidebar never enter the exported image.
+- Added a distinct role-aware **Dashboard** exit using
+  `RouteNames.homeForRole`, while Back continues to return to the editor.
+- **Redesigned the export canvas** to eliminate the oversized dead area:
+  larger roster rows, compact identity/week header, four useful roster facts,
+  framed grid + legend, and a restrained footer. `ScheduleGrid` now exposes
+  optional presentation sizing while preserving editor defaults exactly.
+- Added/updated `schedule_final_view_test.dart`; focused schedule tests:
+  **15 pass**; full suite: **415 pass**. `flutter analyze`: 7 pre-existing
+  infos, 0 new.
+
+### Fixed / Refactored (2026-07-05 — intro polish, card-grid, undo bugfixes)
+
+Client-only; no Firebase schema, rules, functions, or deploy change.
+
+- **Fixed** the cold-start intro to always play over a fixed **5s**, instead of
+  whatever length the `assets/0704.json` composition happens to encode
+  (`SplashPage._introDuration` now overrides the Lottie controller's duration).
+- **Added** a premium monochrome indeterminate **loading bar** (168×3, a white
+  band sweeping across a dim track) directly under the splash logo, visible for
+  the whole intro (previously a bare spinner shown only after the animation
+  finished, if bootstrap was still pending), added an **'OPERATIONS' wordmark**
+  under the logo so the splash is the full brand lockup, and **stripped the
+  splash layout to exactly `Scaffold → Center → Column(min) → [logo,
+  'OPERATIONS', bar]`** — removed the old `Stack`/`Align(bottomCenter)`/
+  `SafeArea` (the logo was `Center`-ed while the indicator was pinned to the
+  bottom edge, which read as off-centre).
+- **Fixed the "still slightly off-centre" splash logo by measuring the asset,
+  not the layout:** decoded the actual frames of `assets/0704.json` and found
+  the DROP artwork's bright-pixel bounding-box centre sits **(+4, +21)px**
+  (settled-tail mean) below/right of the 720×405 frame's geometric centre (the
+  drop-arrow tail pads the bottom of every frame). Added
+  `kLogoVisualCenterOffset = Offset(4, 21)` applied as an inverse, scale-aware
+  `Transform.translate` (paint-only) so the ARTWORK — not the padded frame —
+  lands on the window centre. New `test/splash_visual_centering_test.dart`
+  re-measures the real asset pixels on every run and fails if the constant
+  drifts (swap the Lottie → test forces a re-measure); it also documents the
+  intro's camera move (mid-flight artwork swings ±≈18px by design — that
+  motion is the cinematic, not a layout bug). Also verified with TextPainter
+  that this engine appends letter-spacing after the last glyph (Δ == 24 for 2
+  glyphs @ls:12), so the OPERATIONS leading-pad compensation is correct, and
+  locked it with a glyph-centring widget test.
+- **Superseded the horizontal bbox compensation with the owner's manual visual
+  correction:** desktop/tablet keeps `Offset(120, 0)` with a centre-anchored
+  `1.50×` scale. The adjustment is no longer applied to phones.
+- **Replaced mobile Lottie with a local premium static intro:** phone widths
+  below 600px return before `_LaunchAssetLottie` is constructed, so the ~12MB
+  JSON and 102 embedded WebPs are never parsed/decoded there. Mobile now uses a
+  responsive 108–136px `DropLogo`, subtle radial light, short 1.8s fade/settle,
+  compact OPERATIONS treatment, and a 210px loading bar inside `SafeArea`.
+  Desktop/tablet Lottie and bootstrap behavior remain unchanged.
+- **Framed the whole lockup as one unit at the optical centre** (owner: "the
+  group sits too low — centre the combined bbox, move it up 80–100px"): the
+  Lottie frame bakes ~59px of dead space above the artwork
+  (`kLogoArtworkTop = 59`, settled-tail mean, pixel-locked), and dead-centre
+  reads low optically. A balancer `SizedBox(height: 2·lift)` at the column's
+  end (pure layout, no Transform) now places the **combined visible bbox
+  (artwork top → bar bottom) exactly `kSplashOpticalLift` (50px) above the
+  window centre**. Asserted at both
+  1440×900 and 1024×720.
+- **OPERATIONS luxury pass:** metallic glyph gradient (white → silver,
+  `TextStyle.foreground` shader), triple white glow (bloom 30 / glow 12 /
+  core 4), soft black drop shadow, brighter ~4.4s light sweep (alpha 140),
+  fontSize 15 — strictly monochrome (white/silver/grey only).
+- **Premium splash treatments (2026-07-05 second pass):** soft radial light
+  pool behind the logo; 'OPERATIONS' upgraded to tracking-12 pure-white caps
+  with dual white outer glow, a whisper of drop shadow, a subtle ~4.4s passing
+  light sweep, and a leading pad equal to one tracking unit (Flutter appends
+  letter-spacing after the last glyph, which otherwise drags wide-tracked text
+  visually left of centre); loading bar upgraded to `_PremiumLoadingBar`
+  (240×3.5, rounded, faint white halo `BoxShadow`, easing sweep band). Added
+  The temporary debug centre crosshair was removed after visual tuning.
+  The debug-only `assert` still prints `MediaQuery` size/centre/padding and
+  a `test/splash_centering_test.dart` proving the logo + column centre equal
+  the window centre (padding is `EdgeInsets.zero`, so the macOS title bar adds
+  no offset).
+- **Changed** `AppSidebar`'s brand header from the static `DropLogo` to the
+  shimmering `AnimatedDropLogo` (owner-requested 2026-07-05) — **reverses the
+  2026-07-02 "chrome marks stay static" scoping** for the persistent desktop
+  sidebar; Splash/Login keep their existing treatment.
+- **Fixed** mismatched card heights on the admin dashboard's Overview grid
+  (e.g. the "Managers" metric card sitting visibly shorter than its row
+  siblings): `DashboardMetricCard` now reserves the trend line's height even
+  when a card has none, via `Visibility(maintainSize: true)` (not `Opacity`,
+  which cost an extra compositing layer and left a stray blank node in the
+  accessibility tree).
+- **Refactored** `ResponsiveCardGrid` from a `Wrap`-based layout (each card's
+  own natural height) to a row-chunked layout where each row is wrapped in
+  `IntrinsicHeight` + `CrossAxisAlignment.stretch`, so cards sharing a row
+  always match the tallest sibling — fixes the same "uneven cards" look on the
+  Tasks page grids (`my_tasks_screen.dart`, `branch_task_list_screen.dart`,
+  `pending_review_screen.dart`), which all wrap `ResponsiveCardGrid` around
+  variable-height task cards.
+- **Fixed** the schedule undo bar occasionally staying on screen indefinitely:
+  `SnackBar`'s built-in `duration` pauses while the bar is hovered and can be
+  orphaned by a rebuild. `manager_schedule_view.dart` now drives the 5s
+  dismiss with an explicit `Timer` that closes the specific
+  `ScaffoldFeatureController` returned by `showSnackBar` (never the ambient
+  `hideCurrentSnackBar()`, which could otherwise kill an unrelated later
+  snackbar if the user swiped the undo bar away early).
+- Reviewed via `/code-review`; verification: `flutter analyze` 7 pre-existing
+  infos, 0 new; **412 tests pass** (`test/responsive_card_grid_test.dart`
+  updated for the row-based layout; `test/brand_chrome_test.dart` unchanged
+  and green — `AnimatedDropLogo` renders a real `DropLogo` internally).
+
+### Added / Refactored (2026-07-04 — premium animated cold-start intro)
+
+Client/startup-only; no Firebase schema, rules, functions, or deploy change.
+
+- **Added** the supplied `assets/0704.json` as the full-screen black DROP intro
+  via `lottie` (registered in `pubspec.yaml`). Playback uses the composition's
+  real duration and signals completion from its controller—no arbitrary splash
+  delay.
+- **Refactored cold start** around `LaunchApp` in `main.dart`: Flutter paints the
+  first black frame, then Firebase initialization, Firestore persistence, DI,
+  auth restoration/user-doc fetch, and the existing essential home preload run
+  while Lottie plays. `MaterialApp.router` mounts only after **both** animation
+  and bootstrap complete; `createRouter(initialLocation:)` enters the resolved
+  Login / first-login gate / role home directly, so the intro never double-plays.
+- **Preserved the current auth contract:** no Welcome/registration/pending-
+  approval flow; inactive accounts are blocked, and `mustChangePassword` →
+  `isProfileCompleted` → role home remains authoritative.
+- **Hardened failure paths:** malformed/missing Lottie falls back to `DropLogo`
+  without deadlocking; bootstrap failure holds the final frame and offers Retry.
+- **Optimized the raster-heavy export:** the current ~1.1MB, 720×405, 30fps,
+  155-frame JSON embeds 102 full-frame WebPs (~113MiB decoded at source size).
+  Parsing runs off the UI isolate and embedded images decode at a bounded 480px
+  width (~51MiB estimated); no extra raster render cache is used.
+- **Removed native white flash:** Android launch/normal themes and both Android
+  launch drawables are black; iOS LaunchScreen is black with no stale launch
+  image. Analysis: 7 pre-existing infos, 0 new; **406 tests pass**; native launch
+  XML validates.
+
+### Added (2026-07-04 — Case Management: inbox unread indicators)
+
+Client-only; no new dependency (reuses `path_provider`), no schema/rules/
+functions/deploy change.
+
+- **Added** `CaseSeenStore` (`core/services/case_seen_store.dart`): persists
+  per-user, per-case "last opened" timestamps to a JSON file in the app-support
+  dir (uid-namespaced; in-memory fallback on web/sandbox). Pure `caseIsUnread`
+  decision extracted.
+- **Added** an `unreadIds` set to `CaseListState.loaded` (freezed): `CaseListCubit`
+  computes it from the store and marks a case seen on open (`select` desktop /
+  `markSeen` mobile); the desktop-open case stays read as new replies arrive.
+- **Added** a monochrome unread treatment to `CaseListTile` — an 8px dot gutter,
+  bold subject, brighter preview + timestamp. Inbox ordering unchanged.
+- Tests: `test/case_seen_store_test.dart` (+8), `test/case_list_tile_test.dart`
+  (+2). Analysis: 7 pre-existing infos, 0 new · **406 tests pass** (+10).
+
+### Fixed / Added (2026-07-04 — Case Management: premium conversation pass)
+
+Presentation/cubit only; no schema/rules/functions/deploy change, no new deps.
+
+- **Fixed** a message-loss defect in `CaseComposer`: it cleared the input before
+  the async send resolved, so a failed send discarded the user's text. `onSend`
+  is now `Future<bool>` (`CaseConversationCubit.sendMessage` returns success); the
+  composer clears **only on success** and keeps text + attachments on failure.
+- **Added** desktop chat ergonomics: Enter sends / Shift+Enter newline on desktop
+  (mobile unchanged); focus retained after send.
+- **Added** `case_thread.dart` (`caseThread`): synthesizes the `opening` message
+  from the case doc when the server-written one (`onCaseCreated`, not yet
+  deployed) is absent, and suppresses it once the real one exists — so a fresh
+  case never opens with an empty thread.
+- **Added** smart auto-scroll to the conversation: new replies only auto-scroll
+  when the reader is at the bottom (or it's their own message); otherwise a
+  floating "New messages" pill jumps to the latest.
+- Tests: `test/case_thread_test.dart` (+5), `test/case_composer_test.dart` (+4).
+  Analysis: 7 pre-existing infos, 0 new · **396 tests pass** (+9).
+
+### Added / Refactored (2026-07-04 — Admin Task Management: Active/Done segmented pages)
+
+Presentation-only; no schema/route/cubit/repo/rules/deploy change.
+
+- **Added a shared `SegmentedTabBar`** (`core/widgets/segmented_tab_bar.dart`): an
+  Apple-style monochrome segmented control (dark track, white sliding selector,
+  no ripple) that implements `PreferredSizeWidget` for the `AdaptiveScaffold.bottom`
+  slot and drives a `TabController`.
+- **Split `AdminTaskOverviewScreen` into Active / Done pages** behind the pill +
+  swipe (`_TaskLens`). The **Active** lens keeps the attention-first order and the
+  Active/Pending review/Overdue framing; the **Done** lens re-sorts branches by
+  most-completed (approved → completion rate) and re-frames cards + the company
+  summary to Done · In review · Open (with an "N of M done / All complete"
+  caption). Same `_BranchMetrics`, re-sorted via `_sortForLens` and re-framed —
+  no data-layer change.
+- **Refactored** the employee `my_tasks_screen` to reuse `SegmentedTabBar`
+  (deleted its private `_TabBar`; identical look).
+- Added `test/segmented_tab_bar_test.dart`. Analysis: 7 pre-existing infos, 0 new
+  · **387 tests pass** (+3).
+
+### Added / Fixed (2026-07-04 — Admin dashboard Sync control + rail label fix)
+
+Presentation-only follow-up on the risk-first pass; no schema/route/cubit/repo/
+rules/deploy change.
+
+- **Added a header Sync control** (`_SyncButton` in `admin_dashboard_screen.dart`).
+  Desktop shows a labelled pill beside the ⌘K hint; mobile shows an icon-only tap
+  target next to the greeting. Tapping force-refreshes the three live sources
+  (statistics · task stream · shift swaps); the icon spins while a refresh is in
+  flight (min ~650 ms so a cached answer still feels responsive) and otherwise
+  reads **“Synced just now / 3m ago / 2h ago / 1d ago”**, ticking via a local 30 s
+  timer. Pull-to-refresh is unchanged and now shares the same await path.
+- **`_load` now awaits** all three cubit futures under a single
+  `_syncing`/`_lastSynced` pair, so both the button spinner and the pull-to-refresh
+  reflect real completion instead of firing and forgetting.
+- **Fixed the truncated Manage shortcuts:** in the 330px desktop rail the 2-up grid
+  broke single words mid-word (“Employee\ns”). Manage now renders **1-up** in the
+  rail (wide `maxItemWidth` when compact); mobile was already single-column.
+- Added `sync_status_label_test.dart` (pure `syncLabel` clock cases). Analysis:
+  7 pre-existing infos, 0 new · **384 tests pass** (+5).
+
+### Changed (2026-07-04 — Admin dashboard risk-first design review)
+
+Implemented the real-UI dashboard critique as a presentation-only pass; no
+schema, route, cubit, repository, DI, rules, or deployment change.
+
+- **Flipped the hierarchy:** `branchesWithoutManagers` now drives a highlighted
+  top banner — “N branches need a manager” → **Assign now** → `/admin/managers`.
+  The oversized all-clear hero/progress/CTA was replaced with a compact live
+  task-status strip.
+- **Reduced empty-state noise:** Pending Actions stays discoverable but collapses
+  to a quiet **Nothing queued** row when empty.
+- **Eliminated truncated CTAs:** the 330px rail is a stable 2-up grid (180px
+  target instead of 150px), “Create Account” is **New Account**, and
+  `ActionCard` labels/subtitles wrap instead of ever using ellipsis.
+- **Separated action priority:** added `ActionCard.secondary` (flat horizontal)
+  for Manage/navigation shortcuts; primary Quick actions remain elevated and
+  vertical.
+- **Rebalanced Overview:** fixed 2×2 KPI grid; Managers now uses a distinct admin
+  badge icon; all four metrics retain the same tappable chevron affordance.
+- **Accessibility:** dashboard supporting text and chevrons moved from
+  `textTertiary` to `textSecondary` for readable contrast on near-black.
+- Added `action_card_test.dart` (narrow primary + secondary no-truncation cases)
+  and updated the Pending Actions empty-state test. Full analysis: 7 pre-existing
+  infos, 0 new; focused widget tests: **5 pass**.
+
+### Changed (2026-07-04 — Case Management System: Reports reframed as private conversations)
+
+Rebuilt the Reports feature from scratch as a **Case Management System** — a
+**Case** is a temporary, private conversation between an employee and a
+manager/admin about a specific issue, kept open until resolution.
+
+- **Renamed** `lib/features/reports/` → `lib/features/cases/`, collection
+  `reports` → `cases`, and all `report*` enums/entities/cubits/routes/functions/
+  rules → `case*`. Routes `/cases`, `/cases/create`, `/case/:caseId`.
+- **Added** a **real chat conversation** on a `cases/{id}/messages` subcollection
+  (streamed in realtime for every role) — `CaseMessage` (opening | message |
+  system) rendered as bubbles + centered system chips + date separators. A reply
+  is a single message `add`.
+- **Fixed** the reply-sending bug **structurally**: the old design rewrote the
+  whole `activityLog` array from a stale client snapshot (lost updates) and gave
+  employees no realtime stream. The subcollection + single-`add` model removes
+  the class of bug; employees now see replies live.
+- **Added** a **desktop split-pane** workspace (inbox pane │ conversation) and
+  removed the old centered-720 detail layout. Mobile keeps list → push.
+- **Moved** the status control into the **top header**; new lifecycle
+  **Open → In Discussion → Waiting Response → Closed**; **closed cases are
+  read-only** (composer disabled + Firestore rule denies message-create on a
+  closed case). Recipients can Reopen.
+- **Replaced** the 4-level severity with a single **`urgent`** flag; **added** a
+  **Personal** category (defaults to Admin · Confidential). Inbox orders active
+  cases first (urgent-first, latest activity) with **Closed** in a collapsed
+  archive.
+- **Rewrote** the Cloud Functions as three single-responsibility triggers —
+  `onCaseCreated` (opening message + notify), `onCaseUpdated` (status system
+  message + notify), `onCaseMessageCreated` (bump `lastMessage*` + notify the
+  other party). Notification types → `caseOpened`/`caseUpdated`/`caseClosed`/
+  `caseReplied`; route `case_details`; inbox category **Cases**.
+- **Migration:** none — Reports was never deployed (rules/functions/indexes deploy
+  was still pending), so this is a clean rename/restructure. `flutter analyze`
+  clean (0 new) · **377 tests pass** (5 new case suites; report suites removed) ·
+  `node --check` OK. Deploy: `firestore:rules` · `storage` · `firestore:indexes` ·
+  `functions:onCaseCreated,onCaseUpdated,onCaseMessageCreated,onNotificationCreated`.
+
+### Fixed (2026-07-04 — employee Reports "Failed to load your reports")
+
+Root-caused the employee mobile Reports failure (admin desktop worked). The
+`collectionGroup('reporter').where('createdByUserId'==uid)` "My Reports" query
+was denied because its Firestore rule was **nested** under
+`match /reports/{reportId}` — a path-scoped rule does NOT authorize a
+collection-group query (documented Firestore behavior), so the query returned
+**`permission-denied`** even with the index present. **Fix:** promoted the rule
+to a collection-group rule with the recursive wildcard —
+`match /{path=**}/reporter/{docId}` (top-level sibling of the reports match;
+identical read/create/deny conditions). Also surfaced the exact Firestore error:
+`report_remote_datasource.getMyReports` was swallowing `e.code` — it now logs
+`[REPORTS]` query/code/message/stack and keeps the code in the thrown message.
+⚠️ **Redeploy `firebase deploy --only firestore:rules`.** (The admin list uses a
+plain `reports` orderBy → auto-indexed → unaffected; only employees hit the
+collection-group query.)
+
+### Changed (2026-07-04 — Reports simplified: escalation messages, not tasks)
+
+Owner feedback: Reports felt too task-like. Stripped the Task-borrowed machinery
+down to a lightweight escalation-message system with a **chat/support** feel:
+
+- **Anonymous privacy removed** — privacy is now just **normal / confidential**.
+- **Categories reduced 12 → 5**: **Sales · Inventory · Staff · Security ·
+  Operations** (Security → admin by default; the rest → manager).
+- **Lifecycle reduced** to **New → Under Review → Waiting Reply → Resolved**
+  (dropped acknowledged / inProgress / closed / rejected).
+- **Ownership removed** — no `assignedTo` / `resolvedBy` / "Assign to me" /
+  "Owned by". Recipients just move the status.
+- **Detail UI is now a premium conversation** — message-first opening card + a
+  chat **reply thread** (`report_thread.dart`, left/right bubbles + quiet status
+  markers) + a compact recipient status bar + a pinned reply composer. The
+  task-style `report_timeline.dart` was deleted.
+- **Notification types trimmed** to `reportSubmitted` / `reportUpdated` /
+  `reportResolved` / `reportCommented`; `onReportUpdated` maps the new statuses
+  and no longer handles assignment.
+- Rules: dropped `assignedTo`/`resolvedBy` from the reporter-update freeze.
+- `flutter analyze` clean (0 new) · **368 tests pass** · `node --check` OK ·
+  freezed regenerated. Filing rules unchanged (admin can't file; manager →
+  admin-only; employee → manager/admin/both).
+
+### Added (2026-07-03 — Reports Center / Escalation System)
+
+A first-class, branch-scoped internal **Reports Center** (Reports / Escalation
+System) — any employee files a categorized, severity-rated report, routes it to
+their manager and/or admin (optionally **confidential / anonymous**), and the
+recipient acknowledges → works → resolves it, with a full audit **timeline +
+discussion thread** and **attachments**. Replaces WhatsApp/verbal complaints.
+Built as a full Clean-Architecture slice modeled on the Task feature.
+
+- **Enums** (`core/enums/`): `ReportCategory` (12, + `label`/`hint`/smart
+  `defaultRecipient`), `ReportRecipient` (manager/admin/both, `includesManager`
+  → `visibleToManager`), `ReportPrivacy` (normal/confidential/anonymous),
+  `ReportSeverity` (+ SLA window), `ReportStatus` (open→acknowledged→inProgress→
+  resolved→closed, +rejected, `canTransitionTo`).
+- **Domain** (`features/reports/domain/`): `ReportEntity` (freezed; reuses task
+  `ActivityEntry` + `TaskAttachment`; a comment = an activity entry with
+  `status:'comment'`), `ReportIdentity` (private reporter value object),
+  `report_urgency.dart` (pure client-side SLA/urgency + ranking — **no cron**),
+  `ReportRepository` + `CreateReport`/`UpdateReport`/`UploadReportAttachment`.
+- **Data**: `ReportModel` (+ reporter-subdoc (de)serialization),
+  `ReportRemoteDataSource` (batched report+identity create, collectionGroup
+  `reporter` "My Reports", Storage `reports/{id}/attachments/`),
+  `ReportRepositoryImpl`.
+- **Presentation**: app-wide `ReportCubit`/`ReportState`; `ReportsCenterScreen`
+  (role-scoped list + filters + search), `CreateReportScreen` (≤30s flow),
+  `ReportDetailsScreen` (record + action panel + reveal + discussion + timeline);
+  `report_card`/`report_timeline`/`report_format` widgets. Strictly monochrome.
+- **Privacy split (rule-enforced):** the report doc carries **no creator uid**;
+  the reporter identity lives in the private subdoc
+  `reports/{id}/reporter/identity` (owner + admin only) — mirrors the
+  compensation subdoc. `reporterDisplayName` rides the doc only when privacy is
+  `normal`; managers see "Confidential Sender" / "Anonymous". Reporter-authored
+  timeline entries are de-identified on confidential/anonymous reports.
+- **Notifications (server-side):** 6 `report*` `NotificationType`s + a Reports
+  inbox category; **`onReportCreated` / `onReportUpdated`** Cloud Functions fan
+  out per-recipient notification docs via the Admin SDK (a manager can't read a
+  confidential reporter to notify them client-side); `onNotificationCreated`
+  now carries `reportId` in the push data; tap → `/report/:id`.
+- **Rules / storage / indexes:** `reports/{id}` + `reporter/{docId}` Firestore
+  rules (`isReportReporter` get-helper; `visibleToManager` manager gate);
+  `reports/**` create-only Storage; collection-group `reporter` field index.
+- **Wiring / nav:** DI + provider; routes `/reports`, `/reports/create`,
+  `/report/:reportId`; Reports destination in the desktop sidebar (all roles) +
+  a mobile app-bar action.
+- **Role-based filing (2026-07-04 owner feedback):** admins **can't file**
+  (receive/manage only — FAB hidden + create screen bounces them); a **manager
+  files → routed to admin only** (escalation up; recipient locked with an
+  "Escalated to the Admin" note); an **employee files → manager / admin / both**.
+- **Tests:** `report_urgency_test`, `report_routing_test`, `report_model_test`
+  (+23). `flutter analyze` clean (7 pre-existing infos, 0 new); **366 tests
+  pass**; `node --check` OK; freezed regenerated.
+- ⚠️ **Deploy:** `firebase deploy --only firestore:rules`, `--only storage`,
+  `--only firestore:indexes`, and
+  `--only functions:onReportCreated,functions:onReportUpdated,functions:onNotificationCreated`.
+- **Deferred** (owner-selected out; model leaves room): manager→admin
+  re-escalation action, admin/manager dashboard count widgets, SLA push
+  reminders.
+
+### Added (2026-07-03 — note categories + feed telemetry; Smart Queue opt-in)
+
+- **Smart Queue is opt-in again** — default sort reverted to **Due date
+  (grouped)**; Smart Queue stays an explicit sort mode. Validate the heuristic
+  before promoting it.
+- **Note categories** — new `NoteCategory` (info / warning / issue), stored as
+  the note's activity kind (`note` / `noteWarning` / `noteIssue`; no schema
+  change, `info` = back-compat `note`). `TaskCubit.addNote(category:)`;
+  `activity_format` renders each distinctly; the note sheet gained a category
+  selector.
+- **Animated attention counters** — the strip always renders the three pills
+  (muted at zero) so each `AnimatedCount` tweens smoothly through changes,
+  including to/from zero (no all-clear layout swap).
+- **Lightweight feed telemetry** — new `UsageTracker` (`core/services`): a single
+  `usageStats/feed` counters doc (`FieldValue.increment`), **debounced to ~one
+  write/20s**, best-effort, test-safe (no-op until `init`, wired in `main.dart`).
+  Tracks `preset_{name}` · `sort_{name}` · `expansion_open` · `quick_approve` ·
+  `note_create`. New `usageStats/{doc}` rule (signed-in write, admin read).
+- `flutter analyze` clean (7 pre-existing infos) · **343 tests pass** (+2).
+  ⚠️ **Deploy for telemetry:** `firebase deploy --only firestore:rules`.
+
+### Added (2026-07-03 — R1 refinements + Smart Queue, Home Dashboard redesign)
+
+- **Attention strip: Blocked → Unassigned** (owner ruling — "blocked" = can't
+  progress for lack of an owner). Strip is now Overdue · Pending review ·
+  Unassigned; the Unassigned pill filters to the `unassigned` preset.
+- **Proof-safe approve:** a task whose submission carries proof shows a
+  lightweight confirm sheet (evidence thumbnails + Approve/Cancel) before
+  approving; proofless tasks stay one-tap (`TaskFeedActions`).
+- **Sticky action footer:** actions extracted into a reusable `TaskFeedActions`;
+  the mobile bottom sheet pins it as a footer (`TaskFeedExpansion(showActions:
+  false)` scroll body + pinned footer) so quick actions stay visible.
+- **Quick manager notes:** new `Note` action → note sheet →
+  **`TaskCubit.addNote`** appends a `note` activity entry (no status change; new
+  `note` kind in `activity_format`). One additive cubit method, no new cubit.
+- **Smart Queue (P3-lite):** new `FeedSort.smart` (now the **default**) — a
+  simple 5-tier `smartRank` (overdue+high · pending review · overdue · due today
+  · normal). Smart renders a flat ranked list (grouping hidden); other sorts
+  restore grouping. Deliberately not the full urgency engine — validate first.
+- `flutter analyze` clean (7 pre-existing infos) · **341 tests pass** (+5).
+
+### Added (2026-07-03 — inline expandable feed row + Attention strip, redesign R1)
+
+Owner priority after P2 (before P3): remove the friction of opening
+`TaskDetailsScreen` for routine triage. Presentation-only.
+
+- **Inline expandable task row (R1)** — `task_feed_expansion.dart`, ONE shared
+  triage surface (description · branch/shift/due/assignee facts · checklist
+  preview + progress · attachment/proof thumbnails · compact status timeline ·
+  quick actions Approve/Reject/Reassign/Open-full-details). Actions read the
+  app-wide `TaskCubit` lazily on tap (no new cubit).
+  - **Desktop** = inline accordion (`_expandedId`, one open at a time;
+    `AnimatedSize` height + `TweenAnimationBuilder` fade; row `selected`
+    highlight + chevron flip; scroll preserved).
+  - **Mobile** = the same surface in a `DraggableScrollableSheet` bottom sheet.
+    `context.isDesktop` selects the presentation.
+- **Attention Needed strip** (`_AttentionStrip`) above the feed — Overdue ·
+  Pending review · Blocked counts over the scope's active set (independent of
+  the user's filter); each pill filters the feed; "all clear" state at zero.
+  **"Blocked" = `rejected`/rework** (owner to confirm vs. unassigned).
+- `flutter analyze` clean (7 pre-existing infos) · **336 tests pass** (+6
+  `task_feed_expansion_test.dart`). Next: P3 urgency engine.
+
+### Added (2026-07-03 — homepage global task feed + badge dedupe, redesign P1/P2)
+
+Owner re-prioritized to homepage usability first. Presentation-only (no deploy).
+
+- **Badge dedupe (P1):** `taskBadgeFor` dropped its `Approved`/`Rejected`
+  branches — the card's status pill already renders those, so the word stacked
+  twice ("Approved" over "Approved"). The lifecycle badge now carries only
+  `REWORK #n` / `NEW`.
+- **Global active-task feed (P2)** on the admin + manager homepages — reach any
+  task in ≤2 taps, no Branch→Employee→Task drill:
+  - `features/task/domain/task_feed.dart` — pure engine: `TaskFeedFilter`
+    (branch/assignee/shift/priority/status/search/preset/grouping/sort),
+    `applyFeed` (active-window base + AND filters + search), `groupFeed`
+    (Due-time/Branch/Employee/Priority), 4 pinned presets. O(n), no index.
+  - `task_feed_row.dart` — dense scannable row (status dot · title · branch ·
+    High-only flag · assignee · overdue-aware due · 2px checklist track).
+  - `task_feed_section.dart` — composable homepage feed over the app-wide
+    `TaskCubit` (no new cubit/query): preset chips · search · group/sort menus ·
+    admin branch scope · collapsible grouped rows → tap to `TaskDetailsScreen`.
+  - Wired into `AdminDashboardScreen` (main column, **replacing** the redundant
+    `_ActivityFeed`, now deleted) and `ManagerHomeScreen` (`branchLocked`; also
+    now loads `TaskCubit`).
+- Deferred: urgency "Smart" sort (P3) and the inline row-expansion triage
+  surface (P2 taps straight to details for now).
+- `flutter analyze` clean (7 pre-existing infos) · **330 tests pass** (+28:
+  `task_feed_test` 23, `task_feed_row_test` 5).
+
+### Added (2026-07-03 — task retention lifecycle, Home Dashboard redesign P3)
+
+Design proposal + first implemented slice of the home-dashboard redesign
+([HOME_DASHBOARD_REDESIGN.md](HOME_DASHBOARD_REDESIGN.md)). Owner picked the
+**task lifecycle (P3)** to build first — completed tasks no longer accumulate
+in active views forever.
+
+- **`archivedAt` on tasks (server-managed soft archive).** New
+  `TaskEntity.archivedAt` + `isArchived`; `TaskModel` round-trips it (written
+  in `toMap` so an admin reopen clears it, always null on a live task).
+  `TaskRepositoryImpl._newestFirst` filters archived out of **every** active
+  list/stream — the single clutter gate. `getTask` bypasses it (deep-links to
+  archived tasks still resolve) and statistics read Firestore directly, so
+  lifetime "completed" counts are unaffected. `TaskCubit.reopenTask` clears
+  `archivedAt` (un-archives on admin reopen).
+- **`taskHousekeeping` Cloud Function** (`onSchedule` every 24h): archives
+  approved tasks older than `archiveAfterDays` (default 30) — stamps
+  `archivedAt` + cold-tiers their `tasks/{id}/` Storage evidence to COLDLINE
+  (~85% cheaper); **hard-delete is opt-in** (`deleteAfterDays`, default null =
+  soft archive forever, per owner). Archive pass pages by `approvedAt` with a
+  cursor and skips already-archived docs → no composite index, outage-tolerant,
+  no starvation. Config in `config/taskRetention` (defaults when absent).
+- **Architecture note:** kept archive **in place** (not a separate collection)
+  because statistics count approved tasks straight from `tasks`, and the
+  Firestore `isNull` gotcha (missing fields aren't matched) would make a
+  server-side filter need a migration. *Server-side* read-bounding of the admin
+  all-tasks stream is deferred + costed (not needed at current volume).
+- `flutter analyze` clean (7 pre-existing infos) · **302 tests pass** (+6
+  `task_archive_test.dart`) · `node --check functions/index.js` OK.
+- ⚠️ **Deploy (owner, surgical):** `firebase deploy --only
+  functions:taskHousekeeping`. No rules / indexes / storage-rule change.
+  Rollback = `firebase functions:delete taskHousekeeping`.
+
+### Security (2026-07-03 — M1/M2/M3 hardening + C1 deployments, all live)
+
+Remaining production-blocker fixes (per-blocker commits, each deployed to
+`bazic-d9ad7` and verified):
+
+- **C1a/C1b deployments:** the `tasks` composite index (READY; audit
+  correction — the equality-only shift query also ran index-free via merge
+  join, so prod was never broken) and `generateShiftTaskInstances` (surgical
+  deploy; scheduler ENABLED; forced run clean).
+- **M2 — notification forgery closed:** new **`sendNotification` callable**
+  is the ONLY client path for notification docs (client-type whitelist ·
+  admin-or-same-branch recipients · length caps · sanitized payload ·
+  server-stamped `senderUid`); `NotificationRemoteDataSource.create/createMany`
+  now call it; `notifications` `create: if false`. The push trigger
+  (`onNotificationCreated`) is unchanged.
+- **M1 — swap consent forgery closed:** `shift_swaps` update enforces
+  per-party status transitions (target: pending→employeeApproved|rejected;
+  requester: pending|employeeApproved→cancelled; employee writes locked to
+  `status`+`updatedAt`); `approveSwap`'s existing
+  status==employeeApproved gate verified.
+- **M3 — proof tampering closed:** Storage `tasks/**` is create-only
+  (update/delete denied); uploads already use unique push-id paths (no fixed
+  `proof.jpg` remains), so evidence is immutable from upload.
+
+
+### Security (2026-07-03 — C2: compensation moved to a private subdocument)
+
+Production blocker fix (audit C2). Salary data lived on the branch-readable
+`users/{uid}` doc — Firestore reads are document-level, so every same-branch
+member received coworkers' `salaryAmount`/`salaryType`/`paymentMethod`/
+`paymentNumber` in normal app use (the branch query behind schedule/team
+surfaces). **Moved to `users/{uid}/private/compensation`:**
+
+- **Rules:** new `users/{uid}/private/{docId}` block — read = owner + admin
+  only (managers deliberately excluded); create/update = admin, or the owner
+  touching ONLY `paymentNumber` (field-diff enforced); delete denied.
+  **Deployed.**
+- **Client:** new plain `UserCompensation` value object
+  (`admin/domain/entities/user_compensation.dart`, SwapPolicy precedent);
+  the 4 fields REMOVED from `UserEntity`/`UserModel` (public user fetch can
+  never carry salary data); `UserAdminRepository.updateUserCompensation` now
+  writes the subdocument + new `getUserCompensation` (subdoc with legacy
+  fallback); `AdminUsersCubit.compensationFor` non-emitting on-demand load;
+  admin Details dialog / desktop inspector render compensation via
+  FutureBuilder; Edit-Info sheet pre-fetches it; profile `paymentNumber`
+  reads overlay from the subdoc and writes go to it (`editMap` no longer
+  emits the key).
+- **Migration:** `tool/migrate_compensation.js` (privileged REST, gcloud
+  identity; dry-run default · pre-write JSON backup (gitignored) ·
+  write→verify→delete per user · `--rollback` · final residue scan).
+  **Executed against production: 1/1 user migrated, 0 residue, VERIFIED.**
+- **Owner ruling applied while here:** the self-service Contact-details +
+  Salary-payment-number sections in Edit Profile (and the "Salary sent to"
+  profile row) are **manager/employee-only** — hidden for admin, and an
+  admin save never writes those fields (the admin manages compensation,
+  never receives it in-app).
+- Tests: `user_compensation_test` rewritten for the subdocument model (+
+  UserModel no-echo guard) and `user_admin_update_details_test` gains a
+  routes-to-subdoc test.
+
+
+### Added (2026-07-02 — Schedule 4.0: overflow · mobile actions · undo · validation)
+
+Stabilize-then-finish pass on the schedule (owner phase plan). Phase 1
+verified the mobile blank-My-Week fix (test green) and closed the last
+"schedule disappears on navigation" path; Phase 2 completed Schedule 4.0.
+
+- **Stabilization — silent same-scope reload:** `ScheduleCubit.load` no longer
+  emits `loading` when the data already on screen is the requested (branch,
+  week) — a screen revisit / pull-to-refresh keeps the schedule visible while
+  refetching (unchanged data → no emission at all, bloc dedupes). A real
+  branch/week change still shows the loader. `_MyWeekTab`'s `orElse` now
+  renders the loader instead of a blank `SizedBox` (stale-state guard).
+  New `schedule_silent_reload_test.dart`.
+- **Crowded cells:** `ShiftCell` shows all chips up to 4 people; beyond that,
+  the first 3 + a **tappable "+N more"** pill that opens the shift panel
+  (so a "+1 more" hiding exactly one person can never happen). The hover
+  "+ assign" affordance hides at chip capacity (no overpaint).
+- **Mobile move/switch/remove:** long-pressing a chip on touch now opens a
+  premium **action sheet** (`chip_action_sheet.dart`) — Move (mini week map,
+  invalid slots disabled *with the reason shown on tap*), Switch (pick a
+  coworker's (person, slot) row → **preview both sides of the trade** →
+  confirm), Remove. Desktop right-click menu gains "Switch shifts with…"
+  opening the same flow at the picker step — one flow, no platform drift.
+- **Undo (5s):** `ScheduleCubit` records the exact inverse of every
+  move / exchange / remove (`undoWindow` = 5s; single-use; invalidated by any
+  newer mutation; the undo never records an undo-of-undo). The view shows a
+  monochrome floating snackbar with **UNDO** for the same window.
+  New `schedule_undo_test.dart` (6 tests).
+- **Constraint validation:** new pure `domain/move_validation.dart` —
+  `checkMove` / `checkExchange` return `null` or a user-facing reason:
+  double-booking is **blocked** (with the day named), position compatibility
+  on an exchange follows the branch's existing `SwapPolicy` (the same rule
+  employee swaps obey — manager edits can never contradict it). Emptying a
+  shift is a **confirm dialog, not a block** (facts, never quotas — the
+  settled ruling). Every grid edit path (drag-move, drag-switch, context
+  menu, action sheet) funnels through validated helpers in
+  `manager_schedule_view` — blocked edits state their reason, successes
+  offer UNDO. New `move_validation_test.dart` (10 tests).
+- **Approval integrity (audited):** drag-to-switch does NOT bypass the swap
+  approval flow — `weekly_schedules` writes require `canReachBranch`
+  (admin/own-branch manager) so employees have no direct roster write path;
+  employee swaps still go request → coworker accept → manager approve via
+  the `approveSwap` callable (clients are denied `status → managerApproved`
+  by rules). Manager/admin direct edits are the sanctioned instant path.
+
+`flutter analyze` clean (7 pre-existing infos); **293 tests pass** (+25).
+
+### Added (2026-07-02 — production audit, beta plan, auto-schedule design)
+
+Three deliverable documents in the repo root (owner phase plan, phases 3–5):
+
+- **[PRODUCTION_AUDIT_2026-07-02.md](PRODUCTION_AUDIT_2026-07-02.md)** — full
+  security/performance/reliability/release audit. Critical: **C1** undeployed
+  rules/indexes/functions (the single biggest risk — deploy before beta),
+  **C2** salary fields readable by any same-branch member (recommend a
+  `users/{uid}/private/compensation` subdoc), **C3** iOS push entitlement
+  still missing. Five medium + five low findings with fixes. macOS debug +
+  web release builds verified green.
+- **[BETA_CHECKLIST.md](BETA_CHECKLIST.md)** — pre-flight deploy gate, role
+  walkthroughs (onboarding → daily workflow → schedule → oversight →
+  notifications), ten realistic scenario drills (S1 sick day … S10 new-hire
+  day one), and a lean beta feedback design (`feedback/{id}` collection + one
+  in-app sheet + admin triage list; ~half-day build, not yet implemented).
+- **[AUTO_SCHEDULE_DESIGN.md](AUTO_SCHEDULE_DESIGN.md)** — Phase 5 design
+  (NO implementation): pure-Dart `ScheduleGeneratorService` using greedy
+  weighted scoring + repair passes (constraint solver + rule engine evaluated
+  and rejected as over-engineering at 14 slots/week); hard constraints reuse
+  `MoveValidation`/`SwapValidation` semantics; draft → review-in-grid →
+  publish UX reusing the Schedule 4.0 edit tools; `staffingTemplate` as a
+  hidden generator input reconciling the no-quotas ruling. Feasibility: HIGH,
+  ~4 days phased.
+
+### Fixed (2026-07-02 — admin Pending Actions swap row now opens the queue)
+
+Owner report: clicking "N Swap Requests" on the admin home pushed the
+Schedule screen with **no branch selected** — the admin then had to pick the
+branch and hunt for the swap chip. The row's whole point is one-tap access.
+
+- `admin_dashboard_screen.dart` `onSwaps` now opens **`showSwapQueueSheet`**
+  directly (all-branches, actionable approve/reject — the same sheet the
+  schedule strip chip opens). The dashboard already streams
+  `ShiftSwapCubit.loadAll()`, so the sheet is live the moment it opens.
+  Reviews/Overdue rows keep their existing (correct) deep-links.
+- Deliberately did NOT add a swaps entry to the ⌘K palette — palette entries
+  are route-based and swaps live in a sheet; wiring a callback kind for one
+  entry is machinery the lean ruling rejects. The Pending Actions row is the
+  canonical entry point.
+
+`flutter analyze` clean (7 pre-existing infos); **268 tests pass**.
+
+### Added (2026-07-02 — macOS app icon + animated brand logo)
+
+Owner request: brand the macOS app icon (Dock/Finder) with the DROP artwork
+and make the in-app logo animated.
+
+- **macOS app icon:** new Big Sur-style icon — Apple-grid squircle (824pt,
+  r 185) with a dark monochrome gradient, hairline border, and the white
+  DROP wordmark centered — composed from `assets/drop_logo.png` by a Swift
+  script (AppKit, high-interpolation tint+composite). Master committed at
+  `assets/icon/app_icon_macos.png` (1024²); all 7 sizes regenerated into
+  `macos/Runner/Assets.xcassets/AppIcon.appiconset/` via `sips`. The
+  `flutter_launcher_icons` pubspec config gained a `macos:` block pointing
+  at the master for reproducibility (Android/iOS config untouched).
+  **Verified in the built bundle** — `DROP.app/Contents/Resources/
+  AppIcon.icns` carries the new artwork (macOS debug build green).
+- **`AnimatedDropLogo`** (`core/widgets/animated_drop_logo.dart`): the
+  wordmark sits at ~88% white and a soft **diagonal band of light sweeps
+  across it** once per ~3.2s cycle (ShaderMask `srcATop`, eased, rests
+  between passes — a beam, not a strobe; strictly monochrome). Wired where
+  the brand is the hero: the **Splash** lockup (on top of its existing
+  entrance fade/scale) and the **Login desktop brand panel**. Quiet chrome
+  marks stay static.
+
+`flutter analyze` clean (7 pre-existing infos); **268 tests pass** (+1
+AnimatedDropLogo loop test in `brand_chrome_test.dart`).
+⚠️ If the Dock still shows the old icon after installing, macOS icon cache
+may need a nudge (`killall Dock`).
+
+### Added (2026-07-02 — Schedule 3.1: drag-to-switch + brand polish)
+
+Owner request on the Branch Schedules surface: premium polish, the DROP logo
+on the screen, and person-onto-person drag ("drag Ziad onto Richard and they
+switch shifts").
+
+- **Drag-to-switch (exchange):** new `ScheduleCubit.exchange` — two people
+  trade slots in a single busy cycle, same safety ordering as `move` (both
+  assigned to their NEW slots first, then released from the old ones, so a
+  failed write never strands anyone off the schedule; self-swap and
+  same-slot trades are no-ops). `AssignmentChip` is now itself a
+  `DragTarget`: hovering a dragged person over another chip shows a primary
+  ring + ⇄ cue; dropping fires the exchange. The chip target sits inside the
+  cell target so it wins the hit test — dropping on a **person** = switch,
+  dropping on the cell's **empty space** = the existing move. Threaded
+  `onSwapChip` through `ShiftCell` → `ScheduleGrid` →
+  `manager_schedule_view` (admin + manager both get it). Desktop-only, like
+  all chip dragging; the grid hint now names the gesture.
+- **Brand on the schedule surface:** quiet `DropLogo` signature at the right
+  end of the grid-hint row; the two plain empty states ("Select a branch",
+  "No schedule for this week") upgraded to the brand-led `DropEmptyState`
+  (faded DROP mark + action), per the §9b empty-state convention.
+
+New `test/schedule_exchange_test.dart` (4 tests: exchange call ordering ·
+self-swap no-op · same-slot no-op · a real drag of one chip onto another
+fires `onSwapChip` and never the cell move). `flutter analyze` clean (7
+pre-existing infos); **267 tests pass** (+4).
+
+### Added (2026-07-02 — DROP logo rollout across the app chrome)
+
+Owner request: use the real DROP logo (`assets/drop_logo.png`) on the homepage
+and all important screens. Applied through the three shared chrome widgets so
+every screen is covered without per-screen edits, staying monochrome/lean:
+
+- **Role homes (mobile):** `RoleScaffold`'s app bar title is now a brand
+  lockup — `DropLogo` (22px, full white) + the dashboard title — on the
+  admin, manager, and employee homepages.
+- **Desktop (every screen):** the persistent `AppSidebar` brand header now
+  renders the real artwork (`DropLogo` 30px) instead of the typographic
+  `DropWordmark` (which remains in use by `BrandWatermark`).
+- **All migrated mobile screens:** `AdaptiveScaffold` gains
+  **`showBrandMark`** (default **on**) — a quiet, non-interactive tertiary
+  `DropLogo` (16px) closes every mobile app bar (tasks, schedule,
+  notifications, profile, settings, comms, admin screens…). Desktop skips it
+  (the sidebar already brands the window).
+- Refreshed `DropLogo`'s stale doc comment (still cited the removed
+  register/pending-approval pages).
+
+New `test/brand_chrome_test.dart` (4 tests: role-home lockup · sidebar
+artwork · mobile mark present · opt-out). `flutter analyze` clean (7
+pre-existing infos); **263 tests pass** (+4).
+
+### Fixed (2026-07-02 — mobile blank "My Week" after visiting the Swaps tab)
+
+Owner report: on mobile, Schedule → My Week rendered fine initially, but after
+opening the Swaps tab and returning, the week went blank (or only reappeared
+after a manual refresh). Reproduced first in a widget test, then fixed.
+
+- **Root cause (rendering, not data):** `TabBarView` disposes the My Week tab
+  when the user visits Swaps and recreates it on return. `_MyWeekTabState`'s
+  900 ms entrance `AnimationController` starts at 0.0 and was only ever played
+  from the `BlocConsumer` **listener** — which fires on state *changes* only.
+  On return the `ScheduleCubit` is still `loaded` and emits nothing new, so
+  the animation never ran and every section rendered at **opacity 0** (the
+  data was there, invisible). A manual refresh "fixed" it because the
+  loading → loaded transition finally fired the listener. Fix: on mount, if
+  the cubit is already `loaded`, snap the controller to 1.0 (content shows
+  instantly, no gratuitous replay); the entrance stagger still plays for real
+  load/refresh cycles. The Swaps flow itself was audited clean — it never
+  touches `ScheduleState`.
+- **Also fixed in the same screen:** `_load()` cached the current user into a
+  field **without `setState`**, so `SwapListView` was built with
+  `currentUid: ''` until an incidental rebuild — with an empty uid a swap
+  card matches neither requester nor target and renders **no
+  Accept/Decline/Cancel actions**. The uid is now resolved at build time
+  (`context.currentUser`), and the dead field is gone.
+- New regression test [`my_schedule_tab_test.dart`](test/my_schedule_tab_test.dart)
+  drives the real `MyScheduleScreen` through the tab round-trip and asserts
+  the week content is at full opacity after returning.
+
+`flutter analyze` clean (7 pre-existing infos); **259 tests pass** (+1).
+
+### Added (2026-07-02 — Phase 3: crash monitoring + production-grade observability)
+
+Product-hardening pass: complete crash capture + structured logging
+infrastructure, built on (and extending) the existing `AppLog` from the
+freeze-fix session — one centralized system, no scattered prints.
+
+- **Global crash capture** (new
+  [`core/observability/crash_reporter.dart`](lib/core/observability/crash_reporter.dart)):
+  four funnels converge on one structured report — `FlutterError.onError`
+  (framework errors; debug keeps the red-screen behaviour),
+  `PlatformDispatcher.instance.onError` (platform/engine + uncaught async;
+  returns true so a handled error can't kill the app), `runZonedGuarded`
+  (whole `main` bootstrap runs inside the guarded zone), and
+  `Isolate.current.addErrorListener`. Every crash produces the structured
+  🔴 CRASH block: timestamp · source · **screen · route · current user ·
+  role** (from `CrashContext`, fed passively by the navigator observers +
+  the auth listener) · error · **full stacktrace** · **last action** (the
+  last 🟡 CALL) · the last **30 log breadcrumbs**.
+- **Persistent crash log + export (Part 6):** the report is written to
+  `Application Support/last_crash.log` (path_provider, promoted to a direct
+  dependency) — **even in release**; the write path is re-entrancy-guarded
+  and exception-swallowing so the crash handler can never crash. On the next
+  launch a MaterialBanner offers **Copy report** (clipboard) / **Dismiss**;
+  both clear the file.
+- **`AppLog` extended to the full category set:** 🟡 CALL · 🟢 SUCCESS ·
+  🔵 ROUTE · **🟣 STATE** (new; `AppBlocObserver` transitions moved onto it,
+  formatted `loading → loaded`) · **🟠 WARNING** (new) · 🔴 ERROR. Every
+  method takes optional **`meta`** (rendered `{k=v …}`); every line =
+  timestamp + category + module + message. **Breadcrumb ring buffer**
+  (last 30 lines, all categories) records ALWAYS — including release, where
+  console output stays off — so crash reports carry the lead-up.
+- **Async performance timing:** `AppLog.time` now logs
+  `⏱ label finished in Nms` and **escalates >1000 ms to 🟠 WARNING**.
+  Instrumented hot spots: Firebase boot, session restore, FCM
+  permission/token, **schedule load** (`getSchedule` + `getUsersByBranch`),
+  **statistics load** (per-role), **notifications** (time-to-first-snapshot
+  on the stream).
+- Navigation logging (root + shell observers, exact paths, redirect
+  decisions) and cubit lifecycle logging were already live from the
+  freeze-fix session and are unchanged apart from the 🟣 recategorisation.
+
+`flutter analyze` clean (7 pre-existing infos); **258 tests pass** (+7
+`observability_test.dart`); macOS debug build green. New dependency:
+`path_provider ^2.1.4` (already in the lock transitively).
+
+### Fixed (2026-07-02 — macOS navigation freeze + APNS warning; global debug logging)
+
+Root-cause investigation of the reported macOS freeze ("clicking Tasks /
+Notifications sometimes freezes the UI") — full report delivered before any
+code change.
+
+- **CRITICAL — navigation freeze fixed.** Phase 2's `AppShell` wrapped the
+  `ShellRoute` child in an `AnimatedSwitcher` keyed by the active sidebar
+  destination. That child is **go_router's shell `Navigator` — one widget
+  holding a `GlobalKey`** — so the cross-fade mounted the same GlobalKey twice
+  mid-transition → "Duplicate GlobalKey detected" → corrupted element tree →
+  the shell navigator stopped responding to clicks. Desktop-only (mobile
+  passes through) and only on cross-destination navigation — matching the
+  symptoms exactly. **Fix: the wrapper is removed** (with a guard comment);
+  the intended desktop fade already exists at the page level (every shell
+  route's `CustomTransitionPage` fades on ≥1024pt), so nothing is visually
+  lost. Audited the rest of the navigation flow: redirect is loop-free and
+  fully synchronous, guards consistent, splash awaits `mounted`-guarded,
+  palette/inspector overlays live on the root navigator — no other defects.
+- **APNS warning fixed at the source.** `registerToken` fired
+  `FirebaseMessaging.getToken()` the instant sign-in completed, on a platform
+  (macOS) whose Runner has **no `aps-environment` entitlement** — the APNS
+  token can never arrive, so every sign-in logged "APNS token has not been
+  set…". New `supportsPushNotifications` /
+  `requiresApnsToken` gates in `platform_capabilities.dart`:
+  `NotificationService.init`/`registerToken` now skip cleanly on non-push
+  platforms (no permission prompt on desktop), and on Apple platforms
+  `getAPNSToken()` is checked (and aborted on null) **before** `getToken()`
+  — fixing the too-early call on iOS as well; `onTokenRefresh` re-registers
+  when a token appears later. Not the freeze (the call was fire-and-forget),
+  but it was real noise + a dead-end prompt.
+- **Global debug logging system** (`core/utils/app_logger.dart`, debug builds
+  only): **`AppLog`** — yellow `call()` function-entry logs, green
+  `success()`, red `error()`, cyan `route()`, and `time()` (async operation
+  timing: yellow start → green with elapsed ms → red + rethrow).
+  **`AppBlocObserver`** (wired in `main`) logs every cubit's
+  create/state-change/error/close. **`LoggingNavigatorObserver`** on BOTH the
+  root router and the shell navigator logs push/pop/replace with real paths
+  (transition pages now carry `name: state.uri`); the router redirect logs
+  every redirect decision (`redirect /a → /b`). Instrumented: Firebase boot,
+  session restore, FCM permission/token flow.
+
+`flutter analyze` clean (7 pre-existing infos); **251 tests pass**; macOS debug
+build green. ⚠️ Needs an on-Mac click-through of Tasks/Notifications to confirm
+the freeze is gone (this session verified the mechanism, not the running GUI).
+
+### Changed (2026-07-02 — Phase 2 premium desktop UX: Schedule 3.0 · executive dashboard · person inspector · ⌘K)
+
+Owner-approved visual/UX overhaul (mock-first: three approved wireframes;
+scope decisions locked as move-only drag & drop, full ⌘K palette, fact-chips
+without percentages). **Presentation layer only** — every interaction lands on
+writes the cubits already had; no schema/rules/repository change, no deploy.
+
+- **Schedule 3.0 (the priority screen).** Every assigned person is now an
+  individual **`AssignmentChip`** (avatar + name) — a click target, a desktop
+  **drag handle** (`Draggable`/`DragTarget`; drop on another cell = move via
+  new single-busy-cycle `ScheduleCubit.move`, assign-before-remove so a failed
+  write never strands anyone), and a **context-menu anchor** (right-click on
+  desktop, long-press on touch: move to opposite shift — disabled when it
+  would double-book — and remove). Cells rebuilt (`ShiftCell` → stateful):
+  hover border + inline "+ add", drop-target highlight, dashed empties, today
+  ring kept. New pure **`schedule_insights.dart`** derives week facts — open
+  shifts, one-person shifts, **double-booked people** (the new conflict
+  indicator: red hairline + dot on the chip, both slots of the day flagged) —
+  rendered as a clickable **insight strip** that *highlights* the matching
+  cells (rest of the grid dims 35%); all-clear collapses to one quiet line.
+  The old coverage %-bar card is gone (percentages re-read as quotas — a
+  settled rejection); the floating swap footer became a **"N swaps waiting"
+  chip** on the same strip → existing swap queue sheet. Tests:
+  `schedule_insights_test.dart` (4).
+- **macOS interaction layer (built once, reused).**
+  **`core/widgets/app_context_menu.dart`** (the app-wide right-click menu),
+  **`core/widgets/command_palette.dart`** — **⌘K** opens Go-to (sidebar
+  destinations with their ⌘n hints) · role-gated Actions · People (from the
+  warm task directory), keyboard-first (↑↓/↵/esc, prefix-ranked matching);
+  bound in `AppShell` next to ⌘1–⌘9 (`AppShell.sectionsForRole` now public so
+  palette and sidebar share one source). **`core/widgets/hover_lift.dart`**
+  (reusable hover rise+shadow). Sidebar navigation now **cross-fades the
+  content pane** (180 ms, keyed by active destination so intra-section pushes
+  never double-animate).
+- **Admin dashboard — executive two-column (desktop).** Wide main column tells
+  the operational story: greeting + **"Search or run a command ⌘K" pill** →
+  pulse hero → metric grid → new **Live activity feed** (newest
+  `ActivityEntry`s across all branches, actor · action · task · time-ago, via
+  the existing `activity_format` helpers). Fixed 330px right rail keeps the
+  queues in view: Pending Actions, quick actions + manage (compact 2-up), and
+  a new **Branch pulse** (per-branch open/review counts from the live stream).
+  The Phase D rebuild-scoping (`_StatsSection`/`_DynamicSection`/
+  `_PendingSection`) is preserved; mobile layout unchanged.
+- **Employee management.** The Details dialog is replaced on desktop by a
+  **person inspector** (`user_inspector_panel.dart`) — a 380px right
+  slide-over (260 ms) with header + inline actions (Edit info · Reset ·
+  De/Activate), Contact / Work / Compensation sections (empty rows collapse),
+  and this-week metric chips (`computeEmployeeMetrics`). **Right-click on any
+  employee card** opens the full action menu (Details / Edit info / Change
+  branch / Set position / Reset / Deactivate). **Create Account** on desktop
+  is a **2×2 of section cards** (Identity · Access · Work · Compensation) at
+  960px instead of one long column; mobile keeps the single column.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **251 tests pass** (+4);
+macOS debug build green.
+
+### Added (2026-07-02 — UI/UX audit pass: compensation record, self-service profile, ⌘ navigation)
+
+Full-app UI/UX audit against the "premium macOS app" brief (report:
+[UI_UX_AUDIT_2026-07-02.md](UI_UX_AUDIT_2026-07-02.md)). The audit **verified as
+already-done**: the DROP branding sweep (every user-visible surface — window
+title, Info.plists, Android label, web manifest, in-app brand primitives — was
+already DROP; the only `fbro` remnants are the registered Firebase iOS bundle id
+and the repo folder name, which must not change), the monochrome design system +
+desktop shell, the branded splash, and the schedule insights (coverage summary ·
+broken-assignment banner · pending-swap alert). Two owner rulings were applied
+over the brief: **no indigo** (strictly monochrome) and **lean, not enterprise**.
+Three real gaps were implemented:
+
+- **Compensation record (admin)** — `UserEntity`/`UserModel` gain
+  `salaryAmount` (double), `salaryType` (`monthly`/`weekly`/`daily`),
+  `paymentMethod` (`cash`/`bank`/`wallet`/`instapay`), and `paymentNumber` (the
+  wallet/account number salary is transferred to). `UserModel.toMap` excludes
+  all four (a routine write can never clobber them). New
+  `UserAdminRepository.updateUserCompensation` (always writes all four keys —
+  null clears); `AdminUsersCubit.updateDetails` gains a `writeCompensation`
+  block (one busy cycle for the Edit Info sheet) and `setCompensation(uid)`
+  serves the Create Account flow (a failed compensation write warns but never
+  blocks the credentials hand-off). New shared
+  `admin/presentation/widgets/compensation_fields.dart` (`CompensationFields` +
+  canonical option maps + `salarySummary`) renders the section on **Create
+  Account** and the **Edit Info** sheet; the employee **Details** dialog shows
+  Salary / Paid via / Payment no. **`firestore.rules`:** the `users` self-update
+  rule now freezes `salaryAmount`/`salaryType`/`paymentMethod` (admin-only);
+  `paymentNumber` stays self-editable. ⚠️ **Deploy required:**
+  `firebase deploy --only firestore:rules`.
+- **Self-service profile (employee)** — `ProfileEntity` gains `address`,
+  `emergencyContact`, `paymentNumber` (read side; the write pipeline already
+  supported the first two since onboarding), threaded `paymentNumber` through
+  `editMap` → datasource → repository → `UpdateProfile` → `ProfileCubit.save`.
+  **Edit Profile** gains validated "Contact details" (phone · address ·
+  emergency contact) and "Salary payment number" sections; the **Profile** page
+  displays them. Employees can now correct their own contact/payment data any
+  time — no admin relay, no stale copy (same `users/{uid}` doc the admin reads).
+- **⌘1–⌘9 sidebar navigation (macOS/desktop)** — `AppShell` binds meta+digit
+  shortcuts to the role's sidebar destinations (`CallbackShortcuts` +
+  autofocused `FocusScope`); `AppSidebar` rows reveal their `⌘n` hint on hover
+  for discoverability.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **247 tests pass** (+7 in
+new `test/user_compensation_test.dart`); freezed regenerated; macOS debug build
+green.
+
+### Added (2026-07-01 — Shift Assignment feature: assign a task to a shift, not a person)
+
+A task can now be assigned to **a shift** (Morning/Night) instead of named
+employees — for shift-bound routines ("Open Store", "Close Store") where the
+roster rotates daily. Read the existing task/schedule/recurrence code first
+(entities, models, repositories, cubits, Firestore schema) and **reused every
+matching primitive instead of duplicating**: the pre-existing `TaskEntity.shift`
+field (previously just an Operations filter tag) is repurposed as the real
+assignment target in this mode; visibility reuses `WeeklyScheduleEntity`'s
+existing `shiftsFor`/`isAssigned`/`employeesFor` (the same "who's on shift X
+today" logic `computeBranchWorkload` already relies on) with **zero new
+schedule math**; notifications reuse the existing `NotifyTaskEvent` call
+unchanged, just with a roster-resolved recipient list.
+
+- **New enums** `core/enums/task_assignment_type.dart` (`individual`/`team`/
+  `shift` — "team" is a UX-level alias for multi-select individual, no new
+  entity) and `template_repeat_mode.dart` (`once`/`daily`/`weekly`, distinct
+  from the existing per-task `RecurrenceFrequency`).
+- **`TaskEntity`/`TaskModel`** gain `assignmentType`, `instanceDate` (the
+  calendar day a shift instance is *for*), and `sourceTemplateId` (links a
+  generated instance back to its template). Missing `assignmentType` on any
+  pre-existing task parses to `individual` — **zero-migration back-compat**.
+- **New pure domain helper** [`canUserAccessTask`](lib/features/task/domain/task_access.dart)
+  — the single shared visibility gate: individual/team unchanged (`uid ∈
+  assigneeIds`); shift mode requires `uid` to be rostered on `task.shift`
+  *today* per the branch's weekly schedule. Tested in `test/task_access_test.dart`.
+- **`TaskCubit`** now merges **multiple task streams** instead of one: an
+  employee keeps their existing assignee stream and gains one
+  `watchShiftTasks(branchId, shift)` subscription per shift they're rostered on
+  today (`_subscribeEmployeeShifts`, via `ScheduleRepository.getSchedule` +
+  `shiftsFor` — a new `ScheduleRepository` dependency on `TaskCubit`); each
+  source's latest snapshot is merged/deduped by id on every update. Creating a
+  shift task resolves notification recipients from **today's roster**
+  (`_shiftRecipients`) instead of a fixed assignee list.
+- **Recurring shift tasks get a proper Template ⇄ Instance split** — not the
+  existing per-task `RecurrenceConfig` (approve-triggered, wrong for a shift
+  routine nobody may ever complete, and would silently reuse/mutate one task
+  forever instead of producing a trackable record per day). New
+  [`RecurringTaskTemplateEntity`](lib/features/task/domain/entities/recurring_task_template_entity.dart)
+  (collection `recurringTaskTemplates`, always branch-scoped) is the permanent
+  blueprint; the new Cloud Function **`generateShiftTaskInstances`**
+  (`functions/index.js`, `onSchedule` every 24h, modeled on the existing
+  `runTaskReminders`) creates one real `tasks/{id}` per due date at a
+  **deterministic id** (`rt_{templateId}_{yyyy-MM-dd}`, UTC) — the existence
+  check against that id **is** the entire duplicate-prevention guarantee (no
+  separate ledger needed), so every day's completion is independently
+  trackable and overlapping/duplicate function runs are always safe.
+  `TaskCubit.createRecurringShiftTemplate` also materializes **today's**
+  instance client-side immediately via a new dedicated repository method,
+  **`TaskRepository.createTaskWithId`** (a caller-assigned-id create that
+  stamps both `createdAt`/`updatedAt` as server timestamps) — deliberately
+  *not* a reuse of the existing `updateTask` (which only ever stamps
+  `updatedAt`, which would have left `createdAt` permanently null and broken
+  `sortTasksNewestFirst`'s "pending → always newest" ordering forever) — at the
+  **same** deterministic id the Cloud Function uses, so the two paths can
+  never double-create a day's instance.
+- **UI:** `task_action_sheets.dart` gains an "Assigned to" chip row (Employee/
+  Team/Shift, new-task only — the mode is fixed at creation and never
+  editable) that swaps the employee picker for `ShiftChipPicker` +
+  `ShiftRepeatPicker` (Once/Daily/Weekly [+ weekday]) in shift mode. New
+  `recurring_shift_task_sheets.dart` ("Manage Recurring Shift Tasks" —
+  list/pause-resume/delete), wired from `BranchOperationsScreen`'s app bar.
+  `task_card.dart`/`task_details_screen.dart` now show "Morning Shift"/"Night
+  Shift" instead of the (previously misleading) "Unassigned" for these tasks.
+- **`firestore.rules`:** new `isShiftTaskInMyBranch()` helper ORed into the
+  `tasks` read/update rules (branch-scoped trust, same bounded employee-write
+  fields as the existing `isTaskAssignee()` path — an explicit, owner-confirmed
+  tradeoff, not per-shift-verified; the UI is the real gate via client-side
+  `canUserAccessTask`), plus a new `recurringTaskTemplates/{id}` block mirroring
+  `task_templates`. New composite index (`tasks`: `branchId`+`assignmentType`+
+  `shift` in `firestore.indexes.json`).
+
+⚠️ **Deploy required before this works end-to-end:** `firebase deploy --only
+firestore:rules,firestore:indexes,functions` — until then `watchShiftTasks`
+fails `failed-precondition` and daily/weekly instances won't auto-generate
+(shift-mode task creation and the client-side "materialize today" path still
+work without the deploy).
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **240 tests pass**
+(incl. 8 new in `task_access_test.dart`); `dart run build_runner build
+--delete-conflicting-outputs` regenerated the `.freezed.dart` files;
+`node --check functions/index.js` clean.
+
+### Fixed (2026-07-01 — macOS photo upload: missing sandbox entitlement + dead-end camera options)
+
+Owner report: photo upload didn't work on the macOS build. Diagnosed by reading
+the `image_picker_macos`/`file_selector` plugin source directly (not guessed):
+on macOS, `image_picker` has no Photos-library integration — it opens the native
+`NSOpenPanel` (file chooser) and returns a real file path. Since the app runs
+**sandboxed** (`com.apple.security.app-sandbox`), reading that file's bytes back
+(`File(picked.path)`, done at every call site: profile avatar/cover, task
+proof/reference images, branch logo/cover) requires a declared entitlement —
+without it the panel opens and a photo can be picked, but the read then fails
+("Operation not permitted") and the upload never starts. Same class of bug as
+the earlier keychain/network entitlement fixes on this branch.
+
+- Added **`com.apple.security.files.user-selected.read-only`** to both
+  `macos/Runner/DebugProfile.entitlements` and `Release.entitlements` (kept in
+  sync, per the standing rule). Read-only is enough — the app never writes back
+  to the picked file.
+- `image_picker`'s `ImageSource.camera` isn't implemented on macOS/Windows/Linux
+  (throws `StateError` without a registered `cameraDelegate`), so the "Take a
+  photo" / "Record a video" rows in the Edit Profile avatar picker and the task
+  `AttachmentPickerField` were dead ends on desktop. New
+  `lib/core/utils/platform_capabilities.dart` (`supportsCameraCapture`, `!kIsWeb
+  && (Platform.isAndroid || Platform.isIOS)`) gates both, so desktop only offers
+  the picker path that actually works there; mobile is unchanged.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **233 tests pass**.
+Verified the picker-UI change live (emulator-backed web build — this container
+has no macOS build target); the sandbox-read fix itself is a documented Apple
+requirement for `NSOpenPanel`-sourced files under the App Sandbox, the same
+mechanism already confirmed for this plugin's `pickImage`/`pickMultiImage`.
+
+### Fixed (2026-07-01 — live QA on Firebase emulators: Employees grid + Change Password heading)
+
+First **live, running-app** verification pass (every earlier desktop-polish entry
+below was static: code + `flutter analyze`/`test` only). Installed a local Flutter
+SDK, built the app for web, pointed it at local Firebase Auth/Firestore/Storage
+emulators (seeded admin/manager/3 employees across 2 branches with tasks in every
+status), and drove it with Chromium at a 1440×900 desktop viewport through every
+sidebar destination for all three roles plus the full first-login gate. Confirmed
+the whole desktop redesign (dashboards, task/branch/schedule/comms/analytics
+surfaces, forms, sheets) renders and fits as documented. Found and fixed two real bugs:
+
+- **Employees page wasn't using the responsive grid.** `EmployeeManagementScreen`
+  rendered its `EmployeeCard`s in a plain `ListView` (never wrapped in
+  `ResponsiveCardGrid`), unlike the sibling Managers page — so on any desktop
+  window it stayed a single full-width column instead of the 2-up grid every other
+  admin list uses. Fixed by wrapping it in `ResponsiveCardGrid(runSpacing: 0,
+  ultrawideColumns: 2)`, matching `admin_users_list_view.dart`.
+- **Change Password showed its title twice.** The page still carried a
+  pre-migration in-body heading (`Text('Change\nPassword', style:
+  displayMedium)`) left over from before it was wired into `AdaptiveScaffold`,
+  which already renders the `title: 'Change Password'` in the app bar (mobile) /
+  page header (desktop). The leftover duplicate was hard-wrapped onto two lines by
+  a stale literal `\n`. Removed the redundant heading (and the now-unused
+  `isDark`/`AppColors` import), kept the one-line instructional subtitle.
+
+`flutter analyze` clean (7 pre-existing infos, 0 new); **233 tests pass**;
+`flutter build web --release` green. The emulator harness (seed script, temp
+`dev_tools/main_emulator.dart` entrypoint, Playwright driver) was scratch-only —
+not committed.
+
+### Changed (2026-07-01 — full-screen UI audit: form/detail column widths)
+
+Swept **every** page (39) for desktop-width behaviour. Beyond the card grids
+(below), the remaining issue was **forms and detail screens stretching to the
+full 1280 dashboard width**, which reads poorly. Added a `contentMaxWidth`
+override to `AdaptiveScaffold` (feeds its `ContentConstraint`) and applied a
+comfortable column width to the screens that are read, not scanned:
+
+- **Forms** centred to a narrow column: Change Password (560), Create Account &
+  Edit Profile (620).
+- **Read/list panes** centred: Settings & Profile (680), Notifications inbox
+  (760 — kept single-column; a chronological + swipeable feed shouldn't grid).
+- **Left full-bleed (correct as-is):** the schedule grids
+  (`branch_schedule_screen`, `schedule_management_screen`,
+  `constrainContent: false`), analytics (charts want width), and the dashboards
+  (already responsive grids via `RoleScaffold`). Auth-gate pages
+  (`force_password_change`, `profile_completion`) already centre via
+  `AuthScaffold`.
+- **Cleanup:** removed 3 dead unused-parameter warnings from `settings_page`
+  (`iconColor`/`labelColor`/`subtitleColor` — no caller ever set them). Analyzer
+  now 7 issues (was 10), all pre-existing `auth_cubit` style infos.
+
+`flutter analyze` (7 pre-existing infos, 0 new) · **231 tests pass** · macOS
+build green.
+
+### Fixed (2026-07-01 — oversized heroes/cards/dashboards on macOS)
+
+Owner feedback: on a large macOS window the cockpit cover, the stat cards and
+the dashboards were **way too big**. Fixes:
+
+- **Branch Operations cover was ~700px tall** (a 16:9 `AspectRatio` at full
+  width). Now a fixed slim **230px** banner (190 on mobile), image still
+  `BoxFit.cover`. (`branch_operations_screen._BranchHero`)
+- **Cockpit summary was a 2×2 grid of giant stat cards** → on desktop it's now
+  one tight **row of four** compact tiles. (`_SummaryHeader`)
+- **Admin dashboard laid every card 2-per-row** (each ~630px). `_grid` is now a
+  width-aware `ResponsiveCardGrid` (3–4 compact tiles per row on desktop).
+- **`StatGrid`** (shared manager + employee dashboards) was hardcoded to 2
+  columns → now **2–4** width-aware columns (`statGridColumns`).
+- **Global content width tightened 1280 → 1120** (`Breakpoints.contentMaxWidth`)
+  so heroes/cards/buttons read premium instead of sprawling on wide monitors.
+
+`flutter analyze` clean (7 pre-existing infos) · **233 tests pass** · macOS build
+green.
+
+### Fixed (2026-07-01 — task cards were still too wide on macOS)
+
+Follow-up to the card-grid work: at a typical ~1440 macOS window a 2-column task
+card was still ~540px — too wide/uncomfortable. Two fixes:
+
+- **`ResponsiveCardGrid` gained a `maxItemWidth` mode**: the column count is now
+  derived from the available width so **no card is ever wider than the limit**
+  (a lone card sits in one narrow cell instead of stretching). Applied to every
+  task-card surface at **480** (workload cards 460, branch-overview cards 520),
+  giving a comfortable ~350–465px card and 2–3 columns depending on window size.
+- **Two more task screens were still single-column full-width and are now
+  gridded:** the **Branch Operations cockpit** (employee `WorkloadCard`s — the
+  screen shown when you tap a branch) and **Employee detail** (that employee's
+  task cards, gridded within each status group). These were the widest offenders.
+
+`flutter analyze` clean (7 pre-existing infos) · **233 tests pass** (+2
+`maxItemWidth` cases) · macOS build green.
+
+### Changed (2026-07-01 — task screens use desktop width: responsive card grids)
+
+On wide macOS windows the task screens rendered one over-wide card per row (a
+single branch cover ballooned to ~half the screen). New reusable
+**`ResponsiveCardGrid`** (`core/widgets`) lays cards out width-aware: 1 column on
+mobile (unchanged), 2 on desktop, 3 on ultrawide — via a `Wrap` so each card
+keeps its natural height. An optional `runSpacing: 0` lets cards that already
+carry their own bottom margin (the task cards) avoid double spacing.
+
+- **Admin Task Management** (`admin_task_overview_screen`): branch cards now grid
+  (2/3 columns) so several branches show at once and each cover photo stays a
+  sensible height instead of half the screen.
+- **Branch task list** (`branch_task_list_screen`) and **My Tasks**
+  (`my_tasks_screen`, both the sectioned Active tab and the Done tab): task cards
+  lay out 2-up on desktop.
+- **Employees / Managers** (`admin_users_list_view`) and **Branches**
+  (`branch_management_screen`): user/branch cards lay out 2-up (these richer
+  management cards are capped at `ultrawideColumns: 2` so they never get cramped).
+- **Pending Review** (`pending_review_screen`): the leaf task-card level grids
+  2-up; the drill-down navigation rows stay full-width (they're nav, not cards).
+- **Scheduled broadcasts** (`broadcast_schedules_screen`): schedule cards grid
+  2-up.
+- **Deliberately left single-column** (premium ≠ everything-is-a-grid): the
+  Notifications inbox (chronological + swipe-to-action) and the Communications
+  feed (already a desktop command-center with a side panel).
+- Mobile layout unchanged (single column). `flutter analyze` clean;
+  **231 tests pass** (+4 `responsive_card_grid_test`); macOS build green.
+- Also removed the temporary keychain sign-in diagnostics (issue confirmed fixed)
+  while keeping the explicit `keychain-error` → actionable-message mapping.
+
+### Changed (2026-07-01 — desktop punch-list: 10 screens onto AdaptiveScaffold)
+
+Completed the desktop-header migration punch-list — every remaining screen on a
+raw mobile `AppBar` now uses `AdaptiveScaffold` (premium desktop page header
+beside the persistent sidebar; mobile keeps the app bar). All monochrome,
+`flutter analyze` clean (no new issues), macOS build green.
+
+- **AdaptiveScaffold gained two params:** `titleWidget` (a custom title lockup —
+  e.g. branch avatar + name — that replaces the plain title in both tiers) and
+  `bottomBar` (a pinned bottom action bar → `Scaffold.bottomNavigationBar` on
+  both tiers, for the broadcast send bar).
+- **Tasks:** `branch_task_list_screen` (+ subtitle), `pending_review_screen`
+  (custom drill-up `leading` preserved, contextual per-level subtitle),
+  `task_detail_loader_screen` (error state).
+- **Operations:** `branch_operations_screen` (reactive branch avatar+name via
+  `titleWidget`, scaled up on desktop), `employee_detail_screen` (avatar+name+role
+  lockup via `titleWidget`, scaled up on desktop).
+- **Schedule:** `my_schedule_screen` (TabBar via `bottom:`; removed a dead no-op
+  "Notifications" app-bar button).
+- **Admin:** `admin_users_list_view` (+ optional `subtitle` param).
+- **Communications:** `compose_broadcast_screen` (send bar via `bottomBar`),
+  `broadcast_detail_screen`, `broadcast_templates_screen`,
+  `broadcast_schedules_screen` — all with desktop subtitles where useful.
+- **Auth/onboarding pages now responsive too** (were the last stretched-mobile
+  screens). New reusable **`AuthScaffold`** (`features/auth/.../widgets`): mobile
+  keeps the transparent app bar; desktop centres the page content in a
+  comfortable ~440px column on the dark canvas (matching the Login panel) with a
+  slim top utility row (back button / "Sign out"). Applied to
+  `forgot_password_page` (back), `force_password_change_page` +
+  `profile_completion_page` (Sign out). Verified live on the Reset Password page.
+
+### Fixed (2026-07-01 — macOS keychain login, desktop window sizing, monochrome revert)
+
+Production-hardening pass on the `feature/macos-desktop` branch.
+
+- **macOS keychain login crash — SOLVED (root cause: Debug entitlements).**
+  Sign-in failed with *"An error occurred when accessing the keychain"*. **Audit
+  result:** the error is a `FirebaseAuthException` (code **`keychain-error`**)
+  from FirebaseAuth's **native** macOS session persistence — **not**
+  `flutter_secure_storage`, which is declared in `pubspec.yaml` but **unused
+  anywhere in `lib/`**. **Root cause:** `DebugProfile.entitlements` (used by
+  `flutter run -d macos`) was **missing `keychain-access-groups`**. Signing was
+  configured (`DEVELOPMENT_TEAM = 7Q3PY75VGH`, Apple Development cert) and the
+  Keychain Sharing capability had been added — but only to `Release.entitlements`,
+  so the **debug build** the owner was running had no declared keychain group and
+  FirebaseAuth's keychain write failed. **Fix:** added
+  `keychain-access-groups` = `$(AppIdentifierPrefix)com.example.fbro` to
+  `DebugProfile.entitlements` and restored the App Sandbox so Debug matches
+  Release. **Verified:** the debug binary now embeds
+  `keychain-access-groups = 7Q3PY75VGH.com.example.fbro`, signed by the Apple
+  Development cert. Also: added temporary debug-only diagnostics around the
+  sign-in call (`auth.keychain` log) and an explicit `keychain-error` →
+  actionable message in `auth_remote_datasource.dart`. **Keep both entitlement
+  files in sync going forward.**
+- **Desktop layout now actually engages.** The macOS window opened at the
+  storyboard default (~800×600), below the **1024pt** desktop breakpoint, so the
+  app fell back to the cramped *mobile* layout. `MainFlutterWindow.swift` now
+  opens at **1440×900** (clamped to the visible screen) with a **1024×720
+  minimum**, so the premium split/sidebar desktop UI always renders.
+- **Premium macOS window chrome.** `MainFlutterWindow.swift` hides the window
+  title text (`titleVisibility = .hidden`), makes the title bar transparent, and
+  sets the window background to the app near-black (`#0A0A0B`) — so the title bar
+  blends seamlessly into the app (Linear/Things style) instead of a grey bar
+  reading "DROP". Content is **not** pushed under the title bar, so the
+  traffic-light buttons never collide with the sidebar or page headers.
+- **Indigo reverted → strictly monochrome (locked owner ruling).** This branch
+  had reintroduced indigo `#5B5FEF` as the accent; per the standing decision the
+  product is monochrome. The `AppColors.accent*` tokens (32 call sites across 16
+  files) now resolve to the **white-on-black** accent — primary CTAs are white
+  with dark text, active nav / links / focus are white or a low-opacity white
+  wash. No call sites changed (every indigo fill was paired with `onAccent`);
+  stale "indigo" comments updated. `flutter analyze` clean (no new issues);
+  macOS debug build signs and runs; verified on the live login screen.
+- **Login brand panel uses the real DROP logo.** The desktop sign-in brand panel
+  rendered a typographic `DropWordmark` + accent dot; it now shows the actual
+  `assets/drop_logo.png` artwork (the DROP wordmark with the down-arrow), tinted
+  white via the existing `DropLogo` widget — matching the mobile `DropAuthMark`
+  lockup. Verified on the live login screen.
 
 ### Added (2026-06-30 — Premium desktop polish: schedule grid, task ticket, comms command-center)
 

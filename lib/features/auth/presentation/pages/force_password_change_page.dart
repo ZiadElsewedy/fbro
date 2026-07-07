@@ -4,6 +4,7 @@ import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/features/auth/presentation/widgets/auth_scaffold.dart';
 import 'package:drop/features/auth/presentation/animations/fade_slide_transition.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_state.dart';
@@ -50,22 +51,16 @@ class _ForcePasswordChangePageState extends State<ForcePasswordChangePage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        actions: [
-          TextButton(
-            onPressed: () => context.read<AuthCubit>().signOut(),
-            child: Text('Sign out',
-                style: AppTypography.label
-                    .copyWith(color: AppColors.textSecondary)),
-          ),
-        ],
-      ),
-      body: BlocListener<AuthCubit, AuthState>(
+    return AuthScaffold(
+      actions: [
+        TextButton(
+          onPressed: () => context.read<AuthCubit>().signOut(),
+          child: Text('Sign out',
+              style: AppTypography.label
+                  .copyWith(color: AppColors.textSecondary)),
+        ),
+      ],
+      child: BlocListener<AuthCubit, AuthState>(
         listener: (context, state) {
           state.whenOrNull(error: (msg) => AppSnackbar.error(context, msg));
         },

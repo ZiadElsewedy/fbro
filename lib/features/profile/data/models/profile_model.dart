@@ -32,6 +32,9 @@ class ProfileModel {
       country: str(map['country']),
       city: str(map['city']),
       website: str(map['website']),
+      address: str(map['address']),
+      emergencyContact: str(map['emergencyContact']),
+      paymentNumber: str(map['paymentNumber']),
       isVerified: (map['isVerified'] as bool?) ?? false,
       accountStatus: (map['accountStatus'] as String?) ?? 'active',
       createdAt: map.date('createdAt'),
@@ -90,6 +93,9 @@ class ProfileModel {
     // Onboarding fields (Profile Completion). Stored on users/{uid}.
     if (emergencyContact != null) map['emergencyContact'] = emergencyContact;
     if (address != null) map['address'] = address;
+    // NOTE (C2 fix): `paymentNumber` is deliberately NOT part of this map —
+    // it is private compensation data living in
+    // users/{uid}/private/compensation; the datasource writes it there.
     return map;
   }
 }

@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/errors/failures.dart';
+import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/features/notifications/domain/entities/notification_entity.dart';
 import 'package:drop/features/notifications/domain/repositories/notification_repository.dart';
 import 'package:drop/features/notifications/domain/usecases/mark_notification_read.dart';
@@ -28,6 +29,9 @@ class NotificationCubit extends Cubit<NotificationState> {
   String? _uid;
   bool _hasSnapshot = false;
 
+  /// When the initial subscription started — times the first snapshot.
+  DateTime? _subscribedAt;
+
   /// The current growing-window size (grows by [pageSize] on each [loadMore]).
   int _limit = pageSize;
 
@@ -51,9 +55,11 @@ class NotificationCubit extends Cubit<NotificationState> {
   /// the same user.
   Future<void> load(String uid) async {
     if (_uid == uid && _sub != null) return;
+    AppLog.call('notifications', 'load', details: 'uid=$uid');
     _uid = uid;
     _hasSnapshot = false;
     _limit = pageSize;
+    _subscribedAt = DateTime.now();
     emit(const NotificationState.loading());
     await _subscribe();
   }
@@ -76,6 +82,17 @@ class NotificationCubit extends Cubit<NotificationState> {
     await _sub?.cancel();
     _sub = _repository.watch(uid, limit: _limit).listen(
       (items) {
+        // Stream-based fetch: time-to-first-snapshot is the load duration.
+        final started = _subscribedAt;
+        if (!_hasSnapshot && started != null) {
+          _subscribedAt = null;
+          final ms = DateTime.now().difference(started).inMilliseconds;
+          final message =
+              '⏱ first snapshot: ${items.length} notifications in ${ms}ms';
+          ms >= AppLog.slowThreshold.inMilliseconds
+              ? AppLog.warning('notifications', '$message (slow)')
+              : AppLog.success('notifications', message);
+        }
         _hasSnapshot = true;
         _lastCount = items.length;
         emit(NotificationState.loaded(items));

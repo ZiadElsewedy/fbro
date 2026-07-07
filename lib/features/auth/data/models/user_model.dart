@@ -23,8 +23,12 @@ class UserModel {
   // ─── Account provisioning (admin-created) ───────────────────
   final bool mustChangePassword;
   final bool isProfileCompleted;
+  final bool hasCompletedOnboarding;
   final String employmentStatus;
   final String? createdBy;
+  // NOTE (C2 fix, 2026-07-03): compensation fields are deliberately absent —
+  // they live in users/{uid}/private/compensation (UserCompensation) and are
+  // loaded on demand, never as part of a user fetch.
 
   const UserModel({
     required this.uid,
@@ -44,6 +48,7 @@ class UserModel {
     this.position,
     this.mustChangePassword = false,
     this.isProfileCompleted = true,
+    this.hasCompletedOnboarding = true,
     this.employmentStatus = 'active',
     this.createdBy,
   });
@@ -77,6 +82,7 @@ class UserModel {
         position: entity.position,
         mustChangePassword: entity.mustChangePassword,
         isProfileCompleted: entity.isProfileCompleted,
+        hasCompletedOnboarding: entity.hasCompletedOnboarding,
         employmentStatus: entity.employmentStatus,
         createdBy: entity.createdBy,
       );
@@ -107,15 +113,22 @@ class UserModel {
         // trapped in the onboarding flow.
         mustChangePassword: map['mustChangePassword'] as bool? ?? false,
         isProfileCompleted: map['isProfileCompleted'] as bool? ?? true,
+        // Absent on every pre-onboarding-feature doc → default true = "already
+        // welcomed", so no existing user is ever shown the Welcome screen. Only
+        // a new account seeded false at profile completion triggers it.
+        hasCompletedOnboarding: map['hasCompletedOnboarding'] as bool? ?? true,
         employmentStatus: map['employmentStatus'] as String? ?? 'active',
         createdBy: map['createdBy'] as String?,
+        // Compensation keys on legacy (pre-migration) docs are intentionally
+        // NOT parsed — salary data never enters the public user entity.
       );
 
   /// Identity/auth fields only. The privileged + provisioning fields (`role`,
   /// `branchId`, `isActive`, `assignedShift`, `position`, `employmentStatus`,
   /// `createdBy`, `mustChangePassword`, `isProfileCompleted`) are intentionally
-  /// EXCLUDED so a routine write can never overwrite admin-assigned values. Those
-  /// are seeded once, server-side, by the `createUserAccount` Cloud Function.
+  /// EXCLUDED so a routine write can never overwrite admin-assigned values
+  /// (they are seeded once, server-side, by the `createUserAccount` Cloud
+  /// Function). Compensation lives in the private subdocument entirely.
   Map<String, dynamic> toMap() => {
         'uid': uid,
         'email': email,
@@ -146,6 +159,7 @@ class UserModel {
         position: position,
         mustChangePassword: mustChangePassword,
         isProfileCompleted: isProfileCompleted,
+        hasCompletedOnboarding: hasCompletedOnboarding,
         employmentStatus: employmentStatus,
         createdBy: createdBy,
       );

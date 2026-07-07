@@ -8,6 +8,7 @@ import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/utils/platform_capabilities.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/features/task/domain/entities/task_attachment.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
@@ -168,15 +169,16 @@ class AttachmentPickerField extends StatelessWidget {
                   _pickVideo(context, ImageSource.gallery);
                 },
               ),
-            _MenuRow(
-              icon: Icons.photo_camera_outlined,
-              label: 'Take a photo',
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _takePhoto(context);
-              },
-            ),
-            if (allowVideo)
+            if (supportsCameraCapture)
+              _MenuRow(
+                icon: Icons.photo_camera_outlined,
+                label: 'Take a photo',
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _takePhoto(context);
+                },
+              ),
+            if (allowVideo && supportsCameraCapture)
               _MenuRow(
                 icon: Icons.videocam_outlined,
                 label: 'Record a video',

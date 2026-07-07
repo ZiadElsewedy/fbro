@@ -22,6 +22,13 @@ enum ScheduleDay {
   /// Three-letter label for compact rows (e.g. `Sun`).
   String get shortLabel => label.substring(0, 3);
 
+  /// The operations weekend — **Thursday · Friday · Saturday** — when the shop
+  /// stays open later (night shift runs to 00:30 instead of 23:00).
+  bool get isWeekend =>
+      this == ScheduleDay.thursday ||
+      this == ScheduleDay.friday ||
+      this == ScheduleDay.saturday;
+
   /// Parses the stored string; unknown/missing → [sunday].
   static ScheduleDay fromString(String? raw) {
     for (final d in values) {

@@ -25,23 +25,25 @@ class AppColors {
   /// bottom-nav pill, and rails.
   static const Color primarySurface = Color(0x1FFFFFFF); // white ~12%
 
-  // ─── Indigo accent (interactive emphasis only) ───────────────────────────
-  // The monochrome system above is the base. This single chromatic accent is
-  // reserved for *important interactive* elements only — the active navigation
-  // destination, primary CTAs, focus rings, links, selection. Used sparingly so
-  // it stays meaningful (Stripe/Linear restraint), never as decoration.
-  static const Color accent = Color(0xFF5B5FEF); // DROP indigo
-  static const Color accentHover = Color(0xFF6E72F2);
-  static const Color accentPressed = Color(0xFF4A4ED6);
+  // ─── Accent (interactive emphasis) — MONOCHROME ──────────────────────────
+  // Per the locked owner ruling the product is **strictly monochrome**: there
+  // is no chromatic accent. These [accent]* tokens (kept for call-site
+  // stability) now resolve to the white-on-black accent — the active navigation
+  // destination, primary CTAs, focus rings, links and selection all read as
+  // white / a low-opacity white wash, never indigo. Used sparingly so the
+  // emphasis stays meaningful (Stripe/Linear restraint), never as decoration.
+  static const Color accent = Color(0xFFFFFFFF); // white accent (was indigo)
+  static const Color accentHover = Color(0xFFE5E5EA);
+  static const Color accentPressed = Color(0xFFC7C7CC);
 
-  /// Text/icon color that sits ON the indigo accent fill.
-  static const Color onAccent = Color(0xFFFFFFFF);
+  /// Text/icon color that sits ON the white accent fill (dark, like [onPrimary]).
+  static const Color onAccent = Color(0xFF0A0A0B);
 
-  /// Low-opacity indigo wash for the active nav pill, selected rows and focus
+  /// Low-opacity white wash for the active nav pill, selected rows and focus
   /// backgrounds.
-  static const Color accentSurface = Color(0x1F5B5FEF); // indigo ~12%
-  static const Color accentSurfaceStrong = Color(0x335B5FEF); // indigo ~20%
-  static const Color accentBorder = Color(0x4D5B5FEF); // indigo ~30%
+  static const Color accentSurface = Color(0x1FFFFFFF); // white ~12%
+  static const Color accentSurfaceStrong = Color(0x33FFFFFF); // white ~20%
+  static const Color accentBorder = Color(0x4DFFFFFF); // white ~30%
 
   // Monochrome gradient (white → light grey) — used sparingly on the accent.
   static const Color gradientStart = Color(0xFFFFFFFF);

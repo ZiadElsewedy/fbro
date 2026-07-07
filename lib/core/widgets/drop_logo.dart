@@ -6,7 +6,9 @@ import 'package:drop/core/theme/app_colors.dart';
 /// The PNG is a transparent-background outline, so it's tinted to [color]
 /// (white on the dark UI by default) via [BlendMode.srcIn] to stay crisp on the
 /// near-black background. Size it with [height]; the width follows the artwork's
-/// aspect ratio. Used app-wide: splash/loading, login, register, pending-approval.
+/// aspect ratio. Used app-wide: splash/loading, login, the role-home app bars,
+/// the desktop sidebar lockup, and the quiet mark on every mobile app bar
+/// (`AdaptiveScaffold.showBrandMark`).
 class DropLogo extends StatelessWidget {
   final double height;
   final Color? color;

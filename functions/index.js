@@ -48,6 +48,9 @@ const REMINDER_CONFIG = "reminderConfig";
 const BRANCHES = "branches";
 const WEEKLY_SCHEDULES = "weekly_schedules";
 const SHIFT_SWAPS = "shift_swaps";
+const RECURRING_TASK_TEMPLATES = "recurringTaskTemplates";
+const CONFIG = "config";
+const CASES = "cases";
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -958,6 +961,108 @@ exports.claimFcmToken = onDocumentUpdated(`${USERS}/{uid}`, async (event) => {
   }
 });
 
+/**
+ * The ONLY path a client has for creating in-app notifications (M2 fix,
+ * 2026-07-03). Direct `notifications/{id}` creates are denied by rules —
+ * every notification doc a client produces goes through this callable, which
+ * validates before writing (the docs then flow to `onNotificationCreated`
+ * for push, unchanged):
+ *   - the caller must be signed in, exist, and be active;
+ *   - `type` must be one of the CLIENT-legit types (task lifecycle + swap
+ *     workflow — reminder/broadcast types are produced server-side only);
+ *   - every recipient must exist and be REACHABLE by the caller: an admin
+ *     reaches anyone; everyone else only their own branch (covers all real
+ *     flows: coworker swaps, employee→manager review pings, manager→staff
+ *     assignments);
+ *   - title/body are length-capped; the payload is reduced to known keys;
+ *   - `senderUid` is SERVER-STAMPED from auth — never forgeable.
+ */
+const CLIENT_NOTIFICATION_TYPES = new Set([
+  "taskAssigned", "taskRework", "taskSubmitted", "taskApproved", "taskRejected",
+  "swapRequested", "swapAccepted", "swapApproved", "swapRejected",
+]);
+const NOTIFICATION_PAYLOAD_KEYS = ["taskId", "route", "revisionNumber", "swapId"];
+
+exports.sendNotification = onCall(async (request) => {
+  const auth = request.auth;
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Please sign in.");
+  }
+  const callerSnap = await db.collection(USERS).doc(auth.uid).get();
+  if (!callerSnap.exists) {
+    throw new HttpsError("permission-denied", "Your account profile was not found.");
+  }
+  const caller = callerSnap.data() || {};
+  if (caller.isActive === false) {
+    throw new HttpsError("permission-denied", "This account is disabled.");
+  }
+  const callerIsAdmin = (caller.role || "employee") === "admin";
+  const callerBranch = String(caller.branchId || "");
+
+  const items = Array.isArray(request.data && request.data.notifications)
+    ? request.data.notifications
+    : [];
+  if (items.length === 0 || items.length > 50) {
+    throw new HttpsError("invalid-argument", "Send between 1 and 50 notifications.");
+  }
+
+  const batch = db.batch();
+  let queued = 0;
+  for (const raw of items) {
+    const recipientUid = String((raw && raw.recipientUid) || "").trim();
+    const type = String((raw && raw.type) || "").trim();
+    const title = String((raw && raw.title) || "").trim().slice(0, 120);
+    const body = String((raw && raw.body) || "").trim().slice(0, 500);
+    if (!recipientUid || (!title && !body)) {
+      throw new HttpsError("invalid-argument", "Each notification needs a recipient and content.");
+    }
+    if (!CLIENT_NOTIFICATION_TYPES.has(type)) {
+      throw new HttpsError("invalid-argument", `"${type}" is not a client notification type.`);
+    }
+
+    // Reachability: admin → anyone; others → own branch only.
+    const recipientSnap = await db.collection(USERS).doc(recipientUid).get();
+    if (!recipientSnap.exists) continue; // stale recipient — skip, not fatal
+    const recipientBranch = String((recipientSnap.data() || {}).branchId || "");
+    const reachable = callerIsAdmin
+      || (callerBranch !== "" && recipientBranch === callerBranch);
+    if (!reachable) {
+      throw new HttpsError(
+        "permission-denied",
+        "You can only notify people in your own branch.",
+      );
+    }
+
+    // Sanitized payload — only the keys the tap handler understands.
+    const rawPayload = (raw && raw.payload) || {};
+    const payload = {};
+    for (const k of NOTIFICATION_PAYLOAD_KEYS) {
+      if (rawPayload[k] !== undefined && rawPayload[k] !== null) {
+        payload[k] = typeof rawPayload[k] === "number"
+          ? rawPayload[k]
+          : String(rawPayload[k]);
+      }
+    }
+
+    const ref = db.collection(NOTIFICATIONS).doc();
+    batch.set(ref, {
+      id: ref.id,
+      recipientUid,
+      senderUid: auth.uid, // server-stamped — the client cannot forge this
+      type,
+      title,
+      body,
+      readAt: null,
+      payload,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    queued++;
+  }
+
+  if (queued > 0) await batch.commit();
+  return { created: queued };
+});
+
 exports.onNotificationCreated = onDocumentCreated(
   `${NOTIFICATIONS}/{id}`,
   async (event) => {
@@ -997,6 +1102,7 @@ exports.onNotificationCreated = onDocumentCreated(
         // signed-in user (defense-in-depth #3). This path is already per-recipient.
         recipientUid: String(recipientUid),
         taskId: String(payload.taskId || ""),
+        caseId: String(payload.caseId || ""),
         broadcastId: String(payload.broadcastId || ""),
         category: String(payload.category || ""),
         revisionNumber:
@@ -1315,4 +1421,601 @@ exports.runTaskReminders = onSchedule("every 30 minutes", async () => {
 
   logger.info("task reminders run", { scanned: snap.size, sent });
 });
+
+// ── Recurring shift-task instance generation (Shift Assignment feature) ──
+
+// yyyy-MM-dd in UTC (a Cloud Function has no per-branch local time, so UTC is
+// the deterministic convention — mirrors ScheduleWeek's date-key format).
+function isoDate(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// 1 = Monday … 7 = Sunday (matches RecurringTaskTemplateEntity.weekday /
+// Dart's DateTime.weekday convention).
+function isoWeekday(d) {
+  const jsDay = d.getUTCDay(); // 0 = Sunday … 6 = Saturday
+  return jsDay === 0 ? 7 : jsDay;
+}
+
+// weekly_schedules.assignments.<day> key spelling — matches SWAP_DAY_INDEX.
+const SCHEDULE_DAY_NAMES = [
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+];
+function scheduleDayName(d) {
+  return SCHEDULE_DAY_NAMES[d.getUTCDay()];
+}
+
+// The Sunday (UTC midnight) that starts the week containing d, as a
+// yyyy-MM-dd key — mirrors ScheduleWeek.startOf/docId (`<branchId>_<key>`).
+function weekStartKey(d) {
+  const sunday = new Date(Date.UTC(
+    d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - d.getUTCDay(),
+  ));
+  return isoDate(sunday);
+}
+
+/**
+ * Daily instance generation for recurring shift-task templates (Shift
+ * Assignment feature). Scans active `recurringTaskTemplates` and, for each one
+ * due today (daily, or weekly matching today's ISO weekday), creates *one*
+ * real `tasks/{id}` document at a **deterministic id**
+ * (`rt_{templateId}_{yyyy-MM-dd}`, UTC) — the existence check against that id
+ * is the entire duplicate-prevention guarantee (no separate ledger needed),
+ * so overlapping/duplicate runs are always safe. Mirrors `runTaskReminders`'s
+ * style (small collection scan, per-item try/catch, summary log). Notifies
+ * today's rostered employees by writing straight to `notifications` (reuses
+ * the existing `onNotificationCreated` trigger — no new push logic) and
+ * `swapAssignedUids` (already defined above for `approveSwap`) to read the
+ * roster off the same `weekly_schedules` doc shape.
+ */
+exports.generateShiftTaskInstances = onSchedule("every 24 hours", async () => {
+  const now = new Date();
+  const todayKey = isoDate(now);
+  const todayDow = isoWeekday(now);
+  const dayName = scheduleDayName(now);
+
+  const snap = await db
+    .collection(RECURRING_TASK_TEMPLATES)
+    .where("active", "==", true)
+    .get();
+
+  let created = 0;
+  for (const doc of snap.docs) {
+    const t = doc.data() || {};
+    const repeat = t.repeat || "daily";
+    // "once" is defensive only — the client never persists a template row
+    // with repeat:"once" (a single shift task is created directly instead).
+    if (repeat === "once") continue;
+    if (repeat === "weekly" && Number(t.weekday) !== todayDow) continue;
+
+    const branchId = String(t.branchId || "");
+    if (!branchId) continue;
+    const shift = t.shift === "night" ? "night" : "morning";
+    const instanceId = `rt_${doc.id}_${todayKey}`;
+    const ref = db.collection(TASKS).doc(instanceId);
+
+    try {
+      if ((await ref.get()).exists) continue; // already generated today
+
+      const checklist = Array.isArray(t.checklistItems)
+        ? t.checklistItems.map((c) => ({
+            id: String((c && c.id) || ""),
+            title: String((c && c.title) || ""),
+            isRequired: !c || c.isRequired !== false,
+            completed: false,
+            completedAt: null,
+          }))
+        : [];
+
+      await ref.set({
+        id: instanceId,
+        title: t.title || "",
+        description: t.description || null,
+        type: "daily",
+        status: "pending",
+        priority: t.priority || "normal",
+        branchId,
+        assigneeIds: [],
+        assignedEmployeeId: null,
+        checklist,
+        referenceAttachments: [],
+        createdBy: t.createdBy || null,
+        assignedShiftId: null,
+        shift,
+        assignmentType: "shift",
+        instanceDate: admin.firestore.Timestamp.fromDate(
+          new Date(`${todayKey}T00:00:00.000Z`),
+        ),
+        sourceTemplateId: doc.id,
+        deadline: null,
+        notes: null,
+        proofImageUrl: null,
+        startedAt: null,
+        submittedAt: null,
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        reviewNotes: null,
+        revisionNumber: 0,
+        requiresRework: false,
+        rejectionReason: null,
+        recurrence: null,
+        activityLog: [
+          {
+            status: "pending",
+            actorId: "system",
+            actorName: null,
+            at: admin.firestore.Timestamp.fromDate(now),
+            note: "Auto-generated (recurring shift task)",
+            attachments: [],
+          },
+        ],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      created++;
+
+      // Notify today's rostered employees on this shift (best-effort).
+      try {
+        const scheduleId = `${branchId}_${weekStartKey(now)}`;
+        const schedSnap = await db.collection(WEEKLY_SCHEDULES).doc(scheduleId).get();
+        const uids = schedSnap.exists
+          ? swapAssignedUids(schedSnap.data().assignments || {}, dayName, shift)
+          : [];
+        if (uids.length) {
+          const batch = db.batch();
+          for (const uid of uids) {
+            const nref = db.collection(NOTIFICATIONS).doc();
+            batch.set(nref, {
+              id: nref.id,
+              recipientUid: uid,
+              senderUid: "system",
+              type: "taskAssigned",
+              title: "New Task Assigned",
+              body: t.title || "A new shift task was assigned",
+              readAt: null,
+              payload: { taskId: instanceId, route: "task_details" },
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          await batch.commit();
+        }
+      } catch (notifyErr) {
+        logger.warn("shift task notify failed", {
+          taskId: instanceId,
+          error: String(notifyErr),
+        });
+      }
+    } catch (err) {
+      logger.warn("shift task instance generation failed", {
+        templateId: doc.id,
+        error: String(err),
+      });
+    }
+  }
+
+  logger.info("shift task instances generated", { templates: snap.size, created });
+});
+
+/**
+ * Task retention sweep (Home Dashboard redesign, P3). Runs daily:
+ *
+ *  1. ARCHIVE — every APPROVED task older than `archiveAfterDays` (default 30)
+ *     is soft-archived: `archivedAt` is stamped so the client filters it out of
+ *     active lists/feeds. The doc STAYS in `tasks` (never moved to another
+ *     collection), so statistics' lifetime "completed" counts, audit history,
+ *     and `/task/:id` deep-links keep working. When `coldTierImages` is true its
+ *     Storage evidence under `tasks/{id}/` is re-classed to COLDLINE (~85%
+ *     cheaper storage; archived proof is rarely read again).
+ *  2. DELETE (opt-in) — only when `deleteAfterDays` is a positive number: an
+ *     archived task older than that is hard-deleted, its `tasks/{id}/` Storage
+ *     prefix FIRST (so evidence never orphans), then the doc. Off by default —
+ *     soft archive is forever unless an org explicitly opts into purging.
+ *
+ * Config in `config/taskRetention` (defaults applied when the doc is absent).
+ * All queries are single-field inequalities on an auto-indexed field (no
+ * composite index to deploy). Idempotent + outage-tolerant: the archive pass
+ * pages by `approvedAt` with a cursor and skips already-archived docs, so it
+ * never starves; the Storage ops are safe to repeat.
+ */
+exports.taskHousekeeping = onSchedule("every 24 hours", async () => {
+  const now = Date.now();
+  const nowTs = admin.firestore.Timestamp.fromMillis(now);
+  const cutoff = (days) =>
+    admin.firestore.Timestamp.fromMillis(now - days * 24 * 60 * 60 * 1000);
+
+  // Config (defaults when the doc is absent). `deleteAfterDays` is opt-in: any
+  // non-positive / missing value keeps soft archive forever.
+  let cfg = { archiveAfterDays: 30, coldTierImages: true, deleteAfterDays: null };
+  try {
+    const cSnap = await db.collection(CONFIG).doc("taskRetention").get();
+    if (cSnap.exists) {
+      const c = cSnap.data() || {};
+      cfg = {
+        archiveAfterDays: Number.isFinite(c.archiveAfterDays) && c.archiveAfterDays > 0
+          ? c.archiveAfterDays : 30,
+        coldTierImages: c.coldTierImages !== false,
+        deleteAfterDays: Number.isFinite(c.deleteAfterDays) && c.deleteAfterDays > 0
+          ? c.deleteAfterDays : null,
+      };
+    }
+  } catch (_) {
+    // best-effort; use defaults
+  }
+
+  const bucket = admin.storage().bucket();
+  let archived = 0;
+  let coldTiered = 0;
+  let deleted = 0;
+
+  // Best-effort: re-class every object under tasks/{id}/ to a colder class.
+  const coldTier = async (taskId) => {
+    try {
+      const [files] = await bucket.getFiles({ prefix: `${TASKS}/${taskId}/` });
+      for (const f of files) {
+        try {
+          const [meta] = await f.getMetadata();
+          if (String(meta.storageClass || "STANDARD").toUpperCase() === "COLDLINE") continue;
+          await f.setStorageClass("COLDLINE");
+          coldTiered++;
+        } catch (e) {
+          logger.warn("cold-tier object failed", { taskId, file: f.name, error: String(e) });
+        }
+      }
+    } catch (e) {
+      logger.warn("cold-tier list failed", { taskId, error: String(e) });
+    }
+  };
+
+  // ── 1. ARCHIVE approved tasks past the window ──
+  // `approvedAt` is set ONLY on a currently-approved task (an admin reopen
+  // clears it), so `approvedAt <= cutoff` returns exactly the approved tasks
+  // old enough to archive. We page by `approvedAt` (cursor) and skip any doc
+  // already archived, so re-runs / long outages can't starve un-archived docs.
+  const RUN_CAP = 5000; // bound per-run scan; daily cadence drains any backlog
+  try {
+    let scanned = 0;
+    let last = null;
+    // eslint-disable-next-line no-constant-condition
+    while (scanned < RUN_CAP) {
+      let q = db
+        .collection(TASKS)
+        .where("approvedAt", "<=", cutoff(cfg.archiveAfterDays))
+        .orderBy("approvedAt", "asc")
+        .limit(BATCH_LIMIT);
+      if (last) q = q.startAfter(last);
+      const snap = await q.get();
+      if (snap.empty) break;
+
+      const batch = db.batch();
+      const toColdTier = [];
+      let n = 0;
+      for (const doc of snap.docs) {
+        last = doc;
+        const t = doc.data() || {};
+        if ((t.status || "") !== "approved") continue; // reopened → skip
+        if (t.archivedAt) continue; // already archived on a prior run
+        batch.update(doc.ref, { archivedAt: nowTs });
+        if (cfg.coldTierImages) toColdTier.push(doc.id);
+        n++;
+      }
+      if (n > 0) await batch.commit();
+      archived += n;
+      for (const id of toColdTier) await coldTier(id);
+
+      scanned += snap.size;
+      if (snap.size < BATCH_LIMIT) break;
+    }
+  } catch (err) {
+    logger.warn("task archive sweep failed", { error: String(err) });
+  }
+
+  // ── 2. DELETE archived tasks past the (opt-in) purge window ──
+  if (cfg.deleteAfterDays) {
+    try {
+      const snap = await db
+        .collection(TASKS)
+        .where("archivedAt", "<=", cutoff(cfg.deleteAfterDays))
+        .limit(BATCH_LIMIT)
+        .get();
+      for (const doc of snap.docs) {
+        // Evidence first, so a crash between the two never orphans Storage.
+        try {
+          await bucket.deleteFiles({ prefix: `${TASKS}/${doc.id}/`, force: true });
+        } catch (e) {
+          logger.warn("delete task storage failed", { taskId: doc.id, error: String(e) });
+        }
+        await doc.ref.delete();
+        deleted++;
+      }
+    } catch (err) {
+      logger.warn("task delete sweep failed", { error: String(err) });
+    }
+  }
+
+  logger.info("task housekeeping done", { archived, coldTiered, deleted });
+});
+
+/**
+ * ── Case Management notification fan-out ─────────────────────────────────────
+ *
+ * Case notifications are produced SERVER-SIDE (not by the client) because a
+ * case's reporter identity lives in the private `cases/{id}/reporter/identity`
+ * subdoc — a manager can't read it, so they can't notify a confidential reporter
+ * from their own client. The Admin SDK also owns the `opening` + `system`
+ * messages (clients can't forge them — see firestore.rules). These triggers
+ * write per-recipient `notifications/{id}` docs with the Admin SDK (bypassing
+ * the `create: if false` rule); `onNotificationCreated` then delivers the FCM
+ * push (they intentionally do NOT set `pushedByFunction`). `senderUid` is left
+ * empty (system) so a recipient reading their own notification can never resolve
+ * a confidential reporter from it.
+ */
+
+// Reads the reporter uid from a case's private identity subdoc (best-effort).
+async function caseReporterUid(caseId) {
+  try {
+    const idSnap = await db
+      .collection(CASES)
+      .doc(caseId)
+      .collection("reporter")
+      .doc("identity")
+      .get();
+    if (idSnap.exists) return String((idSnap.data() || {}).createdByUserId || "");
+  } catch (e) {
+    logger.warn("case identity read failed", { caseId, error: String(e) });
+  }
+  return "";
+}
+
+// The routed recipients for a case (branch managers and/or admins), minus the
+// reporter. Mirrors the client `CaseRecipient` routing.
+async function resolveCaseRecipients(caseData, excludeUid) {
+  const recipient = String(caseData.recipient || "manager");
+  const branchId = String(caseData.branchId || "");
+  const out = new Set();
+  if (recipient === "manager" || recipient === "both") {
+    try {
+      const snap = await db
+        .collection(USERS)
+        .where("branchId", "==", branchId)
+        .where("role", "==", "manager")
+        .get();
+      snap.docs.forEach((d) => {
+        if ((d.data() || {}).isActive !== false) out.add(d.id);
+      });
+    } catch (e) {
+      logger.warn("case manager lookup failed", { error: String(e) });
+    }
+  }
+  if (recipient === "admin" || recipient === "both") {
+    try {
+      const snap = await db.collection(USERS).where("role", "==", "admin").get();
+      snap.docs.forEach((d) => {
+        if ((d.data() || {}).isActive !== false) out.add(d.id);
+      });
+    } catch (e) {
+      logger.warn("case admin lookup failed", { error: String(e) });
+    }
+  }
+  out.delete(excludeUid);
+  out.delete("");
+  return [...out];
+}
+
+// Writes one in-app notification doc per recipient (Admin SDK). onNotificationCreated
+// handles the push. senderUid is intentionally empty (privacy). Best-effort.
+async function writeCaseNotifications(recipientUids, { type, title, body, caseId }) {
+  const uids = [...new Set(recipientUids.filter(Boolean))];
+  if (uids.length === 0) return;
+  const payload = { caseId, route: "case_details" };
+  try {
+    for (let i = 0; i < uids.length; i += BATCH_LIMIT) {
+      const slice = uids.slice(i, i + BATCH_LIMIT);
+      const batch = db.batch();
+      for (const uid of slice) {
+        const ref = db.collection(NOTIFICATIONS).doc();
+        batch.set(ref, {
+          id: ref.id,
+          recipientUid: uid,
+          senderUid: "", // system — never leak a confidential reporter
+          type,
+          title: String(title || "").slice(0, 120),
+          body: String(body || "").slice(0, 500),
+          readAt: null,
+          payload,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    logger.warn("failed to persist case notifications", { error: String(err) });
+  }
+}
+
+// A one-line preview of a message for the inbox row.
+function caseMessagePreview(text, attachments) {
+  const t = String(text || "").trim();
+  if (t) return t.slice(0, 140);
+  if (Array.isArray(attachments) && attachments.length > 0) return "📎 Attachment";
+  return "";
+}
+
+// Human label for a status-change system message.
+function caseStatusSystemLabel(status) {
+  switch (status) {
+    case "inDiscussion": return "Marked In Discussion";
+    case "waitingResponse": return "Waiting for a response";
+    case "closed": return "Case closed";
+    case "open": return "Case reopened";
+    default: return "Status updated";
+  }
+}
+
+// Appends a server-authored message (opening / system) + bumps the parent case.
+// Clients cannot write these kinds (firestore.rules), so they are trusted.
+async function appendServerCaseMessage(caseId, message, preview) {
+  try {
+    const msgRef = db.collection(CASES).doc(caseId).collection("messages").doc();
+    const batch = db.batch();
+    batch.set(msgRef, {
+      ...message,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    batch.update(db.collection(CASES).doc(caseId), {
+      lastMessagePreview: preview,
+      messageCount: admin.firestore.FieldValue.increment(1),
+      lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  } catch (e) {
+    logger.warn("failed to append server case message", { caseId, error: String(e) });
+  }
+}
+
+// A new case → write the opening message (de-identified per privacy) + notify
+// the routed recipients (branch managers / admins).
+exports.onCaseCreated = onDocumentCreated(`${CASES}/{caseId}`, async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const caseData = snap.data() || {};
+  const caseId = event.params.caseId;
+
+  const reporterUid = await caseReporterUid(caseId);
+  const confidential = String(caseData.privacy || "normal") !== "normal";
+  const description = String(caseData.description || "");
+  const attachments = Array.isArray(caseData.attachments) ? caseData.attachments : [];
+
+  await appendServerCaseMessage(
+    caseId,
+    {
+      authorId: confidential ? "" : reporterUid,
+      authorName: confidential
+        ? "Confidential Sender"
+        : String(caseData.reporterDisplayName || "Reporter"),
+      authorRole: "reporter",
+      kind: "opening",
+      text: description || null,
+      attachments,
+      systemEvent: null,
+    },
+    caseMessagePreview(description, attachments),
+  );
+
+  const recipients = await resolveCaseRecipients(caseData, reporterUid);
+  if (recipients.length === 0) return;
+  const urgent = caseData.urgent === true;
+  await writeCaseNotifications(recipients, {
+    type: "caseOpened",
+    title: urgent ? "New Case • Urgent" : "New Case",
+    body: String(caseData.subject || "A new case was opened"),
+    caseId,
+  });
+});
+
+// A case status changed → append a system message + notify the affected party.
+// Only reacts to a real status transition (its own lastMessage* bumps do not
+// change status, so there is no re-fire loop).
+exports.onCaseUpdated = onDocumentUpdated(`${CASES}/{caseId}`, async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const caseId = event.params.caseId;
+
+  const beforeStatus = String(before.status || "open");
+  const afterStatus = String(after.status || "open");
+  if (beforeStatus === afterStatus) return;
+
+  const label = caseStatusSystemLabel(afterStatus);
+  await appendServerCaseMessage(
+    caseId,
+    {
+      authorId: "",
+      authorName: "System",
+      authorRole: "system",
+      kind: "system",
+      text: label,
+      attachments: [],
+      systemEvent: afterStatus,
+    },
+    label,
+  );
+
+  const reporterUid = await caseReporterUid(caseId);
+  const reopened = beforeStatus === "closed" && afterStatus !== "closed";
+  if (reopened) {
+    const recipients = await resolveCaseRecipients(after, reporterUid);
+    await writeCaseNotifications(recipients, {
+      type: "caseUpdated",
+      title: "Case Reopened",
+      body: String(after.subject || "A case was reopened"),
+      caseId,
+    });
+  } else if (reporterUid) {
+    const closed = afterStatus === "closed";
+    const bodyByStatus = {
+      inDiscussion: "Your case is now in discussion",
+      waitingResponse: "A response is needed on your case",
+      closed: "Your case was closed",
+    };
+    await writeCaseNotifications([reporterUid], {
+      type: closed ? "caseClosed" : "caseUpdated",
+      title: closed ? "Case Closed" : "Case Update",
+      body: bodyByStatus[afterStatus] || String(after.subject || "Case updated"),
+      caseId,
+    });
+  }
+});
+
+// A new conversation message → bump the parent case + notify the OTHER party.
+// opening/system messages are handled by their own creators (skipped here).
+exports.onCaseMessageCreated = onDocumentCreated(
+  `${CASES}/{caseId}/messages/{messageId}`,
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const message = snap.data() || {};
+    const caseId = event.params.caseId;
+    if (String(message.kind || "message") !== "message") return;
+
+    const preview = caseMessagePreview(
+      message.text,
+      Array.isArray(message.attachments) ? message.attachments : [],
+    );
+    try {
+      await db.collection(CASES).doc(caseId).update({
+        lastMessagePreview: preview,
+        messageCount: admin.firestore.FieldValue.increment(1),
+        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      logger.warn("failed to bump case on message", { caseId, error: String(e) });
+    }
+
+    const caseSnap = await db.collection(CASES).doc(caseId).get();
+    const caseData = caseSnap.exists ? (caseSnap.data() || {}) : {};
+    const reporterUid = await caseReporterUid(caseId);
+    const authorId = String(message.authorId || "");
+    const byReporter = authorId === "" || authorId === reporterUid;
+    if (byReporter) {
+      const recipients = await resolveCaseRecipients(caseData, reporterUid);
+      await writeCaseNotifications(recipients, {
+        type: "caseReplied",
+        title: "New Case Reply",
+        body: String(caseData.subject || "New reply on a case"),
+        caseId,
+      });
+    } else if (reporterUid && authorId !== reporterUid) {
+      await writeCaseNotifications([reporterUid], {
+        type: "caseReplied",
+        title: "New Case Reply",
+        body: String(caseData.subject || "New reply on your case"),
+        caseId,
+      });
+    }
+  },
+);
 

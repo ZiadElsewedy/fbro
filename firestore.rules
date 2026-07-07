@@ -28,6 +28,27 @@ service cloud.firestore {
       return isAdmin() || (isManager() && branch == selfBranch());
     }
 
+    // Case Management: the reporter's uid is NOT on the case doc (privacy split
+    // — it lives in the private `cases/{id}/reporter/identity` subdoc, readable
+    // only by the reporter + an admin). This resolves whether the caller is the
+    // reporter of [caseId], for the owner's own-case reads + message writes. Two
+    // reads (exists + get); Firestore caches per request. Only used on
+    // SINGLE-doc gets — the manager/admin list queries are proven safe by the
+    // pure `visibleToManager` field check, never this get().
+    function isCaseReporter(caseId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/cases/$(caseId)/reporter/identity)
+        && get(/databases/$(database)/documents/cases/$(caseId)/reporter/identity)
+             .data.get('createdByUserId', '') == request.auth.uid;
+    }
+
+    // The case doc's data (status / branch / visibility), used by the `messages`
+    // subcollection rules to gate on the parent. Firestore caches this get()
+    // per request, so repeated calls within one evaluation bill a single read.
+    function caseData(caseId) {
+      return get(/databases/$(database)/documents/cases/$(caseId)).data;
+    }
+
     // ── Users ──────────────────────────────────────────────────────
     // DROP is ADMIN-PROVISIONED — there is no public registration. Accounts are
     // created server-side by the `createUserAccount` Cloud Function (Admin SDK,
@@ -51,9 +72,14 @@ service cloud.firestore {
 
       // Admin: full control.
       // Self: profile fields + the first-login flags (mustChangePassword,
-      //   isProfileCompleted) + non-privileged fields (fcmToken). All PRIVILEGED
-      //   fields stay frozen: role, isActive, branchId, assignedShift, position,
-      //   employmentStatus, createdBy.
+      //   isProfileCompleted, hasCompletedOnboarding — the one-time Welcome
+      //   flag) + non-privileged fields (fcmToken, and paymentNumber — the
+      //   employee's own salary-receiving number). All PRIVILEGED fields (below)
+      //   stay frozen — the flags above are permitted precisely because they are
+      //   NOT in that freeze-list: role, isActive, branchId,
+      //   assignedShift, position, employmentStatus, createdBy, and the
+      //   admin-set compensation fields (salaryAmount, salaryType,
+      //   paymentMethod).
       // Managers do NOT write user docs (they manage branch operations only).
       allow update: if isAdmin()
         || (isOwner(uid)
@@ -70,11 +96,38 @@ service cloud.firestore {
             && request.resource.data.get('employmentStatus', 'active')
                  == resource.data.get('employmentStatus', 'active')
             && request.resource.data.get('createdBy', '')
-                 == resource.data.get('createdBy', ''));
+                 == resource.data.get('createdBy', '')
+            && request.resource.data.get('salaryAmount', 0)
+                 == resource.data.get('salaryAmount', 0)
+            && request.resource.data.get('salaryType', '')
+                 == resource.data.get('salaryType', '')
+            && request.resource.data.get('paymentMethod', '')
+                 == resource.data.get('paymentMethod', ''));
 
       // Deactivate via isActive (an admin update), never a hard delete; document
       // cleanup on account removal belongs to a Cloud Function.
       allow delete: if false;
+
+      // ── Private compensation (C2 fix, 2026-07-03) ────────────────
+      // Salary data lives OFF the branch-readable user doc, in
+      // users/{uid}/private/compensation — Firestore reads are document-level
+      // (no field filtering), so anything on the parent doc is served whole
+      // to every same-branch member. Here only the OWNER and an ADMIN read;
+      // managers deliberately cannot (compensation is admin-managed — branch
+      // reach must never expose pay). The owner may create/update ONLY their
+      // own `paymentNumber` (their salary-receiving number, exposed in Edit
+      // Profile); the admin-set fields are admin-only. No client deletes.
+      match /private/{docId} {
+        allow read: if isOwner(uid) || isAdmin();
+        allow create: if isAdmin()
+          || (isOwner(uid) && docId == 'compensation'
+              && request.resource.data.keys().hasOnly(['paymentNumber']));
+        allow update: if isAdmin()
+          || (isOwner(uid) && docId == 'compensation'
+              && request.resource.data.diff(resource.data)
+                   .affectedKeys().hasOnly(['paymentNumber']));
+        allow delete: if false;
+      }
     }
 
     // ── Tasks (Phase 3, +Phase 9 multi-assignee) ───────────────────
@@ -94,9 +147,22 @@ service cloud.firestore {
       return request.auth.uid in resource.data.get('assigneeIds', [])
         || resource.data.get('assignedEmployeeId', '') == request.auth.uid;
     }
+    // Shift Assignment feature: a task with assignmentType 'shift' targets
+    // whoever's rostered on its shift, not a named assignee (assigneeIds is
+    // always empty), so it can't be reached via isTaskAssignee(). Trust is
+    // branch-scoped (any employee in the task's branch), same bounded fields
+    // as isTaskAssignee() below — the UI only ever shows the action to someone
+    // actually on that shift today; the client-side `canUserAccessTask` check
+    // is what hides it from everyone else.
+    function isShiftTaskInMyBranch() {
+      return resource.data.get('assignmentType', 'individual') == 'shift'
+        && selfBranch() != ''
+        && resource.data.get('branchId', '') == selfBranch();
+    }
     match /tasks/{taskId} {
       allow read: if canReachBranch(resource.data.get('branchId', ''))
-        || isTaskAssignee();
+        || isTaskAssignee()
+        || isShiftTaskInMyBranch();
 
       allow create: if canReachBranch(request.resource.data.get('branchId', ''));
 
@@ -110,7 +176,7 @@ service cloud.firestore {
             && (resource.data.get('status', 'pending') != 'approved'
                 || (isAdmin()
                     && request.resource.data.get('status', 'pending') != 'approved')))
-        || (isTaskAssignee()
+        || ((isTaskAssignee() || isShiftTaskInMyBranch())
             // employees can't reassign the task (assignees frozen)
             && request.resource.data.get('assigneeIds', [])
                  == resource.data.get('assigneeIds', [])
@@ -143,6 +209,21 @@ service cloud.firestore {
     //   create — admin (any branch / global), OR an own-branch manager.
     //   update/delete — admin, OR the owning-branch manager.
     match /task_templates/{templateId} {
+      allow read: if isAdmin() || isManager();
+      allow create: if isAdmin()
+        || (isManager()
+            && request.resource.data.get('branchId', '') == selfBranch());
+      allow update, delete: if isAdmin()
+        || (isManager() && resource.data.get('branchId', '') == selfBranch());
+    }
+
+    // ── Recurring shift-task templates (Shift Assignment feature) ──
+    // Permanent blueprints for a shift-assigned task that repeats on its own
+    // clock (e.g. "Open Store" every day on the Morning shift), read by the
+    // `generateShiftTaskInstances` Cloud Function (Admin SDK — bypasses these
+    // rules). Always branch-scoped (a shift only means something within one
+    // branch's roster) — no global option, unlike `task_templates`.
+    match /recurringTaskTemplates/{templateId} {
       allow read: if isAdmin() || isManager();
       allow create: if isAdmin()
         || (isManager()
@@ -225,14 +306,36 @@ service cloud.firestore {
         && request.resource.data.get('requesterId', '') == request.auth.uid
         && request.resource.data.get('branchId', '') == selfBranch()
         && swapSlotInFuture(request.resource.data);
+      // M1 fix (2026-07-03): per-party STATUS-TRANSITION enforcement. The old
+      // rule let either involved employee set any non-final status — so a
+      // requester could forge the coworker-acceptance step (employeeApproved)
+      // and deceive the manager into approving a trade the coworker never
+      // agreed to. Now:
+      //   manager/admin — anything except managerApproved (finalizing is
+      //     OWNED BY the approveSwap Cloud Function: Admin SDK, bypasses
+      //     rules, re-validates + applies the exchange atomically).
+      //   TARGET  — consents/declines a PENDING request only
+      //     (pending → employeeApproved | rejected).
+      //   REQUESTER — withdraws their own unresolved request only
+      //     (pending | employeeApproved → cancelled). They can NEVER set
+      //     employeeApproved.
+      //   Employee writes are field-locked to status (+ updatedAt) — no
+      //   editing day/shift/target/branch after creation.
       allow update: if (canReachBranch(resource.data.get('branchId', ''))
-          || resource.data.get('requesterId', '') == request.auth.uid
-          || resource.data.get('targetId', '') == request.auth.uid)
-        // Finalizing the swap (→ managerApproved, which rewrites the schedule) is
-        // OWNED BY the approveSwap Cloud Function (Admin SDK, bypasses rules).
-        // Deny any direct client write that sets it, so a swap can never be
-        // applied without the server-side re-validation + atomic exchange.
-        && request.resource.data.get('status', '') != 'managerApproved';
+          && request.resource.data.get('status', '') != 'managerApproved')
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly(['status', 'updatedAt'])
+            && (
+              (request.auth.uid == resource.data.get('targetId', '')
+                && resource.data.get('status', '') == 'pending'
+                && request.resource.data.get('status', '')
+                     in ['employeeApproved', 'rejected'])
+              || (request.auth.uid == resource.data.get('requesterId', '')
+                && resource.data.get('status', '')
+                     in ['pending', 'employeeApproved']
+                && request.resource.data.get('status', '') == 'cancelled')
+            ));
       allow delete: if canReachBranch(resource.data.get('branchId', ''));
     }
 
@@ -335,23 +438,119 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // ── Notifications (Notification System Phase 1) ────────────────
-    // One in-app notification doc per recipient (`notifications/{id}`). Task
-    // events are written by the client (`NotifyTaskEvent`); broadcast
-    // notifications are written by the `sendBroadcast` Cloud Function (Admin SDK,
-    // which bypasses these rules).
+    // ── Notifications (Notification System Phase 1 + M2 fix 2026-07-03) ──
+    // One in-app notification doc per recipient (`notifications/{id}`).
     //   read   — the recipient, or an admin.
-    //   create — any signed-in user, who must stamp themselves as `senderUid`
-    //            (internal-tool trust model, consistent with task-doc writes).
+    //   create — CLIENTS NEVER CREATE DIRECTLY (M2 fix). Every client-produced
+    //            notification goes through the `sendNotification` callable
+    //            (type whitelist · branch-scoped recipients · length caps ·
+    //            server-stamped senderUid); broadcasts/reminders come from
+    //            their own functions. All writes are Admin SDK (bypass rules).
     //   update — the recipient only (mark read flips `readAt`); content is not
     //            re-validated, but only the owner can touch their own docs.
     //   delete — the recipient, or an admin (dismiss / cleanup).
     match /notifications/{id} {
       allow read: if isOwner(resource.data.get('recipientUid', '')) || isAdmin();
-      allow create: if isSignedIn()
-        && request.resource.data.get('senderUid', '') == request.auth.uid;
+      allow create: if false;
       allow update: if isOwner(resource.data.get('recipientUid', ''));
       allow delete: if isOwner(resource.data.get('recipientUid', '')) || isAdmin();
+    }
+
+    // ── Case Management (private conversation until resolution) ────
+    // A branch-scoped internal case — a private conversation between a reporter
+    // (employee/manager) and a recipient (manager/admin). The case doc is
+    // readable by the branch manager (only when routed to them —
+    // `visibleToManager`), any admin, and the reporter — and it deliberately
+    // carries NO creator uid. The reporter's identity is isolated in the private
+    // `reporter/identity` subdoc below (owner + admin only), so a same-branch
+    // manager can never resolve a confidential sender from the case itself. The
+    // conversation lives in the `messages` subcollection.
+    //   read   — admin (all) · own-branch manager (visibleToManager only) ·
+    //            the reporter (via the identity subdoc).
+    //   create — any branch member, for a case in their OWN branch (admin: any).
+    //   update — admin / own-branch manager drive the STATUS only. The reporter
+    //            interacts via `messages`, never the case doc; `lastMessage*`
+    //            bumps come from the Admin SDK, which bypasses these rules.
+    //   delete — admin only (cases are records).
+    match /cases/{caseId} {
+      allow read: if isAdmin()
+        || (isManager()
+            && resource.data.get('branchId', '') == selfBranch()
+            && resource.data.get('visibleToManager', true) == true)
+        || isCaseReporter(caseId);
+
+      allow create: if isAdmin()
+        || (isSignedIn()
+            && request.resource.data.get('branchId', '') == selfBranch());
+
+      allow update: if isAdmin()
+        || (isManager()
+            && resource.data.get('branchId', '') == selfBranch()
+            && resource.data.get('visibleToManager', true) == true);
+
+      allow delete: if isAdmin();
+
+      // ── Conversation messages (`cases/{id}/messages/{id}`) ─────────
+      //   read   — anyone who can read the parent case.
+      //   create — a participant, a `message` (opening/system are Admin-SDK-only,
+      //            so clients can't forge them), only while the case is NOT closed
+      //            (read-only when closed), stamping themselves as author (a
+      //            de-identified confidential reporter writes authorId == '').
+      //   update/delete — never (messages are an immutable record).
+      match /messages/{messageId} {
+        allow read: if isAdmin()
+          || (isManager()
+              && caseData(caseId).get('branchId', '') == selfBranch()
+              && caseData(caseId).get('visibleToManager', true) == true)
+          || isCaseReporter(caseId);
+
+        allow create: if request.resource.data.get('kind', 'message') == 'message'
+          && caseData(caseId).get('status', 'open') != 'closed'
+          && request.resource.data.get('createdAt', request.time) == request.time
+          && (
+               isAdmin()
+               || (isManager()
+                   && caseData(caseId).get('branchId', '') == selfBranch()
+                   && caseData(caseId).get('visibleToManager', true) == true
+                   && request.resource.data.get('authorId', '') == request.auth.uid)
+               || (isCaseReporter(caseId)
+                   && (request.resource.data.get('authorId', '') == request.auth.uid
+                       || request.resource.data.get('authorId', '') == ''))
+             );
+
+        allow update, delete: if false;
+      }
+    }
+
+    // ── Private reporter identity (COLLECTION-GROUP rule) ─────────────
+    // `cases/{id}/reporter/identity` holds the creator uid/name. This MUST be a
+    // collection-group rule (the recursive `{path=**}` wildcard): a nested
+    // `match /cases/{id}/reporter/{doc}` rule secures direct-path reads but does
+    // NOT authorize the owner's `collectionGroup('reporter')` "My Cases" query —
+    // documented Firestore behavior, so that query returns permission-denied even
+    // with the index present. Read: the reporter (own list + admin reveal) + an
+    // admin ONLY — never a manager (keeps confidential senders hidden); the query
+    // is proven safe by the createdByUserId equality. Created once with the case
+    // (self-claim); immutable thereafter. `reporter` exists only under `cases/`,
+    // so the wildcard can't leak to another collection.
+    match /{path=**}/reporter/{docId} {
+      allow read: if isAdmin()
+        || resource.data.get('createdByUserId', '') == request.auth.uid;
+      allow create: if isSignedIn()
+        && docId == 'identity'
+        && request.resource.data.get('createdByUserId', '') == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ── Feed usage telemetry (Home Dashboard redesign) ──
+    // A single aggregate counters doc (`usageStats/feed`) of
+    // `FieldValue.increment` fields — preset/sort/expansion/approve/note usage.
+    // Any signed-in user may increment (trusted internal telemetry, no PII);
+    // only an admin reads the totals. Debounced client-side to ~one write/20s.
+    match /usageStats/{doc} {
+      allow read: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if false;
     }
   }
 }

@@ -2,6 +2,7 @@ import 'package:drop/core/enums/user_role.dart';
 import 'package:drop/core/errors/exceptions.dart';
 import 'package:drop/core/errors/failures.dart';
 import 'package:drop/features/admin/data/datasources/user_admin_remote_datasource.dart';
+import 'package:drop/features/admin/domain/entities/user_compensation.dart';
 import 'package:drop/features/admin/domain/repositories/user_admin_repository.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 
@@ -99,6 +100,36 @@ class UserAdminRepositoryImpl implements UserAdminRepository {
   @override
   Future<void> changeUserEmploymentStatus(String uid, String status) =>
       _run(() => _remote.updateUser(uid, {'employmentStatus': status}));
+
+  @override
+  Future<void> updateUserCompensation(
+    String uid, {
+    required double? salaryAmount,
+    required String? salaryType,
+    required String? paymentMethod,
+    required String? paymentNumber,
+  }) =>
+      // All four keys written unconditionally — null clears (the sheet's empty
+      // inputs must remove stale values, unlike the skip-null contact map).
+      // Written to the PRIVATE subdocument (C2 fix), never the user doc.
+      _run(() => _remote.setCompensation(
+            uid,
+            UserCompensation(
+              salaryAmount: salaryAmount,
+              salaryType: salaryType,
+              paymentMethod: paymentMethod,
+              paymentNumber: paymentNumber,
+            ),
+          ));
+
+  @override
+  Future<UserCompensation> getUserCompensation(String uid) async {
+    try {
+      return await _remote.getCompensation(uid);
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     try {

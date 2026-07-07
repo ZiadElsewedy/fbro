@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:drop/core/enums/recurrence_frequency.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/core/enums/task_assignment_type.dart';
 import 'package:drop/core/enums/task_priority.dart';
 import 'package:drop/core/enums/task_type.dart';
+import 'package:drop/core/enums/template_repeat_mode.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
@@ -148,6 +151,16 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   late RecurrenceFrequency _recurrence =
       widget.existing?.recurrence?.frequency ?? RecurrenceFrequency.none;
 
+  /// Shift Assignment feature — new tasks only (an existing task/instance never
+  /// changes its assignment mode, so these are seeded once and the selector to
+  /// change them is hidden in edit mode; see the `widget.existing == null`
+  /// gates in [build]).
+  late TaskAssignmentType _assignmentType =
+      widget.existing?.assignmentType ?? TaskAssignmentType.individual;
+  late ScheduleShift? _shift = widget.existing?.shift;
+  TemplateRepeatMode _shiftRepeat = TemplateRepeatMode.once;
+  int _shiftWeekday = DateTime.now().weekday;
+
   /// Checklist state: parallel lists for controllers, required flag, id,
   /// and the original [ChecklistItem] (only set when editing an existing task,
   /// so we can preserve the completed/completedAt state on save).
@@ -287,29 +300,69 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
       setState(() => _error = 'Please select a branch.');
       return;
     }
+    if (widget.existing == null &&
+        _assignmentType == TaskAssignmentType.shift &&
+        _shift == null) {
+      setState(() => _error = 'Please select a shift.');
+      return;
+    }
     final description = _desc.text.trim().isEmpty ? null : _desc.text.trim();
     final checklist = _buildChecklist();
 
     final existing = widget.existing;
     if (existing == null) {
-      // Infer type from recurrence: recurring = daily routine, else special
-      final inferredType = _recurrence != RecurrenceFrequency.none
-          ? TaskType.daily
-          : TaskType.special;
-      widget.cubit.createTask(
-        title: title,
-        description: description,
-        type: inferredType,
-        priority: _priority,
-        branchId: branchId,
-        deadline: _deadline,
-        assigneeIds: _assignees.toList(),
-        checklist: checklist,
-        recurrence: _recurrence == RecurrenceFrequency.none
-            ? null
-            : RecurrenceConfig(frequency: _recurrence),
-        referenceAttachments: _newRefs,
-      );
+      if (_assignmentType == TaskAssignmentType.shift) {
+        if (_shiftRepeat == TemplateRepeatMode.once) {
+          widget.cubit.createTask(
+            title: title,
+            description: description,
+            type: TaskType.daily,
+            priority: _priority,
+            branchId: branchId,
+            deadline: _deadline,
+            checklist: checklist,
+            referenceAttachments: _newRefs,
+            assignmentType: TaskAssignmentType.shift,
+            shift: _shift,
+            instanceDate: _deadline,
+          );
+        } else {
+          widget.cubit.createRecurringShiftTemplate(
+            title: title,
+            description: description,
+            priority: _priority,
+            branchId: branchId,
+            shift: _shift!,
+            checklistItems: [
+              for (final c in checklist)
+                ChecklistItemTemplate(
+                    id: c.id, title: c.title, isRequired: c.isRequired),
+            ],
+            repeat: _shiftRepeat,
+            weekday: _shiftWeekday,
+          );
+        }
+      } else {
+        // Infer type from recurrence: recurring = daily routine, else special
+        final inferredType = _recurrence != RecurrenceFrequency.none
+            ? TaskType.daily
+            : TaskType.special;
+        widget.cubit.createTask(
+          title: title,
+          description: description,
+          type: inferredType,
+          priority: _priority,
+          branchId: branchId,
+          deadline: _deadline,
+          assigneeIds: _assignees.toList(),
+          checklist: checklist,
+          recurrence: _recurrence == RecurrenceFrequency.none
+              ? null
+              : RecurrenceConfig(frequency: _recurrence),
+          referenceAttachments: _newRefs,
+          assignmentType: _assignmentType,
+        );
+      }
     } else {
       widget.cubit.editTask(
         existing.copyWith(
@@ -397,23 +450,36 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
             ),
           ],
           const SizedBox(height: AppSpacing.md),
-          _AssigneePicker(
-            future: _employeesFuture,
-            selected: _assignees,
-            onToggle: (uid) => setState(() {
-              _assignees.contains(uid)
-                  ? _assignees.remove(uid)
-                  : _assignees.add(uid);
-            }),
-            onToggleAll: (all) => setState(() {
-              final ids = all.map((u) => u.uid);
-              if (ids.every(_assignees.contains)) {
-                _assignees.removeAll(ids);
-              } else {
-                _assignees.addAll(ids);
-              }
-            }),
-          ),
+          if (widget.existing == null) ...[
+            _AssignedToPicker(
+              value: _assignmentType,
+              onChanged: (t) => setState(() => _assignmentType = t),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          if (_assignmentType != TaskAssignmentType.shift)
+            _AssigneePicker(
+              future: _employeesFuture,
+              selected: _assignees,
+              onToggle: (uid) => setState(() {
+                _assignees.contains(uid)
+                    ? _assignees.remove(uid)
+                    : _assignees.add(uid);
+              }),
+              onToggleAll: (all) => setState(() {
+                final ids = all.map((u) => u.uid);
+                if (ids.every(_assignees.contains)) {
+                  _assignees.removeAll(ids);
+                } else {
+                  _assignees.addAll(ids);
+                }
+              }),
+            )
+          else
+            ShiftChipPicker(
+              value: _shift,
+              onChanged: (s) => setState(() => _shift = s),
+            ),
           const SizedBox(height: AppSpacing.md),
           _Dropdown<TaskPriority>(
             label: 'Priority',
@@ -458,12 +524,22 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          // Recurrence picker (new tasks only)
+          // Recurrence picker (new tasks only) — shift mode gets its own
+          // Once/Daily/Weekly picker instead (daily/weekly saves as a
+          // recurring shift-task template rather than a single task).
           if (widget.existing == null)
-            _RecurrencePicker(
-              value: _recurrence,
-              onChanged: (v) => setState(() => _recurrence = v),
-            ),
+            if (_assignmentType == TaskAssignmentType.shift)
+              ShiftRepeatPicker(
+                value: _shiftRepeat,
+                onChanged: (v) => setState(() => _shiftRepeat = v),
+                weekday: _shiftWeekday,
+                onWeekdayChanged: (w) => setState(() => _shiftWeekday = w),
+              )
+            else
+              _RecurrencePicker(
+                value: _recurrence,
+                onChanged: (v) => setState(() => _recurrence = v),
+              ),
           if (_error != null) ...[
             const SizedBox(height: AppSpacing.md),
             Text(_error!,
@@ -1301,6 +1377,264 @@ class _Dropdown<T> extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+/// "Assigned to" mode chip row (Employee / Team / Shift) — new tasks only.
+/// Employee/Team both keep the existing [_AssigneePicker] (Team is a UX-level
+/// alias for multi-select individual, same `assigneeIds` mechanism); Shift
+/// swaps it for [ShiftChipPicker] (Shift Assignment feature).
+class _AssignedToPicker extends StatelessWidget {
+  const _AssignedToPicker({required this.value, required this.onChanged});
+  final TaskAssignmentType value;
+  final void Function(TaskAssignmentType) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.group_outlined,
+                size: 16, color: AppColors.textTertiary),
+            const SizedBox(width: AppSpacing.sm),
+            Text('Assigned to', style: AppTypography.bodySmall),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          children: [
+            for (final type in TaskAssignmentType.values)
+              GestureDetector(
+                onTap: () => onChanged(type),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: value == type
+                        ? AppColors.primary
+                        : AppColors.darkSurfaceElevated,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: value == type
+                          ? AppColors.primary
+                          : AppColors.darkBorder,
+                    ),
+                  ),
+                  child: Text(
+                    type.label,
+                    style: AppTypography.caption.copyWith(
+                      color: value == type
+                          ? AppColors.onPrimary
+                          : AppColors.textSecondary,
+                      fontWeight:
+                          value == type ? FontWeight.w700 : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Morning/Night shift chip picker, shown instead of [_AssigneePicker] when
+/// "Shift" is the assigned-to mode (Shift Assignment feature) — the task
+/// targets whoever is rostered on the picked shift, not named employees.
+class ShiftChipPicker extends StatelessWidget {
+  const ShiftChipPicker({super.key, required this.value, required this.onChanged});
+  final ScheduleShift? value;
+  final void Function(ScheduleShift) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.schedule_rounded,
+                size: 16, color: AppColors.textTertiary),
+            const SizedBox(width: AppSpacing.sm),
+            Text('Shift', style: AppTypography.bodySmall),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          children: [
+            for (final shift in ScheduleShift.values)
+              GestureDetector(
+                onTap: () => onChanged(shift),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: value == shift
+                        ? AppColors.primary
+                        : AppColors.darkSurfaceElevated,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: value == shift
+                          ? AppColors.primary
+                          : AppColors.darkBorder,
+                    ),
+                  ),
+                  child: Text(
+                    '${shift.label} · ${shift.timeRange}',
+                    style: AppTypography.caption.copyWith(
+                      color: value == shift
+                          ? AppColors.onPrimary
+                          : AppColors.textSecondary,
+                      fontWeight:
+                          value == shift ? FontWeight.w700 : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Once/Daily/Weekly repeat picker for a shift task — replaces
+/// [_RecurrencePicker] only in shift mode. Once creates a single instance;
+/// Daily/Weekly create a [RecurringTaskTemplateEntity] instead (via
+/// `TaskCubit.createRecurringShiftTemplate`), so a weekday selector appears
+/// when Weekly is picked.
+class ShiftRepeatPicker extends StatelessWidget {
+  const ShiftRepeatPicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    required this.weekday,
+    required this.onWeekdayChanged,
+    this.modes = TemplateRepeatMode.values,
+  });
+  final TemplateRepeatMode value;
+  final void Function(TemplateRepeatMode) onChanged;
+  final int weekday;
+  final void Function(int) onWeekdayChanged;
+
+  /// Which repeat modes to offer — the task form offers all three (Once
+  /// creates a single task); the recurring-template management sheet only
+  /// offers Daily/Weekly (a template is never "once" by definition).
+  final List<TemplateRepeatMode> modes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.repeat_rounded,
+                size: 16, color: AppColors.textTertiary),
+            const SizedBox(width: AppSpacing.sm),
+            Text('Repeats', style: AppTypography.bodySmall),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          children: [
+            for (final mode in modes)
+              GestureDetector(
+                onTap: () => onChanged(mode),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: value == mode
+                        ? AppColors.primary
+                        : AppColors.darkSurfaceElevated,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: value == mode
+                          ? AppColors.primary
+                          : AppColors.darkBorder,
+                    ),
+                  ),
+                  child: Text(
+                    mode.label,
+                    style: AppTypography.caption.copyWith(
+                      color: value == mode
+                          ? AppColors.onPrimary
+                          : AppColors.textSecondary,
+                      fontWeight:
+                          value == mode ? FontWeight.w700 : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (value == TemplateRepeatMode.weekly) ...[
+          const SizedBox(height: AppSpacing.md),
+          WeekdayChipPicker(value: weekday, onChanged: onWeekdayChanged),
+        ],
+      ],
+    );
+  }
+}
+
+/// Mon–Sun weekday chip row for [ShiftRepeatPicker]'s Weekly mode
+/// (`DateTime.monday` = 1 … `DateTime.sunday` = 7, matching
+/// [RecurringTaskTemplateEntity.weekday]).
+class WeekdayChipPicker extends StatelessWidget {
+  const WeekdayChipPicker({super.key, required this.value, required this.onChanged});
+  final int value;
+  final void Function(int) onChanged;
+
+  static const _labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: AppSpacing.xs,
+      children: [
+        for (var i = 0; i < 7; i++)
+          GestureDetector(
+            onTap: () => onChanged(i + 1),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 40,
+              height: 32,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: value == i + 1
+                    ? AppColors.primary
+                    : AppColors.darkSurfaceElevated,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: value == i + 1
+                      ? AppColors.primary
+                      : AppColors.darkBorder,
+                ),
+              ),
+              child: Text(
+                _labels[i],
+                style: AppTypography.caption.copyWith(
+                  color: value == i + 1
+                      ? AppColors.onPrimary
+                      : AppColors.textSecondary,
+                  fontWeight:
+                      value == i + 1 ? FontWeight.w700 : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

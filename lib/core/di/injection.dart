@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:drop/core/services/case_seen_store.dart';
 import 'package:drop/core/services/notification_service.dart';
 import 'package:drop/features/auth/data/datasources/auth_remote_datasource.dart';
 import 'package:drop/features/auth/data/datasources/user_remote_datasource.dart';
@@ -71,6 +72,16 @@ import 'package:drop/features/notifications/domain/usecases/mark_notification_re
 import 'package:drop/features/notifications/domain/usecases/notify_swap_event.dart';
 import 'package:drop/features/notifications/domain/usecases/notify_task_event.dart';
 import 'package:drop/features/notifications/presentation/cubit/notification_cubit.dart';
+import 'package:drop/features/cases/data/datasources/case_remote_datasource.dart';
+import 'package:drop/features/cases/data/repositories/case_repository_impl.dart';
+import 'package:drop/features/cases/domain/repositories/case_repository.dart';
+import 'package:drop/features/cases/domain/usecases/change_case_status.dart';
+import 'package:drop/features/cases/domain/usecases/create_case.dart';
+import 'package:drop/features/cases/domain/usecases/send_case_message.dart';
+import 'package:drop/features/cases/domain/usecases/upload_case_attachment.dart';
+import 'package:drop/features/cases/presentation/cubit/case_conversation_cubit.dart';
+import 'package:drop/features/cases/presentation/cubit/case_list_cubit.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart' show UserEntity;
 
 class AppDependencies {
   AppDependencies._();
@@ -108,6 +119,31 @@ class AppDependencies {
   /// FCM foundation (Phase 6) — token registration + foreground handling.
   static late final NotificationService notificationService;
 
+  /// Case Management — the inbox list cubit (singleton, app-wide).
+  static late final CaseListCubit caseListCubit;
+
+  // Case Management — repository + write use cases, kept so a fresh per-case
+  // [CaseConversationCubit] can be built on demand (one per opened case).
+  static late final CaseRepository _caseRepository;
+  static late final SendCaseMessage _sendCaseMessage;
+  static late final ChangeCaseStatus _changeCaseStatus;
+  static late final UploadCaseAttachment _uploadCaseAttachment;
+
+  /// Builds a fresh conversation cubit for [caseId] (owned + disposed by its
+  /// `BlocProvider`; re-created when the selected case changes).
+  static CaseConversationCubit createCaseConversationCubit(
+    String caseId,
+    UserEntity? user,
+  ) =>
+      CaseConversationCubit(
+        repository: _caseRepository,
+        sendMessage: _sendCaseMessage,
+        changeStatus: _changeCaseStatus,
+        uploadCaseAttachment: _uploadCaseAttachment,
+        user: user,
+        caseId: caseId,
+      );
+
   /// Phase 3 task foundation, activated by the Phase 4 [taskCubit] + use cases.
   static late final TaskRepository taskRepository;
 
@@ -142,7 +178,8 @@ class AppDependencies {
     // NotifyTaskEvent use case for its automatic task-event notifications.
     final NotificationRepository notificationRepository =
         NotificationRepositoryImpl(
-      NotificationRemoteDataSourceImpl(FirebaseFirestore.instance),
+      NotificationRemoteDataSourceImpl(
+          FirebaseFirestore.instance, FirebaseFunctions.instance),
     );
 
     authCubit = AuthCubit(
@@ -167,9 +204,21 @@ class AppDependencies {
       checkUsername: CheckUsername(profileRepository),
     );
 
+    // Schedule repository is built early — the TaskCubit needs it to resolve an
+    // employee's shift(s) today (Shift Assignment feature) and shift-task
+    // notification recipients; reused as-is by scheduleCubit/shiftSwapCubit/
+    // branchOperationsCubit below.
+    final ScheduleRepository scheduleRepository = ScheduleRepositoryImpl(
+      ScheduleRemoteDataSourceImpl(
+        FirebaseFirestore.instance,
+        FirebaseFunctions.instance,
+      ),
+    );
+
     taskCubit = TaskCubit(
       repository: taskRepository,
       branchRepository: branchRepository,
+      scheduleRepository: scheduleRepository,
       createTask: CreateTask(taskRepository),
       updateTask: UpdateTask(taskRepository),
       deleteTask: DeleteTask(taskRepository),
@@ -177,6 +226,32 @@ class AppDependencies {
       uploadTaskAttachment: UploadTaskAttachment(taskRepository),
       getUsersByBranch: GetUsersByBranch(authRepository),
       notifyTaskEvent: NotifyTaskEvent(notificationRepository),
+    );
+
+    // ─── Case Management (private conversation until resolution) ─────────
+    // The list cubit (like TaskCubit): use cases for writes, repository directly
+    // for the role-scoped realtime/one-shot case lists. Reuses branchRepository
+    // (branch names) + GetUsersByBranch (member directory). The per-case
+    // conversation cubit is built on demand via [createCaseConversationCubit].
+    // Case notifications are produced server-side.
+    final CaseRepository caseRepository = CaseRepositoryImpl(
+      CaseRemoteDataSourceImpl(
+        FirebaseFirestore.instance,
+        FirebaseStorage.instance,
+      ),
+    );
+    _caseRepository = caseRepository;
+    final uploadCaseAttachment = UploadCaseAttachment(caseRepository);
+    _uploadCaseAttachment = uploadCaseAttachment;
+    _sendCaseMessage = SendCaseMessage(caseRepository);
+    _changeCaseStatus = ChangeCaseStatus(caseRepository);
+    caseListCubit = CaseListCubit(
+      repository: caseRepository,
+      branchRepository: branchRepository,
+      createCase: CreateCase(caseRepository),
+      uploadCaseAttachment: uploadCaseAttachment,
+      getUsersByBranch: GetUsersByBranch(authRepository),
+      seenStore: CaseSeenStore(),
     );
 
     // ─── Admin module (Phase 5) ───────────────────────────────
@@ -199,12 +274,7 @@ class AppDependencies {
     statisticsCubit = StatisticsCubit(statisticsRepository);
 
     // ─── Weekly schedule + shift swaps (Phase 7) ──────────────
-    final ScheduleRepository scheduleRepository = ScheduleRepositoryImpl(
-      ScheduleRemoteDataSourceImpl(
-        FirebaseFirestore.instance,
-        FirebaseFunctions.instance,
-      ),
-    );
+    // (scheduleRepository built earlier, above, so TaskCubit could use it.)
     scheduleCubit =
         ScheduleCubit(scheduleRepository, GetUsersByBranch(authRepository));
     shiftSwapCubit = ShiftSwapCubit(

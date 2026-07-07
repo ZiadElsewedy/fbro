@@ -1,0 +1,78 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:drop/core/enums/schedule_day.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/branch/domain/entities/branch_entity.dart';
+import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
+import 'package:drop/features/schedule/presentation/pages/schedule_final_view.dart';
+
+void main() {
+  const member = UserEntity(
+    uid: 'u1',
+    email: 'salah@drop.test',
+    authProvider: 'password',
+    displayName: 'Salah Ahmed',
+  );
+  const branch = BranchEntity(id: 'b1', name: 'Drop The Shop | Arkan');
+  final schedule = WeeklyScheduleEntity(
+    id: 'b1_2026-07-05',
+    branchId: 'b1',
+    weekStart: DateTime(2026, 7, 5),
+    assignments: const {
+      ScheduleDay.sunday: {
+        ScheduleShift.morning: ['u1'],
+      },
+    },
+  );
+
+  testWidgets('renders a branded read-only roster snapshot', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ScheduleFinalView(
+          schedule: schedule,
+          members: const [member],
+          branch: branch,
+        ),
+      ),
+    );
+
+    expect(find.text('Drop The Shop | Arkan'), findsOneWidget);
+    expect(find.text('05/07 – 11/07'), findsOneWidget);
+    expect(find.text('Salah A.'), findsOneWidget);
+    expect(find.text('assignment'), findsOneWidget);
+    expect(find.byType(Draggable), findsNothing);
+
+    // Presentation mode (Schedule 5.0): no editing affordances in the print —
+    // empty slots are quiet em-dashes, never "Open"/assign placeholders.
+    expect(find.text('Open'), findsNothing);
+    expect(find.text('+ Assign'), findsNothing);
+    expect(find.text('—'), findsNWidgets(13));
+    // Weekend headers state the late close (Thu · Fri · Sat).
+    expect(find.text('till 00:30'), findsNWidgets(3));
+  });
+
+  testWidgets('keeps back and real PNG export actions visible', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ScheduleFinalView(
+          schedule: schedule,
+          members: const [member],
+          branch: branch,
+        ),
+      ),
+    );
+
+    expect(find.text('Back to schedule'), findsOneWidget);
+    expect(find.text('Dashboard'), findsOneWidget);
+    expect(find.text('Save PNG'), findsOneWidget);
+    expect(find.text('Drop The Shop | Arkan'), findsOneWidget);
+  });
+
+  test('export filename is stable and filesystem-safe', () {
+    expect(
+      scheduleExportFilename('Drop The Shop | Arkan', DateTime(2026, 7, 5)),
+      'drop_the_shop_arkan_schedule_2026-07-05.png',
+    );
+  });
+}

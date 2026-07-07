@@ -1,8 +1,10 @@
+import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/enums/swap_status.dart';
 import 'package:drop/features/schedule/domain/entities/shift_swap_entity.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
+import 'package:drop/features/schedule/domain/shift_hours.dart';
 
 /// Contract for weekly-schedule + shift-swap data access (Phase 7). Branch/role
 /// access is enforced server-side by `firestore.rules` (admin: all branches;
@@ -40,6 +42,32 @@ abstract class ScheduleRepository {
     required ScheduleDay day,
     required ScheduleShift shift,
     required String employeeId,
+  });
+
+  /// Sets (or clears, when [note] is empty) the manager note pinned to [day].
+  Future<void> setDayNote({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String note,
+  });
+
+  /// Marks [employeeId] on [type] leave for [day]; a null [type] clears the
+  /// entry. Leave is a day-level fact (see [WeeklyScheduleEntity.leave]).
+  Future<void> setLeave({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String employeeId,
+    required LeaveType? type,
+  });
+
+  /// Overrides the [hours] for [day] + [shift] this week; a null [hours] clears
+  /// the override (falls back to [ShiftHours.standard]). See
+  /// [WeeklyScheduleEntity.shiftHours].
+  Future<void> setShiftHours({
+    required String scheduleId,
+    required ScheduleDay day,
+    required ScheduleShift shift,
+    required ShiftHours? hours,
   });
 
   // ── Shift swaps ──

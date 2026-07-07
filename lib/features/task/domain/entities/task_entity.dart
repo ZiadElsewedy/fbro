@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:drop/core/enums/task_assignment_type.dart';
 import 'package:drop/core/enums/task_type.dart';
 import 'package:drop/core/enums/task_status.dart';
 import 'package:drop/core/enums/task_priority.dart';
@@ -52,8 +53,24 @@ class TaskEntity with _$TaskEntity {
     /// The operational shift this task belongs to (Branch Operations) —
     /// `morning` / `night`, or **null** when the task is not shift-specific
     /// ("any", applies under every shift filter). Drives the Branch Operations
-    /// shift filter; supersedes the unused legacy [assignedShiftId] string.
+    /// shift filter; supersedes the unused legacy [assignedShiftId] string. When
+    /// [assignmentType] is [TaskAssignmentType.shift] this is also the actual
+    /// assignment target (see `canUserAccessTask`), not just a filter tag.
     ScheduleShift? shift,
+    /// How this task is assigned. `individual`/`team` both read [assigneeIds];
+    /// `shift` leaves [assigneeIds] empty and targets whoever is rostered on
+    /// [shift] for [instanceDate] instead. Missing on any task written before
+    /// this field existed → [TaskAssignmentType.individual] (no migration
+    /// needed; see `TaskModel.fromMap`).
+    @Default(TaskAssignmentType.individual) TaskAssignmentType assignmentType,
+    /// The calendar day a shift-assigned instance is *for* — distinct from
+    /// [deadline] (which may carry a specific time of day). Null for
+    /// individual/team tasks and for any task predating shift assignment.
+    DateTime? instanceDate,
+    /// Links a shift instance back to the [RecurringTaskTemplateEntity] that
+    /// generated it (`generateShiftTaskInstances` Cloud Function). Null for
+    /// one-off tasks and for every task predating recurring shift templates.
+    String? sourceTemplateId,
     DateTime? deadline,
     /// Free-text notes added by the executing employee.
     String? notes,
@@ -92,10 +109,22 @@ class TaskEntity with _$TaskEntity {
     @Default(<ActivityEntry>[]) List<ActivityEntry> activityLog,
     DateTime? createdAt,
     DateTime? updatedAt,
+    /// When the task was archived by the retention pass (`taskHousekeeping`
+    /// Cloud Function) — set only on an `approved` task older than the branch's
+    /// `archiveAfterDays`. Null = live. Server-managed: the function stamps it
+    /// via the Admin SDK; the client only ever *reads* it (to filter archived
+    /// work out of active views) or *clears* it on an admin reopen. An archived
+    /// task is still a full record in `tasks` (soft archive — never deleted
+    /// unless a retention `deleteAfterDays` is explicitly configured), so
+    /// statistics and deep-links keep working.
+    DateTime? archivedAt,
   }) = _TaskEntity;
 
-  /// Whether anyone is assigned.
-  bool get isAssigned => assigneeIds.isNotEmpty;
+  /// Whether anyone is assigned — a named assignee, or (for a shift task) the
+  /// shift itself is set.
+  bool get isAssigned => assignmentType == TaskAssignmentType.shift
+      ? shift != null
+      : assigneeIds.isNotEmpty;
 
   /// A brand-new task: never reworked and still pending its first start. Drives
   /// the monochrome `NEW` badge (Notification System Phase 1).
@@ -104,6 +133,11 @@ class TaskEntity with _$TaskEntity {
 
   /// Whether the manager attached any reference images.
   bool get hasReferences => referenceAttachments.isNotEmpty;
+
+  /// True once the retention pass has archived this (approved) task — it drops
+  /// out of every active list/stream (filtered in `TaskRepositoryImpl`) but
+  /// remains a full record for stats/audit/deep-links.
+  bool get isArchived => archivedAt != null;
 
   // ─── Checklist progress (Phase 9) ──────────────────────────────
   bool get hasChecklist => checklist.isNotEmpty;

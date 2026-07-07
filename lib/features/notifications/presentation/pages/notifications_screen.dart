@@ -98,6 +98,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'schedule':
         // Shift-swap notification → the role's schedule (where the swap queue is).
         if (role != null) context.push(RouteNames.scheduleForRole(role));
+      case 'case_details':
+        final id = n.caseId;
+        if (id != null && id.isNotEmpty) {
+          context.push(RouteNames.caseDetail(id));
+        } else {
+          context.push(RouteNames.cases);
+        }
     }
   }
 
@@ -141,6 +148,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: _showArchived ? 'Archived' : 'Notifications',
+      contentMaxWidth: 760, // a chronological inbox reads best in a narrow column
       actions: [
         if (_showArchived)
           TextButton(

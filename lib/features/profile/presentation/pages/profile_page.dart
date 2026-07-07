@@ -44,6 +44,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: 'Profile',
+      contentMaxWidth: 680,
       body: BlocBuilder<ProfileCubit, ProfileState>(
         builder: (context, state) {
           return state.maybeWhen(
@@ -81,7 +82,7 @@ class _ProfileContent extends StatelessWidget {
           _Identity(profile: profile),
           const SizedBox(height: AppSpacing.xl),
           const _BranchSection(),
-          _Group(children: _infoRows(profile)),
+          _Group(children: _infoRows(profile, isAdmin: context.isAdmin)),
           const SizedBox(height: AppSpacing.lg),
           _Group(
             children: [
@@ -108,11 +109,19 @@ class _ProfileContent extends StatelessWidget {
     );
   }
 
-  List<Widget> _infoRows(ProfileEntity p) {
+  List<Widget> _infoRows(ProfileEntity p, {required bool isAdmin}) {
     return [
       _InfoRow(label: 'Email', value: p.email.isNotEmpty ? p.email : '—'),
       if (p.phoneNumber != null && p.phoneNumber!.isNotEmpty)
         _InfoRow(label: 'Phone', value: p.phoneNumber!),
+      if (p.address != null && p.address!.isNotEmpty)
+        _InfoRow(label: 'Address', value: p.address!),
+      if (p.emergencyContact != null && p.emergencyContact!.isNotEmpty)
+        _InfoRow(label: 'Emergency', value: p.emergencyContact!),
+      // Salary is something the admin PAYS, not receives — never render the
+      // self-service payment row on an admin's own profile (owner ruling).
+      if (!isAdmin && p.paymentNumber != null && p.paymentNumber!.isNotEmpty)
+        _InfoRow(label: 'Salary sent to', value: p.paymentNumber!),
       _InfoRow(label: 'Sign-in', value: _provider(p.authProvider)),
       if (p.createdAt != null)
         _InfoRow(label: 'Member since', value: _date(p.createdAt!)),

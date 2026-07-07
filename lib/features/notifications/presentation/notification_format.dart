@@ -40,14 +40,20 @@ NotificationPriority notificationPriority(NotificationType type) =>
       NotificationType.taskRejected ||
       NotificationType.taskRework ||
       NotificationType.taskSubmitted ||
-      NotificationType.swapRequested =>
+      NotificationType.swapRequested ||
+      // A new case needs a recipient to act; a new reply is the other party's
+      // move.
+      NotificationType.caseOpened ||
+      NotificationType.caseReplied =>
         NotificationPriority.high,
       NotificationType.taskApproved ||
       NotificationType.taskReminder ||
       NotificationType.broadcastReminder ||
       NotificationType.broadcastAnnouncement ||
       NotificationType.swapApproved ||
-      NotificationType.swapRejected =>
+      NotificationType.swapRejected ||
+      NotificationType.caseUpdated ||
+      NotificationType.caseClosed =>
         NotificationPriority.normal,
     };
 
@@ -59,6 +65,7 @@ enum NotificationCategory {
   all,
   tasks,
   reviews,
+  cases,
   schedule,
   broadcast;
 
@@ -66,6 +73,7 @@ enum NotificationCategory {
         NotificationCategory.all => 'All',
         NotificationCategory.tasks => 'Tasks',
         NotificationCategory.reviews => 'Reviews',
+        NotificationCategory.cases => 'Cases',
         NotificationCategory.schedule => 'Schedule',
         NotificationCategory.broadcast => 'Broadcast',
       };
@@ -95,6 +103,11 @@ NotificationCategory categoryOf(NotificationType type) => switch (type) {
       NotificationType.swapApproved ||
       NotificationType.swapRejected =>
         NotificationCategory.schedule,
+      NotificationType.caseOpened ||
+      NotificationType.caseUpdated ||
+      NotificationType.caseClosed ||
+      NotificationType.caseReplied =>
+        NotificationCategory.cases,
     };
 
 // ─── Time grouping ──────────────────────────────────────────────────

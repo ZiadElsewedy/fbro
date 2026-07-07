@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
+import 'package:drop/features/admin/domain/entities/user_compensation.dart';
 import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/widgets/app_context_menu.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
@@ -11,13 +14,16 @@ import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/app_search_field.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/admin/presentation/cubit/admin_users_cubit.dart';
 import 'package:drop/features/admin/presentation/cubit/admin_users_state.dart';
 import 'package:drop/features/admin/presentation/employee_metrics.dart';
 import 'package:drop/features/admin/presentation/widgets/admin_user_card.dart';
 import 'package:drop/features/admin/presentation/widgets/admin_user_sheets.dart';
+import 'package:drop/features/admin/presentation/widgets/compensation_fields.dart';
 import 'package:drop/features/admin/presentation/widgets/employee_card.dart';
+import 'package:drop/features/admin/presentation/widgets/user_inspector_panel.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
@@ -151,20 +157,33 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                     padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding,
                         AppSpacing.sm, AppSpacing.pagePadding, AppSpacing.xxxl),
                     children: [
-                      for (var i = 0; i < filtered.length; i++)
-                        EntranceFade(
-                          delay: staggerDelay(i),
-                          child: EmployeeCard(
-                            user: filtered[i],
-                            metrics: metrics[filtered[i].uid] ??
-                                const EmployeeMetrics(),
-                            branchLabel: filtered[i].branchId == null
-                                ? null
-                                : _branchNames[filtered[i].branchId],
-                            onTap: () => _showDetails(filtered[i]),
-                            actions: _actions(filtered[i]),
-                          ),
-                        ),
+                      ResponsiveCardGrid(
+                        runSpacing: 0, // EmployeeCard carries its own bottom margin
+                        ultrawideColumns: 2, // rich cards read best at 2-up max
+                        children: [
+                          for (var i = 0; i < filtered.length; i++)
+                            EntranceFade(
+                              delay: staggerDelay(i),
+                              // Right-click mirrors the card's action row —
+                              // the desktop path to any action without
+                              // scanning for buttons.
+                              child: GestureDetector(
+                                onSecondaryTapDown: (d) => _showContextMenu(
+                                    filtered[i], d.globalPosition),
+                                child: EmployeeCard(
+                                  user: filtered[i],
+                                  metrics: metrics[filtered[i].uid] ??
+                                      const EmployeeMetrics(),
+                                  branchLabel: filtered[i].branchId == null
+                                      ? null
+                                      : _branchNames[filtered[i].branchId],
+                                  onTap: () => _showDetails(filtered[i]),
+                                  actions: _actions(filtered[i]),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
           ),
@@ -301,7 +320,69 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     ];
   }
 
+  void _showContextMenu(UserEntity user, Offset position) {
+    final cubit = context.read<AdminUsersCubit>();
+    showAppContextMenu(
+      context: context,
+      position: position,
+      items: [
+        AppContextMenuItem(
+          icon: Icons.info_outline_rounded,
+          label: 'Details',
+          onSelected: () => _showDetails(user),
+        ),
+        AppContextMenuItem(
+          icon: Icons.edit_outlined,
+          label: 'Edit info',
+          onSelected: () => showEditDetailsSheet(
+              context: context, cubit: cubit, user: user),
+        ),
+        AppContextMenuItem(
+          icon: Icons.store_mall_directory_outlined,
+          label: 'Change branch',
+          onSelected: () => showAssignBranchSheet(
+              context: context, cubit: cubit, user: user),
+        ),
+        AppContextMenuItem(
+          icon: Icons.badge_outlined,
+          label: 'Set position',
+          onSelected: () => showSetPositionSheet(
+              context: context, cubit: cubit, user: user),
+        ),
+        AppContextMenuItem(
+          icon: Icons.lock_reset_rounded,
+          label: 'Reset account',
+          onSelected: () => showResetAccountSheet(
+              context: context, cubit: cubit, user: user),
+        ),
+        AppContextMenuItem(
+          icon: user.isActive
+              ? Icons.block_rounded
+              : Icons.check_circle_outline_rounded,
+          label: user.isActive ? 'Deactivate' : 'Activate',
+          destructive: user.isActive,
+          onSelected: () => cubit.setActive(user, !user.isActive),
+        ),
+      ],
+    );
+  }
+
   void _showDetails(UserEntity user) {
+    // Desktop: the richer slide-over inspector; mobile keeps the dialog.
+    if (context.isDesktop) {
+      final tasks = context.read<TaskCubit>().state.maybeWhen(
+          loaded: (t, _, _, _, _) => t, orElse: () => const <TaskEntity>[]);
+      showUserInspector(
+        context: context,
+        cubit: context.read<AdminUsersCubit>(),
+        user: user,
+        branchLabel:
+            user.branchId == null ? null : _branchNames[user.branchId],
+        metrics: computeEmployeeMetrics(tasks)[user.uid] ??
+            const EmployeeMetrics(),
+      );
+      return;
+    }
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -333,6 +414,13 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                     : (_branchNames[user.branchId] ?? user.branchId!)),
             _detail('Status', user.isActive ? 'Active' : 'Inactive'),
             _detail('Employment', user.employmentStatus),
+            // Compensation is private data (C2) — fetched on demand from the
+            // subdocument, never carried on the user entity.
+            FutureBuilder<UserCompensation?>(
+              future:
+                  context.read<AdminUsersCubit>().compensationFor(user.uid),
+              builder: (_, snap) => _compensationRows(snap.data, _detail),
+            ),
             if (user.mustChangePassword)
               _detail('First login', 'Pending password change'),
             if (!user.isProfileCompleted)
@@ -365,6 +453,27 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           ),
         ),
       );
+
+  /// Renders the Salary / Paid via / Payment no. rows once the private
+  /// compensation record resolves (C2 — on-demand load). Nothing renders
+  /// while loading or when no record exists, matching the old conditional
+  /// rows for a user without compensation.
+  static Widget _compensationRows(
+      UserCompensation? c, Widget Function(String, String) row) {
+    if (c == null || c.isEmpty) return const SizedBox.shrink();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (salarySummary(c.salaryAmount, c.salaryType) != null)
+          row('Salary', salarySummary(c.salaryAmount, c.salaryType)!),
+        if ((c.paymentMethod ?? '').isNotEmpty)
+          row('Paid via', paymentMethodLabel(c.paymentMethod!)),
+        if ((c.paymentNumber ?? '').trim().isNotEmpty)
+          row('Payment no.', c.paymentNumber!.trim()),
+      ],
+    );
+  }
 
   Widget _empty(bool noEmployeesAtAll) => LayoutBuilder(
         builder: (context, c) => SingleChildScrollView(

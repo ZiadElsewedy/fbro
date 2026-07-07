@@ -1,5 +1,7 @@
+import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/features/schedule/domain/shift_hours.dart';
 import 'package:drop/core/enums/swap_status.dart';
 import 'package:drop/core/errors/exceptions.dart';
 import 'package:drop/core/errors/failures.dart';
@@ -101,6 +103,57 @@ class ScheduleRepositoryImpl implements ScheduleRepository {
         day: day,
         shift: shift,
         employeeId: employeeId,
+      );
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<void> setDayNote({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String note,
+  }) async {
+    try {
+      await _remote.setDayNote(scheduleId: scheduleId, day: day, note: note);
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<void> setLeave({
+    required String scheduleId,
+    required ScheduleDay day,
+    required String employeeId,
+    required LeaveType? type,
+  }) async {
+    try {
+      await _remote.setLeave(
+        scheduleId: scheduleId,
+        day: day,
+        employeeId: employeeId,
+        type: type,
+      );
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<void> setShiftHours({
+    required String scheduleId,
+    required ScheduleDay day,
+    required ScheduleShift shift,
+    required ShiftHours? hours,
+  }) async {
+    try {
+      await _remote.setShiftHours(
+        scheduleId: scheduleId,
+        day: day,
+        shift: shift,
+        hours: hours,
       );
     } on ServerException catch (e) {
       throw ServerFailure(e.message);

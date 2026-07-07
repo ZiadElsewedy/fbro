@@ -5,6 +5,7 @@ import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/core/widgets/app_empty_state.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
@@ -45,17 +46,11 @@ class _BroadcastDetailScreenState extends State<BroadcastDetailScreen> {
           orElse: () => null,
         );
         final b = fromFeed ?? widget.broadcast;
-        return Scaffold(
-          backgroundColor: AppColors.darkBg,
-          appBar: AppBar(
-            backgroundColor: AppColors.darkBg,
-            elevation: 0,
-            title: Text('Broadcast', style: AppTypography.h3),
-            actions: [
-              if (b != null)
-                _ActionsMenu(broadcast: b),
-            ],
-          ),
+        return AdaptiveScaffold(
+          title: 'Broadcast',
+          actions: [
+            if (b != null) _ActionsMenu(broadcast: b),
+          ],
           body: b == null ? _missing() : _detail(context, b),
         );
       },

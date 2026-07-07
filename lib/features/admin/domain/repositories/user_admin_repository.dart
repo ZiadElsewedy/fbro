@@ -1,4 +1,5 @@
 import 'package:drop/core/enums/user_role.dart';
+import 'package:drop/features/admin/domain/entities/user_compensation.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 
 /// Admin operations over users. Reuses the auth [UserEntity]. All methods require
@@ -46,4 +47,21 @@ abstract class UserAdminRepository {
 
   /// Set the HR employment label (`active` / `suspended` / `terminated`).
   Future<void> changeUserEmploymentStatus(String uid, String status);
+
+  /// Set the user's compensation record (admin-only fields). Unlike
+  /// [updateUserDetails], all four keys are ALWAYS written — null clears a
+  /// field — so the sheet's empty inputs reliably remove stale values.
+  /// Writes the PRIVATE subdocument `users/{uid}/private/compensation`
+  /// (C2 fix) — never the branch-readable user doc.
+  Future<void> updateUserCompensation(
+    String uid, {
+    required double? salaryAmount,
+    required String? salaryType,
+    required String? paymentMethod,
+    required String? paymentNumber,
+  });
+
+  /// The user's private compensation record, loaded ON DEMAND (admin
+  /// Details / Edit-Info surfaces). Never part of a user-list fetch.
+  Future<UserCompensation> getUserCompensation(String uid);
 }

@@ -1,17 +1,25 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drop/core/di/injection.dart';
+import 'package:drop/core/observability/crash_reporter.dart';
 import 'package:drop/core/routes/app_router.dart';
 import 'package:drop/core/routes/route_names.dart';
+import 'package:drop/core/services/usage_tracker.dart';
+import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/core/theme/app_theme.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_state.dart';
+import 'package:drop/features/auth/presentation/pages/splash_page.dart';
 import 'package:drop/firebase_options.dart';
 
 /// Background FCM handler. The push carries a `notification` block, so the OS
@@ -25,60 +33,284 @@ final GlobalKey<ScaffoldMessengerState> _messengerKey =
     GlobalKey<ScaffoldMessengerState>();
 
 /// The app router, created once so the FCM tap handler can navigate.
-late final GoRouter _router;
+GoRouter? _router;
 
-void main() async {
+/// Firebase/DI are initialized lazily after Flutter has painted the first black
+/// frame. This keeps retries idempotent if startup fails before the router is
+/// ready.
+bool _dependenciesInitialized = false;
+
+void main() {
+  // Everything — including ensureInitialized and runApp — lives inside ONE
+  // guarded zone, so a zone-level uncaught error is always captured (4th
+  // crash funnel, alongside FlutterError.onError / PlatformDispatcher.onError
+  // / the isolate listener installed below).
+  runZonedGuarded<Future<void>>(_bootstrap, CrashReporter.recordZoneError);
+}
+
+Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Crash capture FIRST — everything after this line is covered.
+  CrashReporter.install();
+  // Global debug logging (debug builds only): cubit lifecycle + state changes
+  // via the observer; navigation via the router observers; function/timing
+  // logs via AppLog at call sites. (Breadcrumbs + crash persistence stay on
+  // in release.)
+  if (kDebugMode) Bloc.observer = AppBlocObserver();
+  // Paint the native-matching black frame immediately. Firebase, DI, session
+  // restore, and home-critical cache warm-up start after that first frame while
+  // the platform-appropriate launch intro is already visible.
+  runApp(const LaunchApp());
 
-  // Offline-first: enable Firestore local persistence with an unlimited cache so
-  // the app survives unstable connections — cached reads, queued writes that
-  // sync on reconnect, and no crashes when the network drops. Mobile enables
-  // persistence by default; we set it explicitly (and lift the cache cap) for
-  // production. Must run before any Firestore operation.
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  // If the previous session crashed, surface the persisted report for export
+  // (fire-and-forget — never delays startup).
+  unawaited(_surfacePendingCrashReport());
+}
+
+/// Owns the cold-start rendezvous: the routed app is mounted only after both
+/// the platform intro and the app bootstrap have completed.
+class LaunchApp extends StatefulWidget {
+  const LaunchApp({super.key});
+
+  @override
+  State<LaunchApp> createState() => _LaunchAppState();
+}
+
+class _LaunchAppState extends State<LaunchApp> {
+  GoRouter? _readyRouter;
+  Object? _bootstrapError;
+  bool _animationFinished = false;
+  bool _bootstrapping = false;
+
+  bool get _canEnterApp => _animationFinished && _readyRouter != null;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startBootstrap());
+  }
+
+  void _startBootstrap() {
+    if (_bootstrapping) return;
+    setState(() {
+      _bootstrapping = true;
+      _bootstrapError = null;
+    });
+    _initializeRuntime()
+        .then((router) {
+          if (!mounted) return;
+          setState(() {
+            _readyRouter = router;
+            _bootstrapping = false;
+          });
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          AppLog.error('boot', 'startup failed', error, stackTrace);
+          if (!mounted) return;
+          setState(() {
+            _bootstrapError = error;
+            _bootstrapping = false;
+          });
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_canEnterApp) return App(router: _readyRouter!);
+
+    return MaterialApp(
+      title: 'DROP',
+      theme: AppTheme.dark,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.dark,
+      debugShowCheckedModeBanner: false,
+      home: SplashPage(
+        bootstrapError: _bootstrapError,
+        isBootstrapping: _bootstrapping,
+        onRetry: _startBootstrap,
+        onAnimationComplete: () {
+          if (!mounted || _animationFinished) return;
+          setState(() => _animationFinished = true);
+        },
+      ),
+    );
+  }
+}
+
+Future<GoRouter> _initializeRuntime() async {
+  if (Firebase.apps.isEmpty) {
+    await AppLog.time(
+      'boot',
+      'Firebase.initializeApp',
+      () => Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      ),
+    );
+  }
+
+  if (!_dependenciesInitialized) {
+    // Must be configured before the first Firestore operation.
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+    AppDependencies.init();
+    UsageTracker.init(FirebaseFirestore.instance);
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    _dependenciesInitialized = true;
+  }
+
+  await AppLog.time(
+    'auth',
+    'restoreSession',
+    AppDependencies.authCubit.restoreSession,
   );
 
-  AppDependencies.init();
-  _router = createRouter(AppDependencies.authCubit);
+  final user = AppDependencies.authCubit.state.maybeWhen(
+    authenticated: (value) => value,
+    orElse: () => null,
+  );
+  if (user != null && user.hasAppAccess) {
+    // Only the existing home-critical, cache-backed scopes are warmed. Feature
+    // screens such as schedule, swaps, cases, and templates remain lazy.
+    await Future.wait<void>([
+      AppDependencies.statisticsCubit.load(user),
+      AppDependencies.taskCubit.load(user),
+      AppDependencies.branchCubit.loadIfNeeded(),
+    ]);
+  }
 
-  // FCM engine (best-effort; never blocks startup).
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  final router = _router ??= createRouter(
+    AppDependencies.authCubit,
+    initialLocation: _initialLocationFor(AppDependencies.authCubit.state),
+  );
+  _configureNotificationService();
+  _handleAuthState(AppDependencies.authCubit.state);
+  return router;
+}
+
+String _initialLocationFor(AuthState state) => state.maybeWhen(
+  authenticated: (user) {
+    if (!user.isActive) return RouteNames.login;
+    if (user.mustChangePassword) return RouteNames.forcePasswordChange;
+    if (!user.isProfileCompleted) return RouteNames.profileCompletion;
+    return RouteNames.homeForRole(user.role);
+  },
+  orElse: () => RouteNames.login,
+);
+
+void _configureNotificationService() {
   AppDependencies.notificationService
     ..onForeground = (title, body) {
-      final text = [title, body]
-          .where((s) => s != null && s.isNotEmpty)
-          .join(' — ');
+      final text = [
+        title,
+        body,
+      ].where((s) => s != null && s.isNotEmpty).join(' — ');
       if (text.isNotEmpty) {
         _messengerKey.currentState?.showSnackBar(SnackBar(content: Text(text)));
       }
     }
     ..onMessageTap = (data) {
-      // Notification tapped (from background or cold start). A task push opens
-      // the exact task; everything else opens the in-app inbox (a shared route
-      // for every role). The router redirects to the right place if the session
-      // isn't ready. Log the payload for diagnostics.
       developer.log(
         'Notification tapped — type=${data['type']} task=${data['taskId']} '
         'broadcast=${data['broadcastId']} route=${data['route']}',
         name: 'fcm',
       );
+      final router = _router;
+      if (router == null) return;
       final taskId = data['taskId'];
-      if (data['route'] == 'task_details' && taskId != null && taskId.isNotEmpty) {
-        _router.push(RouteNames.taskDetail(taskId));
+      if (data['route'] == 'task_details' &&
+          taskId != null &&
+          taskId.isNotEmpty) {
+        router.push(RouteNames.taskDetail(taskId));
       } else {
-        _router.go(RouteNames.notifications);
+        router.go(RouteNames.notifications);
       }
-    }
-    ..init();
+    };
+  unawaited(AppDependencies.notificationService.init());
+}
 
-  runApp(const App());
+void _handleAuthState(AuthState state) {
+  state.maybeWhen(
+    authenticated: (u) {
+      CrashContext.userId = u.uid;
+      CrashContext.userRole = u.role.value;
+      unawaited(AppDependencies.notificationService.registerToken(u.uid));
+      AppDependencies.notificationCubit.load(u.uid);
+      if (u.hasAppAccess) {
+        // Idempotent: cold start has already awaited these; later sign-ins warm
+        // the same home-critical scopes while the router advances.
+        AppDependencies.statisticsCubit.load(u);
+        AppDependencies.taskCubit.load(u);
+        AppDependencies.branchCubit.loadIfNeeded();
+      }
+    },
+    unauthenticated: () {
+      CrashContext.userId = null;
+      CrashContext.userRole = null;
+      unawaited(AppDependencies.notificationService.forgetUser());
+      AppDependencies.notificationCubit.clear();
+    },
+    orElse: () {},
+  );
+}
+
+/// Next-launch crash detection (Part 6): when a persisted crash report exists,
+/// show a banner offering to copy the full report to the clipboard. Both
+/// actions clear the file so the banner appears once per crash.
+Future<void> _surfacePendingCrashReport() async {
+  final report = await CrashReporter.pendingReport();
+  if (report == null) return;
+  AppLog.warning('crash', 'previous session crashed — report pending export');
+
+  // Wait for the app's ScaffoldMessenger to mount (first frames).
+  ScaffoldMessengerState? messenger;
+  for (var i = 0; i < 20 && messenger == null; i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    messenger = _messengerKey.currentState;
+  }
+  if (messenger == null) return;
+
+  messenger.showMaterialBanner(
+    MaterialBanner(
+      backgroundColor: AppColors.darkSurfaceElevated,
+      leading: const Icon(Icons.bug_report_outlined, color: AppColors.error),
+      content: const Text(
+        'DROP quit unexpectedly last time. You can export the crash report '
+        'for debugging.',
+        style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: report));
+            messenger!
+              ..hideCurrentMaterialBanner()
+              ..showSnackBar(
+                const SnackBar(
+                  content: Text('Crash report copied to clipboard'),
+                ),
+              );
+            await CrashReporter.clearPendingReport();
+          },
+          child: const Text('Copy report'),
+        ),
+        TextButton(
+          onPressed: () async {
+            messenger!.hideCurrentMaterialBanner();
+            await CrashReporter.clearPendingReport();
+          },
+          child: const Text('Dismiss'),
+        ),
+      ],
+    ),
+  );
 }
 
 class App extends StatelessWidget {
-  const App({super.key});
+  const App({required this.router, super.key});
+
+  final GoRouter router;
 
   @override
   Widget build(BuildContext context) {
@@ -97,45 +329,18 @@ class App extends StatelessWidget {
         BlocProvider.value(value: AppDependencies.broadcastTemplateCubit),
         BlocProvider.value(value: AppDependencies.broadcastScheduleCubit),
         BlocProvider.value(value: AppDependencies.notificationCubit),
+        BlocProvider.value(value: AppDependencies.caseListCubit),
       ],
       // Register / clear the FCM token as the auth session changes.
       child: BlocListener<AuthCubit, AuthState>(
-        listener: (context, state) {
-          state.maybeWhen(
-            authenticated: (u) {
-              AppDependencies.notificationService.registerToken(u.uid);
-              AppDependencies.notificationCubit.load(u.uid);
-              // Phase C warm-start: preload the home-critical cubits the moment
-              // the session is known (cold-start restore OR fresh login), so the
-              // fetch overlaps the splash/route transition and Home paints with
-              // real data instead of skeletons. Fire-and-forget + concurrent for
-              // per-cubit error isolation; both loads are idempotent (Phase A),
-              // so Home's own initState calls then no-op (no double fetch).
-              // Gated on access — a pending user (confined to /pending-approval)
-              // triggers zero home reads.
-              if (u.hasAppAccess) {
-                AppDependencies.statisticsCubit.load(u);
-                AppDependencies.taskCubit.load(u);
-                // Branch directory — small + cached; lets every branch-identity
-                // surface (schedule/operations/profile/swap) resolve a branchId
-                // to its logo via the app-wide BranchCubit. (§8b)
-                AppDependencies.branchCubit.loadIfNeeded();
-              }
-            },
-            unauthenticated: () {
-              AppDependencies.notificationService.forgetUser();
-              AppDependencies.notificationCubit.clear();
-            },
-            orElse: () {},
-          );
-        },
+        listener: (context, state) => _handleAuthState(state),
         child: MaterialApp.router(
           title: 'DROP',
           theme: AppTheme.dark,
           darkTheme: AppTheme.dark,
           themeMode: ThemeMode.dark,
           scaffoldMessengerKey: _messengerKey,
-          routerConfig: _router,
+          routerConfig: router,
           debugShowCheckedModeBanner: false,
         ),
       ),

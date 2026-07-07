@@ -7,10 +7,12 @@ import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/app_motion.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
+import 'package:drop/core/widgets/segmented_tab_bar.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
 import 'package:drop/features/operations/presentation/pages/branch_operations_screen.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
@@ -34,14 +36,24 @@ class AdminTaskOverviewScreen extends StatefulWidget {
       _AdminTaskOverviewScreenState();
 }
 
-class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen> {
+class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen>
+    with SingleTickerProviderStateMixin {
   late Future<List<BranchEntity>> _branchesFuture;
+
+  /// Drives the Active | Done segmented toggle + the paired page view.
+  late final TabController _tabs = TabController(length: 2, vsync: this);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
     _branchesFuture = Future.value(const []);
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
   }
 
   void _load() {
@@ -87,6 +99,10 @@ class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen> {
           onPressed: _load,
         ),
       ],
+      bottom: SegmentedTabBar(
+        controller: _tabs,
+        tabs: const ['Active', 'Done'],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         backgroundColor: AppColors.accent,
@@ -119,38 +135,65 @@ class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen> {
           children: [
             if (busy) const LinearProgressIndicator(minHeight: 2),
             Expanded(
-              child: RefreshIndicator(
-                onRefresh: () async => _load(),
-                child: rows.isEmpty
-                    ? const TaskEmptyState(
-                        message:
-                            'No branches yet.\nCreate a branch, then add tasks.',
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.pagePadding,
-                          AppSpacing.lg,
-                          AppSpacing.pagePadding,
-                          AppSpacing.xxxl * 2,
-                        ),
-                        children: [
-                          _CompanySummary(metrics: company, branches: rows.length),
-                          const SizedBox(height: AppSpacing.lg),
-                          for (var i = 0; i < rows.length; i++)
-                            EntranceFade(
-                              delay: staggerDelay(i),
-                              child: _BranchOverviewCard(
-                                row: rows[i],
-                                onTap: () => _openBranch(rows[i]),
-                              ),
-                            ),
-                        ],
-                      ),
+              child: TabBarView(
+                controller: _tabs,
+                children: [
+                  _page(rows, company, _TaskLens.active),
+                  _page(rows, company, _TaskLens.done),
+                ],
               ),
             ),
           ],
         );
       },
+    );
+  }
+
+  /// One lens page — the same branch grid, re-sorted and re-framed for the
+  /// [lens]. Active surfaces branches that need attention first; Done surfaces
+  /// the branches that have completed the most work.
+  Widget _page(
+    List<_BranchRow> rows,
+    _BranchMetrics company,
+    _TaskLens lens,
+  ) {
+    final sorted = _sortForLens(rows, lens);
+    return RefreshIndicator(
+      onRefresh: () async => _load(),
+      child: sorted.isEmpty
+          ? const TaskEmptyState(
+              message: 'No branches yet.\nCreate a branch, then add tasks.',
+            )
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.pagePadding,
+                AppSpacing.lg,
+                AppSpacing.pagePadding,
+                AppSpacing.xxxl * 2,
+              ),
+              children: [
+                _CompanySummary(
+                  metrics: company,
+                  branches: sorted.length,
+                  lens: lens,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                ResponsiveCardGrid(
+                  maxItemWidth: 520,
+                  children: [
+                    for (var i = 0; i < sorted.length; i++)
+                      EntranceFade(
+                        delay: staggerDelay(i),
+                        child: _BranchOverviewCard(
+                          row: sorted[i],
+                          lens: lens,
+                          onTap: () => _openBranch(sorted[i]),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
     );
   }
 
@@ -168,8 +211,8 @@ class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen> {
   /// Groups tasks by branch and joins them to the branch directory. Branches with
   /// no tasks are still listed (the admin should see every branch); task rows
   /// whose branch is missing from the directory are bucketed as "Unknown branch"
-  /// so legacy/orphaned tasks remain visible and actionable. Sorted so branches
-  /// needing attention (overdue / pending review) come first.
+  /// so legacy/orphaned tasks remain visible and actionable. Unsorted — each lens
+  /// orders the result via [_sortForLens].
   List<_BranchRow> _buildRows(
     List<BranchEntity> branches,
     List<TaskEntity> tasks,
@@ -202,19 +245,46 @@ class _AdminTaskOverviewScreenState extends State<AdminTaskOverviewScreen> {
         metrics: _BranchMetrics.from(entry.value),
       ));
     }
-
-    rows.sort((a, b) {
-      final attn = (b.metrics.needsAttention ? 1 : 0)
-          .compareTo(a.metrics.needsAttention ? 1 : 0);
-      if (attn != 0) return attn;
-      final byOverdue = b.metrics.overdue.compareTo(a.metrics.overdue);
-      if (byOverdue != 0) return byOverdue;
-      final byReview = b.metrics.pendingReview.compareTo(a.metrics.pendingReview);
-      if (byReview != 0) return byReview;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
     return rows;
   }
+}
+
+/// Which lens the overview is showing — the two segmented pages.
+enum _TaskLens { active, done }
+
+/// Orders branches for the given [lens]. **Active** puts the branches that need
+/// attention (overdue / pending review) first; **Done** puts the branches that
+/// have completed the most work (approved count, then completion rate) first.
+/// Both fall back to name so the order is stable.
+List<_BranchRow> _sortForLens(List<_BranchRow> rows, _TaskLens lens) {
+  final sorted = [...rows];
+  int byName(_BranchRow a, _BranchRow b) =>
+      a.name.toLowerCase().compareTo(b.name.toLowerCase());
+
+  switch (lens) {
+    case _TaskLens.active:
+      sorted.sort((a, b) {
+        final attn = (b.metrics.needsAttention ? 1 : 0)
+            .compareTo(a.metrics.needsAttention ? 1 : 0);
+        if (attn != 0) return attn;
+        final byOverdue = b.metrics.overdue.compareTo(a.metrics.overdue);
+        if (byOverdue != 0) return byOverdue;
+        final byReview =
+            b.metrics.pendingReview.compareTo(a.metrics.pendingReview);
+        if (byReview != 0) return byReview;
+        return byName(a, b);
+      });
+    case _TaskLens.done:
+      sorted.sort((a, b) {
+        final byDone = b.metrics.approved.compareTo(a.metrics.approved);
+        if (byDone != 0) return byDone;
+        final byRate = (b.metrics.completionRate ?? -1)
+            .compareTo(a.metrics.completionRate ?? -1);
+        if (byRate != 0) return byRate;
+        return byName(a, b);
+      });
+  }
+  return sorted;
 }
 
 /// One branch's row in the overview: identity + computed [metrics].
@@ -303,15 +373,23 @@ class _BranchMetrics {
   }
 }
 
-/// Company-wide snapshot strip at the top of the overview.
+/// Company-wide snapshot strip at the top of the overview. The middle stats
+/// re-frame per [lens]: **Active** leads with open work + overdue risk; **Done**
+/// leads with completed work + what is left open.
 class _CompanySummary extends StatelessWidget {
-  const _CompanySummary({required this.metrics, required this.branches});
+  const _CompanySummary({
+    required this.metrics,
+    required this.branches,
+    required this.lens,
+  });
   final _BranchMetrics metrics;
   final int branches;
+  final _TaskLens lens;
 
   @override
   Widget build(BuildContext context) {
     final pct = metrics.completionRate;
+    final isDone = lens == _TaskLens.done;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
@@ -323,7 +401,10 @@ class _CompanySummary extends StatelessWidget {
         children: [
           _SummaryStat(value: '$branches', label: 'Branches'),
           _summaryDivider(),
-          _SummaryStat(value: '${metrics.active}', label: 'Active'),
+          if (isDone)
+            _SummaryStat(value: '${metrics.approved}', label: 'Done')
+          else
+            _SummaryStat(value: '${metrics.active}', label: 'Active'),
           _summaryDivider(),
           _SummaryStat(
             value: '${metrics.pendingReview}',
@@ -331,11 +412,14 @@ class _CompanySummary extends StatelessWidget {
             emphasised: metrics.pendingReview > 0,
           ),
           _summaryDivider(),
-          _SummaryStat(
-            value: '${metrics.overdue}',
-            label: 'Overdue',
-            alert: metrics.overdue > 0,
-          ),
+          if (isDone)
+            _SummaryStat(value: '${metrics.active}', label: 'Open')
+          else
+            _SummaryStat(
+              value: '${metrics.overdue}',
+              label: 'Overdue',
+              alert: metrics.overdue > 0,
+            ),
           _summaryDivider(),
           _SummaryStat(
             value: pct == null ? '—' : '${(pct * 100).round()}%',
@@ -387,22 +471,28 @@ class _SummaryStat extends StatelessWidget {
   }
 }
 
-/// A single branch card in the admin overview.
+/// A single branch card in the admin overview. The metric row + caption re-frame
+/// per [lens] — Active shows open/overdue work, Done shows completed work.
 class _BranchOverviewCard extends StatelessWidget {
-  const _BranchOverviewCard({required this.row, required this.onTap});
+  const _BranchOverviewCard({
+    required this.row,
+    required this.onTap,
+    required this.lens,
+  });
   final _BranchRow row;
   final VoidCallback onTap;
+  final _TaskLens lens;
 
   @override
   Widget build(BuildContext context) {
     final m = row.metrics;
     final pct = m.completionRate;
+    final isDone = lens == _TaskLens.done;
     final hasCover = (row.coverUrl ?? '').isNotEmpty;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         clipBehavior: Clip.antiAlias,
-        margin: const EdgeInsets.only(bottom: AppSpacing.md),
         decoration: BoxDecoration(
           color: AppColors.darkSurface,
           borderRadius: AppRadius.cardAll,
@@ -431,22 +521,29 @@ class _BranchOverviewCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    children: [
-                      _Metric(value: '${m.active}', label: 'Active'),
-                      _Metric(
-                          value: '${m.pendingReview}', label: 'Pending review'),
-                      _Metric(
-                        value: '${m.overdue}',
-                        label: 'Overdue',
-                        alert: m.overdue > 0,
-                      ),
-                    ],
+                    children: isDone
+                        ? [
+                            _Metric(value: '${m.approved}', label: 'Done'),
+                            _Metric(
+                                value: '${m.pendingReview}',
+                                label: 'In review'),
+                            _Metric(value: '${m.active}', label: 'Open'),
+                          ]
+                        : [
+                            _Metric(value: '${m.active}', label: 'Active'),
+                            _Metric(
+                                value: '${m.pendingReview}',
+                                label: 'Pending review'),
+                            _Metric(
+                              value: '${m.overdue}',
+                              label: 'Overdue',
+                              alert: m.overdue > 0,
+                            ),
+                          ],
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   Text(
-                    pct == null
-                        ? 'No tasks yet'
-                        : 'Completion ${(pct * 100).round()}%',
+                    _caption(m, pct, isDone),
                     style: AppTypography.caption
                         .copyWith(color: AppColors.textSecondary),
                   ),
@@ -470,6 +567,18 @@ class _BranchOverviewCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Supporting line under the metrics. Active reads as progress-so-far; Done
+  /// celebrates a fully-cleared branch, else counts what is done of the total.
+  String _caption(_BranchMetrics m, double? pct, bool isDone) {
+    if (pct == null) return 'No tasks yet';
+    if (isDone) {
+      return m.approved == m.total
+          ? 'All ${m.total} tasks complete'
+          : '${m.approved} of ${m.total} done';
+    }
+    return 'Completion ${(pct * 100).round()}%';
   }
 
   /// The text-only identity header used when a branch has no cover photo.

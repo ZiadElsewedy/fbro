@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/brand_watermark.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
+import 'package:drop/core/widgets/glass_container.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/branch/presentation/cubit/branch_cubit.dart';
@@ -19,9 +23,11 @@ import 'package:drop/features/operations/domain/shift_filter.dart';
 import 'package:drop/features/operations/presentation/cubit/branch_operations_cubit.dart';
 import 'package:drop/features/operations/presentation/cubit/branch_operations_state.dart';
 import 'package:drop/features/operations/presentation/pages/employee_detail_screen.dart';
+import 'package:drop/features/operations/presentation/pages/operations_metric_screen.dart';
 import 'package:drop/features/operations/presentation/widgets/workload_card.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
 import 'package:drop/features/task/presentation/pages/branch_task_list_screen.dart';
+import 'package:drop/features/task/presentation/widgets/recurring_shift_task_sheets.dart';
 import 'package:drop/features/task/presentation/widgets/task_template_sheets.dart';
 
 /// The Branch Operations cockpit — the heart of the task→operations redesign.
@@ -87,6 +93,12 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
         ),
       ));
 
+  void _manageRecurringShiftTasks() => showManageRecurringShiftTasksSheet(
+        context: context,
+        cubit: context.read<TaskCubit>(),
+        branchId: widget.branchId,
+      );
+
   void _openEmployee(UserEntity employee) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => EmployeeDetailScreen(
@@ -96,49 +108,63 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
         ),
       ));
 
+  void _openMetric(OperationsMetric metric) =>
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => OperationsMetricScreen(
+          metric: metric,
+          branchId: widget.branchId,
+          branchName: _branchLabel,
+          isAdmin: context.isAdmin,
+        ),
+      ));
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: BlocBuilder<BranchCubit, BranchState>(
-          builder: (context, _) {
-            final branch = context.read<BranchCubit>().branchById(widget.branchId);
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                BranchAvatar(
-                  logoUrl: branch?.logoUrl,
-                  name: branch?.name ?? _branchLabel,
-                  size: 30,
-                  radius: 9,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Flexible(
-                  child: Text(branch?.name ?? _branchLabel,
-                      style: AppTypography.h3, overflow: TextOverflow.ellipsis),
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.checklist_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'All tasks',
-            onPressed: _openAllTasks,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'Refresh',
-            onPressed: () => context.read<BranchOperationsCubit>().refresh(),
-          ),
-        ],
+    final isDesktop = context.isDesktop;
+    return AdaptiveScaffold(
+      title: _branchLabel,
+      titleWidget: BlocBuilder<BranchCubit, BranchState>(
+        builder: (context, _) {
+          final branch = context.read<BranchCubit>().branchById(widget.branchId);
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              BranchAvatar(
+                logoUrl: branch?.logoUrl,
+                name: branch?.name ?? _branchLabel,
+                size: isDesktop ? 40 : 30,
+                radius: isDesktop ? 12 : 9,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Flexible(
+                child: Text(branch?.name ?? _branchLabel,
+                    style: isDesktop ? AppTypography.h1 : AppTypography.h3,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          );
+        },
       ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.checklist_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'All tasks',
+          onPressed: _openAllTasks,
+        ),
+        IconButton(
+          icon: const Icon(Icons.event_repeat_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Recurring Shift Tasks',
+          onPressed: _manageRecurringShiftTasks,
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Refresh',
+          onPressed: () => context.read<BranchOperationsCubit>().refresh(),
+        ),
+      ],
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _newTask,
         backgroundColor: AppColors.primary,
@@ -184,7 +210,10 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
             filter: filter,
           ),
           const SizedBox(height: AppSpacing.lg),
-          _SummaryHeader(summary: workload.summary),
+          OperationsSummaryHeader(
+            summary: workload.summary,
+            onSelect: _openMetric,
+          ),
           const SizedBox(height: AppSpacing.xl),
           _ShiftToggle(
             value: filter,
@@ -196,14 +225,20 @@ class _BranchOperationsScreenState extends State<BranchOperationsScreen> {
           if (employees.isEmpty)
             _EmptyTeam(filter: filter)
           else
-            for (var i = 0; i < employees.length; i++)
-              EntranceFade(
-                delay: staggerDelay(i),
-                child: WorkloadCard(
-                  workload: employees[i],
-                  onTap: () => _openEmployee(employees[i].user),
-                ),
-              ),
+            ResponsiveCardGrid(
+              runSpacing: 0, // WorkloadCard carries its own bottom margin
+              maxItemWidth: 460,
+              children: [
+                for (var i = 0; i < employees.length; i++)
+                  EntranceFade(
+                    delay: staggerDelay(i),
+                    child: WorkloadCard(
+                      workload: employees[i],
+                      onTap: () => _openEmployee(employees[i].user),
+                    ),
+                  ),
+              ],
+            ),
         ],
       ),
     );
@@ -261,8 +296,11 @@ class _BranchHero extends StatelessWidget {
               ),
             ],
           ),
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
+          // A fixed banner height (not a 16:9 aspect ratio) so the cover stays a
+          // slim premium hero on wide desktop windows instead of ballooning to
+          // ~700px tall. The image fills it via BoxFit.cover.
+          child: SizedBox(
+            height: context.isDesktop ? 230 : 190,
             child: BrandWatermark(
               opacity: 0.03,
               fontSize: 64,
@@ -369,74 +407,137 @@ class _MonoHeroBg extends StatelessWidget {
 
 // ─── Summary header (branch health in 3 seconds) ──────────────────────────────
 
-class _SummaryHeader extends StatelessWidget {
-  const _SummaryHeader({required this.summary});
+class OperationsSummaryHeader extends StatelessWidget {
+  const OperationsSummaryHeader({
+    super.key,
+    required this.summary,
+    required this.onSelect,
+  });
+
   final BranchSummary summary;
+  final ValueChanged<OperationsMetric> onSelect;
 
   @override
   Widget build(BuildContext context) {
+    final tiles = <Widget>[
+      _StatTile(
+        value: summary.activeTasks,
+        label: 'Active tasks',
+        icon: Icons.bolt_rounded,
+        onTap: () => onSelect(OperationsMetric.activeTasks),
+      ),
+      _StatTile(
+        value: summary.overdueTasks,
+        label: 'Overdue',
+        icon: Icons.warning_amber_rounded,
+        alert: summary.overdueTasks > 0,
+        onTap: () => onSelect(OperationsMetric.overdue),
+      ),
+      _StatTile(
+        value: summary.pendingReviews,
+        label: 'Pending review',
+        icon: Icons.fact_check_outlined,
+        onTap: () => onSelect(OperationsMetric.pendingReview),
+      ),
+      _StatTile(
+        value: summary.staffActive,
+        label: 'Staff active',
+        icon: Icons.groups_2_outlined,
+        onTap: () => onSelect(OperationsMetric.staffActive),
+      ),
+    ];
+
+    // Desktop: one tight row of four compact stat tiles (not 2×2 giant cards).
+    if (context.isDesktop) {
+      return Row(
+        children: [
+          for (var i = 0; i < tiles.length; i++) ...[
+            if (i > 0) const SizedBox(width: AppSpacing.sm),
+            Expanded(child: tiles[i]),
+          ],
+        ],
+      );
+    }
+
+    // Mobile / tablet: 2×2.
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-                child: _StatTile(
-                    value: summary.activeTasks, label: 'Active tasks')),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-                child: _StatTile(
-                    value: summary.overdueTasks,
-                    label: 'Overdue',
-                    alert: summary.overdueTasks > 0)),
-          ],
-        ),
+        Row(children: [
+          Expanded(child: tiles[0]),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: tiles[1]),
+        ]),
         const SizedBox(height: AppSpacing.sm),
-        Row(
-          children: [
-            Expanded(
-                child: _StatTile(
-                    value: summary.pendingReviews, label: 'Pending review')),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-                child:
-                    _StatTile(value: summary.staffActive, label: 'Staff active')),
-          ],
-        ),
+        Row(children: [
+          Expanded(child: tiles[2]),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: tiles[3]),
+        ]),
       ],
     );
   }
 }
 
 class _StatTile extends StatelessWidget {
-  const _StatTile({required this.value, required this.label, this.alert = false});
+  const _StatTile({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.alert = false,
+  });
+
   final int value;
   final String label;
+  final IconData icon;
+  final VoidCallback onTap;
   final bool alert;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          vertical: AppSpacing.md, horizontal: AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface,
+    final color = alert ? AppColors.error : AppColors.textPrimary;
+    return Semantics(
+      button: true,
+      label: 'Open $label',
+      child: GlassContainer(
+        onTap: onTap,
+        padding: const EdgeInsets.symmetric(
+            vertical: AppSpacing.md, horizontal: AppSpacing.lg),
         borderRadius: AppRadius.lgAll,
-        border: Border.all(
-            color: alert ? AppColors.error.withAlpha(90) : AppColors.darkBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$value',
-            style: AppTypography.h1.copyWith(
-              fontSize: 26,
-              color: alert ? AppColors.error : AppColors.textPrimary,
+        highlight: alert,
+        accent: AppColors.error,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '$value',
+                  style: AppTypography.h1.copyWith(
+                    fontSize: 26,
+                    color: color,
+                  ),
+                ),
+                const Spacer(),
+                Icon(Icons.arrow_outward_rounded,
+                    size: 16, color: AppColors.textTertiary),
+              ],
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(label, style: AppTypography.caption),
-        ],
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Icon(icon, size: 13, color: color.withAlpha(180)),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(label,
+                      style: AppTypography.caption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

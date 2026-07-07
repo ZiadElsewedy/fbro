@@ -8,11 +8,15 @@ import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
+import 'package:drop/core/widgets/segmented_tab_bar.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
 import 'package:drop/features/task/presentation/cubit/task_state.dart';
 import 'package:drop/features/task/presentation/pages/task_details_screen.dart';
+import 'package:drop/features/task/presentation/widgets/live_status_border.dart';
+import 'package:drop/features/task/presentation/widgets/task_card.dart';
 import 'package:drop/features/task/presentation/widgets/task_empty_state.dart';
 
 /// Employee task screen — sectioned, animated, and optimised for speed.
@@ -52,15 +56,17 @@ class _MyTasksScreenState extends State<MyTasksScreen>
       title: 'My Tasks',
       actions: [
         IconButton(
-          icon: const Icon(Icons.refresh_rounded,
-              color: AppColors.textSecondary),
+          icon: const Icon(
+            Icons.refresh_rounded,
+            color: AppColors.textSecondary,
+          ),
           tooltip: 'Refresh',
           onPressed: () => context.read<TaskCubit>().refresh(),
         ),
       ],
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(44),
-        child: _TabBar(controller: _tabs),
+      bottom: SegmentedTabBar(
+        controller: _tabs,
+        tabs: const ['Active', 'Done'],
       ),
       body: BlocConsumer<TaskCubit, TaskState>(
         listener: (context, state) =>
@@ -83,8 +89,7 @@ class _MyTasksScreenState extends State<MyTasksScreen>
     return Column(
       children: [
         if (busy)
-          const LinearProgressIndicator(
-              minHeight: 2, color: AppColors.primary),
+          const LinearProgressIndicator(minHeight: 2, color: AppColors.primary),
         Expanded(
           child: TabBarView(
             controller: _tabs,
@@ -95,44 +100,6 @@ class _MyTasksScreenState extends State<MyTasksScreen>
           ),
         ),
       ],
-    );
-  }
-}
-
-// ─── Tab bar ────────────────────────────────────────────────────────
-
-class _TabBar extends StatelessWidget {
-  const _TabBar({required this.controller});
-  final TabController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-          AppSpacing.pagePadding, 0, AppSpacing.pagePadding, AppSpacing.md),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.darkBorder),
-      ),
-      child: TabBar(
-        controller: controller,
-        indicator: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(9),
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        dividerColor: Colors.transparent,
-        labelColor: AppColors.onPrimary,
-        unselectedLabelColor: AppColors.textSecondary,
-        labelStyle: AppTypography.caption.copyWith(fontWeight: FontWeight.w700),
-        unselectedLabelStyle: AppTypography.caption,
-        tabs: const [
-          Tab(text: 'Active'),
-          Tab(text: 'Done'),
-        ],
-      ),
     );
   }
 }
@@ -153,7 +120,11 @@ class _ActiveTasksTab extends StatelessWidget {
     final rejected = _rejectedTasks(tasks);
 
     final empty =
-        today.isEmpty && inProgress.isEmpty && pending.isEmpty && inReview.isEmpty && rejected.isEmpty;
+        today.isEmpty &&
+        inProgress.isEmpty &&
+        pending.isEmpty &&
+        inReview.isEmpty &&
+        rejected.isEmpty;
 
     if (empty) {
       return const TaskEmptyState(
@@ -178,7 +149,7 @@ class _ActiveTasksTab extends StatelessWidget {
               icon: Icons.replay_rounded,
               color: AppColors.error,
             ),
-            ..._buildCards(context, rejected, directory),
+            _buildCards(context, rejected, directory),
           ],
           if (inProgress.isNotEmpty) ...[
             _SectionHeader(
@@ -186,7 +157,7 @@ class _ActiveTasksTab extends StatelessWidget {
               count: inProgress.length,
               icon: Icons.timelapse_rounded,
             ),
-            ..._buildCards(context, inProgress, directory),
+            _buildCards(context, inProgress, directory),
           ],
           if (today.isNotEmpty) ...[
             _SectionHeader(
@@ -194,7 +165,7 @@ class _ActiveTasksTab extends StatelessWidget {
               count: today.length,
               icon: Icons.today_outlined,
             ),
-            ..._buildCards(context, today, directory),
+            _buildCards(context, today, directory),
           ],
           if (pending.isNotEmpty) ...[
             _SectionHeader(
@@ -202,7 +173,7 @@ class _ActiveTasksTab extends StatelessWidget {
               count: pending.length,
               icon: Icons.schedule_outlined,
             ),
-            ..._buildCards(context, pending, directory),
+            _buildCards(context, pending, directory),
           ],
           if (inReview.isNotEmpty) ...[
             _SectionHeader(
@@ -210,29 +181,32 @@ class _ActiveTasksTab extends StatelessWidget {
               count: inReview.length,
               icon: Icons.hourglass_empty_rounded,
             ),
-            ..._buildCards(context, inReview, directory),
+            _buildCards(context, inReview, directory),
           ],
         ],
       ),
     );
   }
 
-  List<Widget> _buildCards(
+  Widget _buildCards(
     BuildContext context,
     List<TaskEntity> list,
     Map<String, UserEntity> dir,
   ) {
-    return [
-      for (var i = 0; i < list.length; i++)
-        _AnimatedCard(
-          key: ValueKey(list[i].id),
-          index: i,
-          child: EmployeeTaskCard(
-            task: list[i],
-            directory: dir,
+    // EmployeeTaskCard carries its own bottom margin, so the grid adds no extra
+    // vertical spacing (runSpacing: 0) — only lays cards side-by-side on desktop.
+    return ResponsiveCardGrid(
+      runSpacing: 0,
+      maxItemWidth: 480,
+      children: [
+        for (var i = 0; i < list.length; i++)
+          _AnimatedCard(
+            key: ValueKey(list[i].id),
+            index: i,
+            child: EmployeeTaskCard(task: list[i], directory: dir),
           ),
-        ),
-    ];
+      ],
+    );
   }
 
   List<TaskEntity> _todayTasks(List<TaskEntity> all) {
@@ -260,10 +234,13 @@ class _ActiveTasksTab extends StatelessWidget {
     }).toList();
   }
 
-  List<TaskEntity> _reviewTasks(List<TaskEntity> all) =>
-      all.where((t) =>
-          t.status == TaskStatus.waitingReview ||
-          t.status == TaskStatus.completed).toList();
+  List<TaskEntity> _reviewTasks(List<TaskEntity> all) => all
+      .where(
+        (t) =>
+            t.status == TaskStatus.waitingReview ||
+            t.status == TaskStatus.completed,
+      )
+      .toList();
 
   List<TaskEntity> _rejectedTasks(List<TaskEntity> all) =>
       all.where((t) => t.status == TaskStatus.rejected).toList();
@@ -296,12 +273,18 @@ class _DoneTasksTab extends StatelessWidget {
           AppSpacing.xxxl,
         ),
         children: [
-          for (var i = 0; i < done.length; i++)
-            _AnimatedCard(
-              key: ValueKey(done[i].id),
-              index: i,
-              child: EmployeeTaskCard(task: done[i], directory: directory),
-            ),
+          ResponsiveCardGrid(
+            runSpacing: 0, // EmployeeTaskCard carries its own bottom margin
+            maxItemWidth: 480,
+            children: [
+              for (var i = 0; i < done.length; i++)
+                _AnimatedCard(
+                  key: ValueKey(done[i].id),
+                  index: i,
+                  child: EmployeeTaskCard(task: done[i], directory: directory),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -327,8 +310,7 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = color ?? AppColors.textTertiary;
     return Padding(
-      padding: const EdgeInsets.only(
-          top: AppSpacing.md, bottom: AppSpacing.sm),
+      padding: const EdgeInsets.only(top: AppSpacing.md, bottom: AppSpacing.sm),
       child: Row(
         children: [
           Icon(icon, size: 14, color: c),
@@ -336,7 +318,10 @@ class _SectionHeader extends StatelessWidget {
           Text(
             label.toUpperCase(),
             style: AppTypography.caption.copyWith(
-                color: c, fontWeight: FontWeight.w700, letterSpacing: 0.8),
+              color: c,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
           ),
           const SizedBox(width: AppSpacing.sm),
           Container(
@@ -345,9 +330,12 @@ class _SectionHeader extends StatelessWidget {
               color: AppColors.darkSurfaceElevated,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text('$count',
-                style:
-                    AppTypography.caption.copyWith(color: AppColors.textSecondary)),
+            child: Text(
+              '$count',
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
           ),
         ],
       ),
@@ -358,11 +346,7 @@ class _SectionHeader extends StatelessWidget {
 // ─── Animated card wrapper ──────────────────────────────────────────
 
 class _AnimatedCard extends StatefulWidget {
-  const _AnimatedCard({
-    super.key,
-    required this.index,
-    required this.child,
-  });
+  const _AnimatedCard({super.key, required this.index, required this.child});
 
   final int index;
   final Widget child;
@@ -377,8 +361,10 @@ class _AnimatedCardState extends State<_AnimatedCard>
     vsync: this,
     duration: const Duration(milliseconds: 400),
   );
-  late final Animation<double> _fade =
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+  late final Animation<double> _fade = CurvedAnimation(
+    parent: _ctrl,
+    curve: Curves.easeOut,
+  );
   late final Animation<Offset> _slide = Tween<Offset>(
     begin: const Offset(0, 0.08),
     end: Offset.zero,
@@ -387,10 +373,9 @@ class _AnimatedCardState extends State<_AnimatedCard>
   @override
   void initState() {
     super.initState();
-    Future.delayed(
-      Duration(milliseconds: 60 + widget.index * 50),
-      () { if (mounted) _ctrl.forward(); },
-    );
+    Future.delayed(Duration(milliseconds: 60 + widget.index * 50), () {
+      if (mounted) _ctrl.forward();
+    });
   }
 
   @override
@@ -424,21 +409,25 @@ class EmployeeTaskCard extends StatelessWidget {
     return GestureDetector(
       onTap: () => Navigator.of(context).push(
         PageRouteBuilder(
-          pageBuilder: (ctx, animation, secAnim) => TaskDetailsScreen(
-            task: task,
-            directory: directory,
-          ),
+          pageBuilder: (ctx, animation, secAnim) =>
+              TaskDetailsScreen(task: task, directory: directory),
           transitionsBuilder: (ctx, animation, secAnim, child) {
             return SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(1, 0),
-                end: Offset.zero,
-              ).animate(
-                  CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(1, 0),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
               child: FadeTransition(
                 opacity: CurvedAnimation(
-                    parent: animation,
-                    curve: const Interval(0, 0.6)),
+                  parent: animation,
+                  curve: const Interval(0, 0.6),
+                ),
                 child: child,
               ),
             );
@@ -460,88 +449,107 @@ class _MinimalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOverdue = _isOverdue(task);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface,
+    // Live-activity sweep (NOT status — decoupled from the status dot). Only
+    // actionable states animate; the margin sits outside so the sweep tracks
+    // the border, not the gap between cards.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: LiveStatusBorder(
+        color: liveActivityColor(task),
+        speed: liveOrbitSpeed(task),
+        pulse: taskOverdue(task),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isOverdue ? AppColors.error.withAlpha(80) : AppColors.darkBorder,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Title + status
-          Row(
+        child: Container(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          decoration: BoxDecoration(
+            color: AppColors.darkSurface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isOverdue
+                  ? AppColors.error.withAlpha(80)
+                  : AppColors.darkBorder,
+            ),
+          ),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _StatusDot(task.status),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      task.title,
-                      style: AppTypography.label.copyWith(
-                        fontSize: 15,
-                        color: task.status == TaskStatus.approved
-                            ? AppColors.textTertiary
-                            : AppColors.textPrimary,
-                        decoration: task.status == TaskStatus.approved
-                            ? TextDecoration.lineThrough
-                            : null,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (task.deadline != null) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        isOverdue
-                            ? 'Overdue · ${_dateLabel(task.deadline!)}'
-                            : _dateLabel(task.deadline!),
-                        style: AppTypography.caption.copyWith(
-                          color: isOverdue
-                              ? AppColors.error
-                              : AppColors.textTertiary,
+              // Title + status
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _StatusDot(task.status),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          task.title,
+                          style: AppTypography.label.copyWith(
+                            fontSize: 15,
+                            color: task.status == TaskStatus.approved
+                                ? AppColors.textTertiary
+                                : AppColors.textPrimary,
+                            decoration: task.status == TaskStatus.approved
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                        if (task.deadline != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            isOverdue
+                                ? 'Overdue · ${_dateLabel(task.deadline!)}'
+                                : _dateLabel(task.deadline!),
+                            style: AppTypography.caption.copyWith(
+                              color: isOverdue
+                                  ? AppColors.error
+                                  : AppColors.textTertiary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: AppColors.textTertiary,
+                  ),
+                ],
+              ),
+
+              // Checklist progress pill
+              if (task.hasChecklist) ...[
+                const SizedBox(height: AppSpacing.md),
+                _ProgressPill(task: task),
+              ],
+
+              // Recurrence badge
+              if (task.recurrence != null &&
+                  task.recurrence!.frequency.value != 'none') ...[
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.repeat_rounded,
+                      size: 12,
+                      color: AppColors.textTertiary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      task.recurrence!.frequency.label,
+                      style: AppTypography.caption,
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              const Icon(Icons.chevron_right_rounded,
-                  size: 18, color: AppColors.textTertiary),
+              ],
             ],
           ),
-
-          // Checklist progress pill
-          if (task.hasChecklist) ...[
-            const SizedBox(height: AppSpacing.md),
-            _ProgressPill(task: task),
-          ],
-
-          // Recurrence badge
-          if (task.recurrence != null &&
-              task.recurrence!.frequency.value != 'none') ...[
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                const Icon(Icons.repeat_rounded,
-                    size: 12, color: AppColors.textTertiary),
-                const SizedBox(width: 4),
-                Text(
-                  task.recurrence!.frequency.label,
-                  style: AppTypography.caption,
-                ),
-              ],
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -616,15 +624,26 @@ class _ProgressPill extends StatelessWidget {
 bool _isOverdue(TaskEntity task) {
   final d = task.deadline;
   if (d == null) return false;
-  final done = task.status == TaskStatus.approved ||
+  final done =
+      task.status == TaskStatus.approved ||
       task.status == TaskStatus.waitingReview;
   return !done && d.isBefore(DateTime.now());
 }
 
 String _dateLabel(DateTime d) {
   const m = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${d.day} ${m[d.month - 1]}';
 }

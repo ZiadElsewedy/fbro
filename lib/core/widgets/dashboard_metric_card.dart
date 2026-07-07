@@ -60,8 +60,11 @@ class DashboardMetricCard extends StatelessWidget {
               ),
               const Spacer(),
               if (onTap != null)
-                const Icon(Icons.chevron_right_rounded,
-                    size: 18, color: AppColors.textTertiary),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: AppColors.textSecondary,
+                ),
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
@@ -69,11 +72,24 @@ class DashboardMetricCard extends StatelessWidget {
           // (e.g. the "—" loading placeholder) renders as plain text.
           _value(),
           const SizedBox(height: 2),
-          Text(label, style: AppTypography.caption),
-          if (trend != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              trend!,
+          Text(
+            label,
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          // Always reserve the trend line's height, even when a card has no
+          // trend to show — otherwise cards in the same grid row end up at
+          // different heights (e.g. "Managers" sitting shorter than its
+          // neighbours) and the grid reads as uneven.
+          const SizedBox(height: 6),
+          Visibility(
+            visible: trend != null,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: Text(
+              trend ?? ' ',
               style: AppTypography.caption.copyWith(
                 color: trendColor ?? AppColors.textSecondary,
                 fontWeight: FontWeight.w600,
@@ -81,7 +97,7 @@ class DashboardMetricCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-          ],
+          ),
         ],
       ),
     );

@@ -16,6 +16,11 @@ class RouteNames {
   /// `isProfileCompleted == false` here (after any forced password change).
   static const String profileCompletion = '/complete-profile';
 
+  /// One-time cinematic Welcome. The router confines an **employee** whose
+  /// profile is complete but `hasCompletedOnboarding == false` here — shown once
+  /// per account, right after profile completion, before the role home.
+  static const String welcome = '/welcome';
+
   static const String profile = '/profile';
   static const String editProfile = '/profile/edit';
   static const String settings = '/settings';
@@ -24,6 +29,20 @@ class RouteNames {
   /// In-app notification inbox (Notification System Phase 1) — shared by every
   /// role.
   static const String notifications = '/notifications';
+
+  // ─── Case Management (private conversation until resolution) ────
+  // Shared by every role (like notifications) — the list self-scopes by role
+  // (admin: all · manager: branch · employee: own) and Firestore rules enforce
+  // access, so these sit outside the role-area guards.
+  static const String cases = '/cases';
+  static const String casesCreate = '/cases/create';
+
+  /// The single-case deep-link pattern (`/case/:caseId`) — a case notification
+  /// opens the exact case here, for every role.
+  static const String caseDetailPattern = '/case/:caseId';
+
+  /// The concrete case-detail path for [caseId].
+  static String caseDetail(String caseId) => '/case/$caseId';
 
   // ─── Role shells (Phase 1) ──────────────────────────────────
   // The employee role uses [home] ('/') as its landing.

@@ -135,8 +135,8 @@ class _PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The primary action carries the single indigo accent — the most important
-    // interactive element on any screen. Flat (no glow), hairline-clean.
+    // The primary action carries the white monochrome accent — the most
+    // important interactive element on any screen. Flat (no glow), hairline-clean.
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(

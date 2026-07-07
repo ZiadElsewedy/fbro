@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drop/core/enums/user_role.dart';
@@ -8,6 +9,7 @@ import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/app_sidebar.dart';
+import 'package:drop/core/widgets/command_palette.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/notifications/presentation/cubit/notification_cubit.dart';
@@ -36,30 +38,73 @@ class AppShell extends StatelessWidget {
     if (!context.isDesktop || user == null) return child;
 
     final role = user.role;
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AppSidebar(
-            sections: _sectionsForRole(role),
-            location: location,
-            onSelect: (route) {
-              if (route != location) context.go(route);
-            },
-            footer: _SidebarUserFooter(
-              user: user,
-              role: role,
-              onTap: () => context.go(RouteNames.profile),
-            ),
+    final sections = sectionsForRole(role);
+    final destinations = [for (final s in sections) ...s.items];
+    // ⌘1…⌘9 jump straight to the Nth sidebar destination and ⌘K opens the
+    // command palette — the baseline keyboard navigation a native macOS
+    // productivity app is expected to have. CallbackShortcuts fires whenever
+    // focus is anywhere in the subtree; meta combos never insert text, so
+    // they're safe while typing.
+    return CallbackShortcuts(
+      bindings: {
+        for (var i = 0; i < destinations.length && i < _digitKeys.length; i++)
+          SingleActivator(_digitKeys[i], meta: true): () {
+            final route = destinations[i].route;
+            if (route != location) context.go(route);
+          },
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
+            showCommandPalette(context, user: user, sections: sections),
+      },
+      child: FocusScope(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: AppColors.darkBg,
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppSidebar(
+                sections: sections,
+                location: location,
+                onSelect: (route) {
+                  if (route != location) context.go(route);
+                },
+                footer: _SidebarUserFooter(
+                  user: user,
+                  role: role,
+                  onTap: () => context.go(RouteNames.profile),
+                ),
+              ),
+              // The child is go_router's shell Navigator — ONE widget with a
+              // GlobalKey. It must never be wrapped in anything that mounts
+              // it twice (AnimatedSwitcher, cross-fades, keyed swaps): that
+              // duplicates the GlobalKey mid-transition, corrupts the element
+              // tree, and froze all navigation on macOS. The desktop fade
+              // between destinations already exists at the PAGE level (every
+              // shell route's CustomTransitionPage fades on ≥1024pt), so no
+              // shell-level animation is needed.
+              Expanded(child: child),
+            ],
           ),
-          Expanded(child: child),
-        ],
+        ),
       ),
     );
   }
 
-  List<SidebarSection> _sectionsForRole(UserRole role) {
+  static const _digitKeys = [
+    LogicalKeyboardKey.digit1,
+    LogicalKeyboardKey.digit2,
+    LogicalKeyboardKey.digit3,
+    LogicalKeyboardKey.digit4,
+    LogicalKeyboardKey.digit5,
+    LogicalKeyboardKey.digit6,
+    LogicalKeyboardKey.digit7,
+    LogicalKeyboardKey.digit8,
+    LogicalKeyboardKey.digit9,
+  ];
+
+  /// The role's sidebar destinations — public so the ⌘K command palette can
+  /// present the same list with the same ⌘n ordering.
+  static List<SidebarSection> sectionsForRole(UserRole role) {
     const notifications = SidebarItem(
       icon: Icons.notifications_none_rounded,
       activeIcon: Icons.notifications_rounded,
@@ -71,6 +116,12 @@ class AppShell extends StatelessWidget {
       activeIcon: Icons.campaign_rounded,
       label: 'Communications',
       route: RouteNames.communications,
+    );
+    const cases = SidebarItem(
+      icon: Icons.forum_outlined,
+      activeIcon: Icons.forum_rounded,
+      label: 'Cases',
+      route: RouteNames.cases,
     );
 
     switch (role) {
@@ -96,6 +147,7 @@ class AppShell extends StatelessWidget {
               route: RouteNames.adminSchedule,
             ),
             communications,
+            cases,
             notifications,
           ]),
           SidebarSection(title: 'Administration', items: [
@@ -147,6 +199,7 @@ class AppShell extends StatelessWidget {
               route: RouteNames.managerSchedule,
             ),
             communications,
+            cases,
             notifications,
           ]),
         ];
@@ -171,6 +224,7 @@ class AppShell extends StatelessWidget {
               label: 'My Schedule',
               route: RouteNames.mySchedule,
             ),
+            cases,
             notifications,
           ]),
         ];

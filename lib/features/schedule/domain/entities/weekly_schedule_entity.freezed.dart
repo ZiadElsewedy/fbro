@@ -27,6 +27,23 @@ mixin _$WeeklyScheduleEntity {
   Map<ScheduleDay, Map<ScheduleShift, List<String>>> get assignments =>
       throw _privateConstructorUsedError;
 
+  /// Manager note pinned to a day (Inventory · Big delivery · …); at most
+  /// one short note per day — days without a note simply have no entry.
+  Map<ScheduleDay, String> get dayNotes => throw _privateConstructorUsedError;
+
+  /// Day-level absences: `day → uid → leave type`. Leave is per **day**, not
+  /// per shift — a person on leave is away for the whole day.
+  Map<ScheduleDay, Map<String, LeaveType>> get leave =>
+      throw _privateConstructorUsedError;
+
+  /// Per-week **shift-hours overrides**: `day → shift → hours`. Only slots
+  /// that differ from [ShiftHours.standard] are stored — an empty map means
+  /// the whole week runs standard hours. This is where configurable end times
+  /// live (weekend lateness, Ramadan, holidays…): read through [hoursFor],
+  /// never from a hardcoded weekend rule.
+  Map<ScheduleDay, Map<ScheduleShift, ShiftHours>> get shiftHours =>
+      throw _privateConstructorUsedError;
+
   /// uid of the manager/admin who created the schedule.
   String? get createdBy => throw _privateConstructorUsedError;
   DateTime? get createdAt => throw _privateConstructorUsedError;
@@ -51,6 +68,9 @@ abstract class $WeeklyScheduleEntityCopyWith<$Res> {
     String branchId,
     DateTime weekStart,
     Map<ScheduleDay, Map<ScheduleShift, List<String>>> assignments,
+    Map<ScheduleDay, String> dayNotes,
+    Map<ScheduleDay, Map<String, LeaveType>> leave,
+    Map<ScheduleDay, Map<ScheduleShift, ShiftHours>> shiftHours,
     String? createdBy,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -79,6 +99,9 @@ class _$WeeklyScheduleEntityCopyWithImpl<
     Object? branchId = null,
     Object? weekStart = null,
     Object? assignments = null,
+    Object? dayNotes = null,
+    Object? leave = null,
+    Object? shiftHours = null,
     Object? createdBy = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
@@ -101,6 +124,18 @@ class _$WeeklyScheduleEntityCopyWithImpl<
                 ? _value.assignments
                 : assignments // ignore: cast_nullable_to_non_nullable
                       as Map<ScheduleDay, Map<ScheduleShift, List<String>>>,
+            dayNotes: null == dayNotes
+                ? _value.dayNotes
+                : dayNotes // ignore: cast_nullable_to_non_nullable
+                      as Map<ScheduleDay, String>,
+            leave: null == leave
+                ? _value.leave
+                : leave // ignore: cast_nullable_to_non_nullable
+                      as Map<ScheduleDay, Map<String, LeaveType>>,
+            shiftHours: null == shiftHours
+                ? _value.shiftHours
+                : shiftHours // ignore: cast_nullable_to_non_nullable
+                      as Map<ScheduleDay, Map<ScheduleShift, ShiftHours>>,
             createdBy: freezed == createdBy
                 ? _value.createdBy
                 : createdBy // ignore: cast_nullable_to_non_nullable
@@ -133,6 +168,9 @@ abstract class _$$WeeklyScheduleEntityImplCopyWith<$Res>
     String branchId,
     DateTime weekStart,
     Map<ScheduleDay, Map<ScheduleShift, List<String>>> assignments,
+    Map<ScheduleDay, String> dayNotes,
+    Map<ScheduleDay, Map<String, LeaveType>> leave,
+    Map<ScheduleDay, Map<ScheduleShift, ShiftHours>> shiftHours,
     String? createdBy,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -157,6 +195,9 @@ class __$$WeeklyScheduleEntityImplCopyWithImpl<$Res>
     Object? branchId = null,
     Object? weekStart = null,
     Object? assignments = null,
+    Object? dayNotes = null,
+    Object? leave = null,
+    Object? shiftHours = null,
     Object? createdBy = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
@@ -179,6 +220,18 @@ class __$$WeeklyScheduleEntityImplCopyWithImpl<$Res>
             ? _value._assignments
             : assignments // ignore: cast_nullable_to_non_nullable
                   as Map<ScheduleDay, Map<ScheduleShift, List<String>>>,
+        dayNotes: null == dayNotes
+            ? _value._dayNotes
+            : dayNotes // ignore: cast_nullable_to_non_nullable
+                  as Map<ScheduleDay, String>,
+        leave: null == leave
+            ? _value._leave
+            : leave // ignore: cast_nullable_to_non_nullable
+                  as Map<ScheduleDay, Map<String, LeaveType>>,
+        shiftHours: null == shiftHours
+            ? _value._shiftHours
+            : shiftHours // ignore: cast_nullable_to_non_nullable
+                  as Map<ScheduleDay, Map<ScheduleShift, ShiftHours>>,
         createdBy: freezed == createdBy
             ? _value.createdBy
             : createdBy // ignore: cast_nullable_to_non_nullable
@@ -205,10 +258,18 @@ class _$WeeklyScheduleEntityImpl extends _WeeklyScheduleEntity {
     required this.weekStart,
     final Map<ScheduleDay, Map<ScheduleShift, List<String>>> assignments =
         const <ScheduleDay, Map<ScheduleShift, List<String>>>{},
+    final Map<ScheduleDay, String> dayNotes = const <ScheduleDay, String>{},
+    final Map<ScheduleDay, Map<String, LeaveType>> leave =
+        const <ScheduleDay, Map<String, LeaveType>>{},
+    final Map<ScheduleDay, Map<ScheduleShift, ShiftHours>> shiftHours =
+        const <ScheduleDay, Map<ScheduleShift, ShiftHours>>{},
     this.createdBy,
     this.createdAt,
     this.updatedAt,
   }) : _assignments = assignments,
+       _dayNotes = dayNotes,
+       _leave = leave,
+       _shiftHours = shiftHours,
        super._();
 
   @override
@@ -232,6 +293,54 @@ class _$WeeklyScheduleEntityImpl extends _WeeklyScheduleEntity {
     return EqualUnmodifiableMapView(_assignments);
   }
 
+  /// Manager note pinned to a day (Inventory · Big delivery · …); at most
+  /// one short note per day — days without a note simply have no entry.
+  final Map<ScheduleDay, String> _dayNotes;
+
+  /// Manager note pinned to a day (Inventory · Big delivery · …); at most
+  /// one short note per day — days without a note simply have no entry.
+  @override
+  @JsonKey()
+  Map<ScheduleDay, String> get dayNotes {
+    if (_dayNotes is EqualUnmodifiableMapView) return _dayNotes;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_dayNotes);
+  }
+
+  /// Day-level absences: `day → uid → leave type`. Leave is per **day**, not
+  /// per shift — a person on leave is away for the whole day.
+  final Map<ScheduleDay, Map<String, LeaveType>> _leave;
+
+  /// Day-level absences: `day → uid → leave type`. Leave is per **day**, not
+  /// per shift — a person on leave is away for the whole day.
+  @override
+  @JsonKey()
+  Map<ScheduleDay, Map<String, LeaveType>> get leave {
+    if (_leave is EqualUnmodifiableMapView) return _leave;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_leave);
+  }
+
+  /// Per-week **shift-hours overrides**: `day → shift → hours`. Only slots
+  /// that differ from [ShiftHours.standard] are stored — an empty map means
+  /// the whole week runs standard hours. This is where configurable end times
+  /// live (weekend lateness, Ramadan, holidays…): read through [hoursFor],
+  /// never from a hardcoded weekend rule.
+  final Map<ScheduleDay, Map<ScheduleShift, ShiftHours>> _shiftHours;
+
+  /// Per-week **shift-hours overrides**: `day → shift → hours`. Only slots
+  /// that differ from [ShiftHours.standard] are stored — an empty map means
+  /// the whole week runs standard hours. This is where configurable end times
+  /// live (weekend lateness, Ramadan, holidays…): read through [hoursFor],
+  /// never from a hardcoded weekend rule.
+  @override
+  @JsonKey()
+  Map<ScheduleDay, Map<ScheduleShift, ShiftHours>> get shiftHours {
+    if (_shiftHours is EqualUnmodifiableMapView) return _shiftHours;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_shiftHours);
+  }
+
   /// uid of the manager/admin who created the schedule.
   @override
   final String? createdBy;
@@ -242,7 +351,7 @@ class _$WeeklyScheduleEntityImpl extends _WeeklyScheduleEntity {
 
   @override
   String toString() {
-    return 'WeeklyScheduleEntity(id: $id, branchId: $branchId, weekStart: $weekStart, assignments: $assignments, createdBy: $createdBy, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'WeeklyScheduleEntity(id: $id, branchId: $branchId, weekStart: $weekStart, assignments: $assignments, dayNotes: $dayNotes, leave: $leave, shiftHours: $shiftHours, createdBy: $createdBy, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -259,6 +368,12 @@ class _$WeeklyScheduleEntityImpl extends _WeeklyScheduleEntity {
               other._assignments,
               _assignments,
             ) &&
+            const DeepCollectionEquality().equals(other._dayNotes, _dayNotes) &&
+            const DeepCollectionEquality().equals(other._leave, _leave) &&
+            const DeepCollectionEquality().equals(
+              other._shiftHours,
+              _shiftHours,
+            ) &&
             (identical(other.createdBy, createdBy) ||
                 other.createdBy == createdBy) &&
             (identical(other.createdAt, createdAt) ||
@@ -274,6 +389,9 @@ class _$WeeklyScheduleEntityImpl extends _WeeklyScheduleEntity {
     branchId,
     weekStart,
     const DeepCollectionEquality().hash(_assignments),
+    const DeepCollectionEquality().hash(_dayNotes),
+    const DeepCollectionEquality().hash(_leave),
+    const DeepCollectionEquality().hash(_shiftHours),
     createdBy,
     createdAt,
     updatedAt,
@@ -298,6 +416,9 @@ abstract class _WeeklyScheduleEntity extends WeeklyScheduleEntity {
     required final String branchId,
     required final DateTime weekStart,
     final Map<ScheduleDay, Map<ScheduleShift, List<String>>> assignments,
+    final Map<ScheduleDay, String> dayNotes,
+    final Map<ScheduleDay, Map<String, LeaveType>> leave,
+    final Map<ScheduleDay, Map<ScheduleShift, ShiftHours>> shiftHours,
     final String? createdBy,
     final DateTime? createdAt,
     final DateTime? updatedAt,
@@ -316,6 +437,24 @@ abstract class _WeeklyScheduleEntity extends WeeklyScheduleEntity {
   /// Roster: `day → shift → list of employee uids`.
   @override
   Map<ScheduleDay, Map<ScheduleShift, List<String>>> get assignments;
+
+  /// Manager note pinned to a day (Inventory · Big delivery · …); at most
+  /// one short note per day — days without a note simply have no entry.
+  @override
+  Map<ScheduleDay, String> get dayNotes;
+
+  /// Day-level absences: `day → uid → leave type`. Leave is per **day**, not
+  /// per shift — a person on leave is away for the whole day.
+  @override
+  Map<ScheduleDay, Map<String, LeaveType>> get leave;
+
+  /// Per-week **shift-hours overrides**: `day → shift → hours`. Only slots
+  /// that differ from [ShiftHours.standard] are stored — an empty map means
+  /// the whole week runs standard hours. This is where configurable end times
+  /// live (weekend lateness, Ramadan, holidays…): read through [hoursFor],
+  /// never from a hardcoded weekend rule.
+  @override
+  Map<ScheduleDay, Map<ScheduleShift, ShiftHours>> get shiftHours;
 
   /// uid of the manager/admin who created the schedule.
   @override

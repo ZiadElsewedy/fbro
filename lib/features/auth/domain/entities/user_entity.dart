@@ -45,12 +45,24 @@ class UserEntity with _$UserEntity {
     /// router confines them to the Profile Completion screen. Defaults true so
     /// legacy / pre-migration documents are never trapped in onboarding.
     @Default(true) bool isProfileCompleted,
+    /// True once the user has seen the one-time Welcome screen (shown to
+    /// employees right after profile completion). Defaults true so every
+    /// existing user is treated as already welcomed and is NEVER interrupted —
+    /// only a genuinely new account is seeded `false` at profile completion, so
+    /// the router shows Welcome exactly once. Non-employees never see it
+    /// regardless of this flag (the gate is employee-scoped).
+    @Default(true) bool hasCompletedOnboarding,
     /// HR employment label (`active` / `suspended` / `terminated`). A record
     /// field shown/edited in admin — it does NOT gate access (that's [isActive]).
     @Default('active') String employmentStatus,
     /// The admin uid that provisioned this account (audit). Null for accounts
     /// created out of band (e.g. the bootstrapped first admin).
     String? createdBy,
+    // NOTE (C2 fix, 2026-07-03): compensation (salaryAmount / salaryType /
+    // paymentMethod / paymentNumber) is deliberately NOT on this entity — it
+    // lives in the private subdocument `users/{uid}/private/compensation`
+    // (see UserCompensation) and is loaded on demand, so the branch-readable
+    // public user fetch can never carry salary data.
   }) = _UserEntity;
 
   /// Whether the user may enter the app. DROP is admin-provisioned: the only

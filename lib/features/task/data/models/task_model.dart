@@ -3,6 +3,7 @@ import 'package:drop/core/extensions/firestore_extensions.dart';
 import 'package:drop/core/enums/attachment_type.dart';
 import 'package:drop/core/enums/recurrence_frequency.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/core/enums/task_assignment_type.dart';
 import 'package:drop/core/enums/task_type.dart';
 import 'package:drop/core/enums/task_status.dart';
 import 'package:drop/core/enums/task_priority.dart';
@@ -34,6 +35,9 @@ class TaskModel {
   final String? createdBy;
   final String? assignedShiftId;
   final ScheduleShift? shift;
+  final TaskAssignmentType assignmentType;
+  final DateTime? instanceDate;
+  final String? sourceTemplateId;
   final DateTime? deadline;
   final String? notes;
   final String? proofImageUrl;
@@ -51,6 +55,7 @@ class TaskModel {
   final List<ActivityEntry> activityLog;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final DateTime? archivedAt;
 
   const TaskModel({
     required this.id,
@@ -66,6 +71,9 @@ class TaskModel {
     this.createdBy,
     this.assignedShiftId,
     this.shift,
+    this.assignmentType = TaskAssignmentType.individual,
+    this.instanceDate,
+    this.sourceTemplateId,
     this.deadline,
     this.notes,
     this.proofImageUrl,
@@ -83,6 +91,7 @@ class TaskModel {
     this.activityLog = const [],
     this.createdAt,
     this.updatedAt,
+    this.archivedAt,
   });
 
   factory TaskModel.fromMap(Map<String, dynamic> map, {String? id}) => TaskModel(
@@ -99,6 +108,9 @@ class TaskModel {
         createdBy: map['createdBy'] as String?,
         assignedShiftId: map['assignedShiftId'] as String?,
         shift: ScheduleShift.fromStringOrNull(map['shift'] as String?),
+        assignmentType: TaskAssignmentType.fromString(map['assignmentType'] as String?),
+        instanceDate: map.date('instanceDate'),
+        sourceTemplateId: map['sourceTemplateId'] as String?,
         deadline: map.date('deadline'),
         notes: map['notes'] as String?,
         proofImageUrl: map['proofImageUrl'] as String?,
@@ -116,6 +128,7 @@ class TaskModel {
         activityLog: _activityLogFromList(map['activityLog']),
         createdAt: map.date('createdAt'),
         updatedAt: map.date('updatedAt'),
+        archivedAt: map.date('archivedAt'),
       );
 
   factory TaskModel.fromEntity(TaskEntity e) => TaskModel(
@@ -132,6 +145,9 @@ class TaskModel {
         createdBy: e.createdBy,
         assignedShiftId: e.assignedShiftId,
         shift: e.shift,
+        assignmentType: e.assignmentType,
+        instanceDate: e.instanceDate,
+        sourceTemplateId: e.sourceTemplateId,
         deadline: e.deadline,
         notes: e.notes,
         proofImageUrl: e.proofImageUrl,
@@ -149,6 +165,7 @@ class TaskModel {
         activityLog: e.activityLog,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
+        archivedAt: e.archivedAt,
       );
 
   /// Persisted fields. `createdAt`/`updatedAt` are written by the datasource as
@@ -170,6 +187,9 @@ class TaskModel {
         'createdBy': createdBy,
         'assignedShiftId': assignedShiftId,
         'shift': shift?.value,
+        'assignmentType': assignmentType.value,
+        'instanceDate': instanceDate == null ? null : Timestamp.fromDate(instanceDate!),
+        'sourceTemplateId': sourceTemplateId,
         'deadline': deadline == null ? null : Timestamp.fromDate(deadline!),
         'notes': notes,
         'proofImageUrl': proofImageUrl,
@@ -185,6 +205,12 @@ class TaskModel {
         'rejectionReason': rejectionReason,
         'recurrence': _recurrenceToMap(recurrence),
         'activityLog': _activityLogToList(activityLog),
+        // Server-managed by `taskHousekeeping`, but written here so an admin
+        // REOPEN (which passes `archivedAt: null`) un-archives the task. For a
+        // live task this is always null (no-op); the function is the only other
+        // writer, and archived tasks are filtered out of every client stream, so
+        // a client write can't race-clobber a fresh archive stamp.
+        'archivedAt': archivedAt == null ? null : Timestamp.fromDate(archivedAt!),
       };
 
   /// Returns a copy with the Firestore-generated [id] applied (used on create).
@@ -202,6 +228,9 @@ class TaskModel {
         createdBy: createdBy,
         assignedShiftId: assignedShiftId,
         shift: shift,
+        assignmentType: assignmentType,
+        instanceDate: instanceDate,
+        sourceTemplateId: sourceTemplateId,
         deadline: deadline,
         notes: notes,
         proofImageUrl: proofImageUrl,
@@ -219,6 +248,7 @@ class TaskModel {
         activityLog: activityLog,
         createdAt: createdAt,
         updatedAt: updatedAt,
+        archivedAt: archivedAt,
       );
 
   TaskEntity toEntity() => TaskEntity(
@@ -235,6 +265,9 @@ class TaskModel {
         createdBy: createdBy,
         assignedShiftId: assignedShiftId,
         shift: shift,
+        assignmentType: assignmentType,
+        instanceDate: instanceDate,
+        sourceTemplateId: sourceTemplateId,
         deadline: deadline,
         notes: notes,
         proofImageUrl: proofImageUrl,
@@ -252,6 +285,7 @@ class TaskModel {
         activityLog: activityLog,
         createdAt: createdAt,
         updatedAt: updatedAt,
+        archivedAt: archivedAt,
       );
 
   /// Reads `assigneeIds` (array); falls back to the legacy single

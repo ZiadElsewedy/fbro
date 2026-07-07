@@ -97,7 +97,7 @@ class ShiftDetailsSheet extends StatelessWidget {
               const LinearProgressIndicator(minHeight: 2),
             ],
             const SizedBox(height: AppSpacing.md),
-            _header(date),
+            _header(date, schedule),
             const SizedBox(height: AppSpacing.lg),
             _assignedSummary(assigned.length),
             const SizedBox(height: AppSpacing.lg),
@@ -149,7 +149,7 @@ class ShiftDetailsSheet extends StatelessWidget {
   }
 
   // ── Header ───────────────────────────────────────────────────────
-  Widget _header(DateTime date) {
+  Widget _header(DateTime date, WeeklyScheduleEntity schedule) {
     final isMorning = shift == ScheduleShift.morning;
     return Row(
       children: [
@@ -175,7 +175,11 @@ class ShiftDetailsSheet extends StatelessWidget {
               Text('${day.label} · ${shift.label} Shift',
                   style: AppTypography.h3),
               const SizedBox(height: 2),
-              Text('${_dateLabel(date)} · ${shift.timeRange}',
+              // The real configured hours for this (day, shift) — overnight
+              // closes come from the schedule, not a hardcoded weekend rule.
+              Text(
+                  '${_dateLabel(date)} · '
+                  '${schedule.hoursFor(day, shift).format(separator: '→')}',
                   style: AppTypography.caption),
             ],
           ),
@@ -340,6 +344,11 @@ class ShiftDetailsSheet extends StatelessWidget {
       subtitle: 'Tap an employee to assign',
       employees: members.where((u) => u.role.isEmployee).toList(),
       isAssigned: (u) => schedule.isAssigned(u.uid, day, shift),
+      // Leave is a caution, not a wall — the row says it, the manager decides.
+      subtitleFor: (u) {
+        final type = schedule.leaveTypeOf(u.uid, day);
+        return type == null ? null : 'On leave · ${type.label}';
+      },
       onPick: (u) {
         if (!schedule.isAssigned(u.uid, day, shift)) {
           cubit.assign(day, shift, u.uid);

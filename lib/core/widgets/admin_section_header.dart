@@ -44,7 +44,9 @@ class AdminSectionHeader extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: AppTypography.caption,
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -63,11 +65,15 @@ class AdminSectionHeader extends StatelessWidget {
                   children: [
                     Text(
                       actionLabel!,
-                      style: AppTypography.labelSmall
-                          .copyWith(color: AppColors.textPrimary),
+                      style: AppTypography.labelSmall.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
                     ),
-                    const Icon(Icons.chevron_right_rounded,
-                        size: 16, color: AppColors.textSecondary),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: AppColors.textSecondary,
+                    ),
                   ],
                 ),
               ),

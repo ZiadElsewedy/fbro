@@ -7,6 +7,7 @@ import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/core/widgets/app_empty_state.dart';
 import 'package:drop/core/widgets/app_search_field.dart';
@@ -109,23 +110,17 @@ class _BroadcastTemplatesScreenState extends State<BroadcastTemplatesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        titleSpacing: AppSpacing.pagePadding,
-        title: Text(widget.pickMode ? 'Choose a template' : 'Templates',
-            style: AppTypography.h3),
-        actions: [
-          IconButton(
-            tooltip: _grid ? 'List view' : 'Grid view',
-            onPressed: () => setState(() => _grid = !_grid),
-            icon: Icon(_grid ? Icons.view_agenda_outlined : Icons.grid_view_rounded,
-                color: AppColors.textSecondary),
-          ),
-        ],
-      ),
+    return AdaptiveScaffold(
+      title: widget.pickMode ? 'Choose a template' : 'Templates',
+      subtitle: widget.pickMode ? null : 'Reusable broadcast messages',
+      actions: [
+        IconButton(
+          tooltip: _grid ? 'List view' : 'Grid view',
+          onPressed: () => setState(() => _grid = !_grid),
+          icon: Icon(_grid ? Icons.view_agenda_outlined : Icons.grid_view_rounded,
+              color: AppColors.textSecondary),
+        ),
+      ],
       floatingActionButton: widget.pickMode
           ? null
           : FloatingActionButton.extended(

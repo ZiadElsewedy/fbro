@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/app_motion.dart';
+import 'package:drop/core/widgets/responsive_card_grid.dart';
 import 'package:drop/core/widgets/app_search_field.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/list_skeleton.dart';
@@ -27,12 +29,14 @@ class AdminUsersListView extends StatefulWidget {
     required this.filter,
     required this.emptyMessage,
     required this.actionsBuilder,
+    this.subtitle,
     this.searchHint = 'Search by name or email',
     this.onAdd,
     this.addLabel,
   });
 
   final String title;
+  final String? subtitle;
   final AdminUserFilter filter;
   final String emptyMessage;
   final AdminUserActions actionsBuilder;
@@ -75,21 +79,17 @@ class _AdminUsersListViewState extends State<AdminUsersListView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg,
-        elevation: 0,
-        title: Text(widget.title, style: AppTypography.h3),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: AppColors.textSecondary),
-            tooltip: 'Refresh',
-            onPressed: () => context.read<AdminUsersCubit>().refresh(),
-          ),
-        ],
-      ),
+    return AdaptiveScaffold(
+      title: widget.title,
+      subtitle: widget.subtitle,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded,
+              color: AppColors.textSecondary),
+          tooltip: 'Refresh',
+          onPressed: () => context.read<AdminUsersCubit>().refresh(),
+        ),
+      ],
       floatingActionButton: widget.onAdd == null
           ? null
           : FloatingActionButton.extended(
@@ -145,18 +145,24 @@ class _AdminUsersListViewState extends State<AdminUsersListView> {
                       AppSpacing.xxxl * 2,
                     ),
                     children: [
-                      for (var i = 0; i < filtered.length; i++)
-                        EntranceFade(
-                          delay: staggerDelay(i),
-                          child: AdminUserCard(
-                            user: filtered[i],
-                            branchLabel: filtered[i].branchId == null
-                                ? null
-                                : _branchNames[filtered[i].branchId],
-                            actions:
-                                widget.actionsBuilder(context, filtered[i]),
-                          ),
-                        ),
+                      ResponsiveCardGrid(
+                        runSpacing: 0, // AdminUserCard carries its own bottom margin
+                        ultrawideColumns: 2, // rich cards read best at 2-up max
+                        children: [
+                          for (var i = 0; i < filtered.length; i++)
+                            EntranceFade(
+                              delay: staggerDelay(i),
+                              child: AdminUserCard(
+                                user: filtered[i],
+                                branchLabel: filtered[i].branchId == null
+                                    ? null
+                                    : _branchNames[filtered[i].branchId],
+                                actions:
+                                    widget.actionsBuilder(context, filtered[i]),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
           ),
