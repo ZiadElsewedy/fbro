@@ -23,6 +23,7 @@ import 'package:drop/features/auth/presentation/widgets/app_button.dart';
 import 'package:drop/features/auth/presentation/widgets/app_text_field.dart';
 import 'package:drop/features/task/domain/entities/checklist_item.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
+import 'package:drop/features/task/domain/task_schedule.dart';
 import 'package:drop/features/task/domain/work_types/task_work_x.dart';
 import 'package:drop/features/task/presentation/attachment_format.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
@@ -696,13 +697,40 @@ class _StatusHeader extends StatelessWidget {
                 icon: Icons.label_outline_rounded,
                 label: task.type.value,
               ),
+              // Scheduling V2 — the start of the task's schedule window.
+              if (task.startsAt != null)
+                _MetaPill(
+                  icon: Icons.play_circle_outline_rounded,
+                  label: 'Starts ${_dateLabel(task.startsAt!)}',
+                ),
               if (task.deadline != null) ...[
                 _MetaPill(
                   icon: Icons.schedule_outlined,
-                  label: _dateLabel(task.deadline!),
+                  label: 'Due ${_dateLabel(task.deadline!)}',
                   highlight: _isOverdue(task),
                 ),
               ],
+              // Current time-aware phase (Scheduled/Active/Due-soon/Overdue) for
+              // in-flight work; a finished task's story is the status pill.
+              if (schedulePhase(task, DateTime.now()).isActionable)
+                _MetaPill(
+                  icon: Icons.timelapse_outlined,
+                  label: schedulePhase(task, DateTime.now()).label,
+                  highlight: schedulePhase(task, DateTime.now()) ==
+                      TaskSchedulePhase.overdue,
+                ),
+              if (scheduledDuration(task) != null &&
+                  formatScheduleDuration(scheduledDuration(task)!).isNotEmpty)
+                _MetaPill(
+                  icon: Icons.hourglass_empty_rounded,
+                  label:
+                      'Est. ${formatScheduleDuration(scheduledDuration(task)!)}',
+                ),
+              if (task.approvedAt != null)
+                _MetaPill(
+                  icon: Icons.check_circle_outline_rounded,
+                  label: 'Completed ${_dateLabel(task.approvedAt!)}',
+                ),
               if (task.recurrence != null &&
                   task.recurrence!.frequency.value != 'none')
                 _MetaPill(

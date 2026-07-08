@@ -12,6 +12,38 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-07-08 — Task Scheduling V2: smart scheduling, `core/optimization`)
+
+Tasks gained a real **start + due time**, pre-filled from the assigned shift as a
+*smart default the manager can always override*. Additive — **no migration, no
+Firestore-rules or backend change**; the pending→started→review workflow and
+`TaskStatus` are untouched.
+
+- **Added — data model:** `TaskEntity.startsAt` + a `dueAt` getter aliasing the
+  existing `deadline` (unchanged physical due field). `TaskModel` round-trips
+  `startsAt` as a `Timestamp`; old docs read `startsAt == null`.
+  `TaskCubit.createTask` gained an optional `startsAt`.
+- **Added — derived phase (`task_schedule.dart`, pure):** `TaskSchedulePhase`
+  (Scheduled/Active/Due-soon/Overdue/Done) computed from the times + lifecycle
+  (not persisted), plus `shiftDefaultSchedule(date, shift)` (overnight-aware) and
+  `dueSoonCount`.
+- **Changed — create/edit form:** the date-only Deadline field is now a
+  **Schedule** section (`_ScheduleField`/`_ScheduleBanner`): Start + Due date &
+  time, shift-pre-filled, with a "Suggested from … / Custom schedule · Reset to
+  shift" banner. Suggestions never lock the fields.
+- **Changed — dashboard/cards:** admin Today strip gains **Due soon**; the task
+  card shows an upcoming "Starts …" chip; Task Details shows the start→due window.
+- **Refined (same day):** smart defaults now cover **individual/team** tasks by
+  reading the assignees' roster (`TaskCubit.resolveAssigneeShift` + pure
+  `assigneeShiftFit`) — unanimous shift → suggest, mixed → **Morning/Night/Custom
+  chooser**, none → manual; **validation** (blocking due-before-start error,
+  non-blocking outside-shift warning); **overnight** windows; the banner keeps the
+  **original** shift after customization ("Originally: …"); **estimated duration**
+  in the Schedule section; and Task Details shows phase · Completed · Est. duration.
+- **Verification:** `flutter analyze` clean; `task_schedule_test.dart` (16) +
+  `task_model_schedule_test.dart` (2). Full suite **625 pass / 3 pre-existing fail**.
+- **Deferred:** schedule-aware notifications + duration analytics.
+
 ### Added / Refactored (2026-07-08 — DROP Design System V2, Phase 1: Admin dashboard + reusable primitives, `core/optimization`)
 
 Re-ranked the Admin Home around **"what needs my attention right now?"** through

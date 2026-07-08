@@ -36,7 +36,24 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   late Map<String, dynamic> _workData = {...?widget.existing?.data};
   Map<String, String> _workFieldErrors = const {};
 
+  late DateTime? _startsAt = widget.existing?.startsAt;
   late DateTime? _deadline = widget.existing?.deadline;
+
+  /// The shift the schedule was suggested from (Scheduling V2). **Persists**
+  /// through customization so the banner can show "Originally: …" + Reset —
+  /// cleared only when the shift/assignees no longer resolve to one.
+  ScheduleShift? _scheduleSource;
+
+  /// True once the manager edited either time away from the suggestion.
+  bool _scheduleCustom = false;
+
+  /// The assignees are rostered on **different** shifts — prompt for a choice
+  /// instead of auto-filling.
+  bool _mixedShifts = false;
+
+  /// A rostered-shift resolve is in flight (async schedule read).
+  bool _resolvingShift = false;
+
   late RecurrenceFrequency _recurrence =
       widget.existing?.recurrence?.frequency ?? RecurrenceFrequency.none;
 
@@ -195,6 +212,13 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
       setState(() => _error = 'Please select a shift.');
       return;
     }
+    // Scheduling V2 — a due-before-start window is invalid (an outside-shift
+    // window is only a non-blocking warning, so it does not stop here).
+    final scheduleError = _scheduleError;
+    if (scheduleError != null) {
+      setState(() => _error = scheduleError);
+      return;
+    }
     final description = _desc.text.trim().isEmpty ? null : _desc.text.trim();
     final checklist = _buildChecklist();
 
@@ -226,12 +250,13 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
             data: _workData,
             priority: _priority,
             branchId: branchId,
+            startsAt: _startsAt,
             deadline: _deadline,
             checklist: checklist,
             referenceAttachments: _newRefs,
             assignmentType: TaskAssignmentType.shift,
             shift: _shift,
-            instanceDate: _deadline,
+            instanceDate: _startsAt ?? _deadline,
           );
         } else {
           // Recurring shift templates generate general instances; a specialised
@@ -271,6 +296,7 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
           data: _workData,
           priority: _priority,
           branchId: branchId,
+          startsAt: _startsAt,
           deadline: _deadline,
           assigneeIds: _assignees.toList(),
           checklist: checklist,
@@ -290,6 +316,7 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
           data: _workData,
           priority: _priority,
           branchId: branchId,
+          startsAt: _startsAt,
           deadline: _deadline,
           assigneeIds: _assignees.toList(),
           checklist: checklist,
@@ -303,15 +330,134 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
     Navigator.of(context).pop();
   }
 
-  Future<void> _pickDeadline() async {
+  /// Pick a full date **and** time (Task Scheduling V2 — start/due carry a time,
+  /// not just a date). Cancelling the time step keeps the current time-of-day.
+  Future<DateTime?> _pickDateTime(DateTime? current) async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final base = current ?? now;
+    final date = await showDatePicker(
       context: context,
-      initialDate: _deadline ?? now,
+      initialDate: base,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 3),
     );
-    if (picked != null) setState(() => _deadline = picked);
+    if (date == null || !mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(base),
+    );
+    final t = time ?? TimeOfDay.fromDateTime(base);
+    return DateTime(date.year, date.month, date.day, t.hour, t.minute);
+  }
+
+  Future<void> _pickStart() async {
+    final dt = await _pickDateTime(_startsAt);
+    if (dt != null) {
+      // Manual edit → custom (the source is kept so the banner can offer Reset).
+      setState(() {
+        _startsAt = dt;
+        _scheduleCustom = true;
+      });
+    }
+  }
+
+  Future<void> _pickDue() async {
+    final dt = await _pickDateTime(_deadline);
+    if (dt != null) {
+      setState(() {
+        _deadline = dt;
+        _scheduleCustom = true;
+      });
+    }
+  }
+
+  /// The effective branch for schedule lookups (admin picks; manager is fixed).
+  String get _effectiveBranchId =>
+      (widget.isAdmin ? _branchId : widget.defaultBranchId)?.trim() ?? '';
+
+  /// Apply [shift]'s standard hours as the smart-default window for the current
+  /// day (keeps any date already chosen; overnight ends roll to the next day).
+  void _suggestFromShift(ScheduleShift shift) {
+    final date = _startsAt ?? _deadline ?? DateTime.now();
+    final def = shiftDefaultSchedule(date, shift);
+    _startsAt = def.start;
+    _deadline = def.due;
+    _scheduleSource = shift;
+    _scheduleCustom = false;
+  }
+
+  void _resetToSource() {
+    final shift = _scheduleSource;
+    if (shift != null) setState(() => _suggestFromShift(shift));
+  }
+
+  /// Resolve the rostered shift of the current (individual/team) assignees and
+  /// pre-fill the schedule as a smart default: a unanimous shift is suggested,
+  /// mixed shifts prompt a choice, none leaves it manual. Best-effort + async.
+  Future<void> _resolveAssigneeSchedule() async {
+    if (_assignmentType == TaskAssignmentType.shift) return;
+    final uids = _assignees.toList();
+    final branchId = _effectiveBranchId;
+    if (uids.isEmpty || branchId.isEmpty) {
+      setState(() => _mixedShifts = false);
+      return;
+    }
+    setState(() => _resolvingShift = true);
+    final date = _startsAt ?? _deadline ?? DateTime.now();
+    final res = await widget.cubit
+        .resolveAssigneeShift(branchId: branchId, uids: uids, date: date);
+    if (!mounted) return;
+    setState(() {
+      _resolvingShift = false;
+      switch (res.fit) {
+        case AssigneeShiftFit.unanimous:
+          _mixedShifts = false;
+          if (_scheduleCustom) {
+            _scheduleSource = res.shift; // keep the manager's times, update banner
+          } else {
+            _suggestFromShift(res.shift!);
+          }
+        case AssigneeShiftFit.mixed:
+          _mixedShifts = true;
+          if (!_scheduleCustom) _scheduleSource = null; // ambiguous → user chooses
+        case AssigneeShiftFit.none:
+          _mixedShifts = false;
+      }
+    });
+  }
+
+  /// The banner's suggestion source (e.g. "Morning shift · 08:30 – 16:30"), or
+  /// null when no shift resolved.
+  String? get _scheduleSourceLabel {
+    final shift = _scheduleSource;
+    if (shift == null) return null;
+    final date = _startsAt ?? _deadline ?? DateTime.now();
+    final hours = ShiftHours.standard(ScheduleDay.fromDate(date), shift);
+    return '${shift.label} shift · ${hours.format()}';
+  }
+
+  /// Blocking validation — a due time at/before the start. Absolute instants, so
+  /// a legitimate overnight window (start 23:00 → due 03:00 next day) passes.
+  String? get _scheduleError {
+    final s = _startsAt, d = _deadline;
+    if (s != null && d != null && !d.isAfter(s)) {
+      return 'The due time must be after the start time.';
+    }
+    return null;
+  }
+
+  /// Non-blocking advisory — a custom schedule that falls outside the source
+  /// shift's hours (keep the user in control; never prevents saving).
+  String? get _scheduleWarning {
+    final shift = _scheduleSource;
+    final s = _startsAt, d = _deadline;
+    if (shift == null || !_scheduleCustom || s == null || d == null) return null;
+    final window = shiftDefaultSchedule(s, shift);
+    if (s.isBefore(window.start) || d.isAfter(window.due)) {
+      final hours = ShiftHours.standard(ScheduleDay.fromDate(s), shift);
+      return 'Outside ${shift.label} shift hours (${hours.format()})';
+    }
+    return null;
   }
 
   @override
@@ -440,7 +586,16 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                 const SizedBox(height: AppSpacing.sm),
                 _Segmented<TaskAssignmentType>(
                   value: _assignmentType,
-                  onChanged: (t) => setState(() => _assignmentType = t),
+                  onChanged: (t) {
+                    setState(() {
+                      _assignmentType = t;
+                      if (t == TaskAssignmentType.shift) _mixedShifts = false;
+                    });
+                    // Switching to individual/team re-resolves the roster.
+                    if (t != TaskAssignmentType.shift) {
+                      _resolveAssigneeSchedule();
+                    }
+                  },
                   segments: [
                     for (final t in TaskAssignmentType.values)
                       _Seg(t, t.label, icon: _assignmentIcon(t)),
@@ -451,17 +606,26 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
               if (shiftMode)
                 ShiftChipPicker(
                   value: _shift,
-                  onChanged: (s) => setState(() => _shift = s),
+                  onChanged: (s) => setState(() {
+                    _shift = s;
+                    // Picking a shift pre-fills the schedule as a smart default
+                    // (never a lock — the manager can still edit or reset).
+                    _suggestFromShift(s);
+                  }),
                 )
               else
                 _AssigneeField(
                   future: _employeesFuture,
                   selected: _assignees,
-                  onChanged: (next) => setState(() {
-                    _assignees
-                      ..clear()
-                      ..addAll(next);
-                  }),
+                  onChanged: (next) {
+                    setState(() {
+                      _assignees
+                        ..clear()
+                        ..addAll(next);
+                    });
+                    // Pre-fill the schedule from the assignees' rostered shift.
+                    _resolveAssigneeSchedule();
+                  },
                 ),
             ],
           )),
@@ -488,11 +652,35 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
-              _DeadlineField(
-                value: _deadline,
-                onPick: _pickDeadline,
-                onQuick: (d) => setState(() => _deadline = d),
-                onClear: () => setState(() => _deadline = null),
+              if (_mixedShifts) ...[
+                _MixedShiftChooser(
+                  onPick: (shift) => setState(() {
+                    _suggestFromShift(shift);
+                    _mixedShifts = false;
+                  }),
+                  onCustom: () => setState(() => _mixedShifts = false),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              _ScheduleField(
+                start: _startsAt,
+                due: _deadline,
+                resolving: _resolvingShift,
+                onPickStart: _pickStart,
+                onPickDue: _pickDue,
+                onClearStart: () => setState(() {
+                  _startsAt = null;
+                  _scheduleCustom = true;
+                }),
+                onClearDue: () => setState(() {
+                  _deadline = null;
+                  _scheduleCustom = true;
+                }),
+                sourceLabel: _scheduleSourceLabel,
+                custom: _scheduleCustom && _scheduleSource != null,
+                onReset: _scheduleSource == null ? null : _resetToSource,
+                warning: _scheduleWarning,
+                error: _scheduleError,
               ),
               // Recurrence (new tasks only) — shift mode gets its own
               // Once/Daily/Weekly picker (daily/weekly saves as a recurring

@@ -11,8 +11,55 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-08 (DROP Design System V2 — Phase 1: Admin dashboard + reusable primitives)
+**Last updated:** 2026-07-08 (Task Scheduling V2 — smart shift-defaulted start/due + derived phase)
 **Version:** 1.0.0+1 · **Branch:** `core/optimization` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Task Scheduling V2 — Smart Scheduling (2026-07-08)
+
+**Additive feature, no migration / no rules / no backend change.** A task now carries a
+real **start** and **due** time, pre-filled from its shift as a *smart default the
+manager can always override* — "shift times are suggestions, not restrictions".
+
+- **Data model (additive):** `TaskEntity.startsAt` + a `dueAt` getter aliasing the
+  existing `deadline` (still the physical due field, so all prior reads + old docs are
+  unchanged). `TaskModel` parses/serializes `startsAt` as a `Timestamp` in parallel to
+  `deadline`. Old docs → `startsAt == null`. `TaskCubit.createTask` gained a `startsAt`
+  param (optional; every other call site omits it).
+- **Derived phase (`domain/task_schedule.dart`, pure):** `TaskSchedulePhase`
+  (Scheduled · Active · Due-soon · Overdue · Done) computed from `startsAt`/`dueAt` +
+  the lifecycle — **not** a persisted status, no auto-status engine, `TaskStatus`/rules
+  untouched. Plus `shiftDefaultSchedule(date, shift)` (overnight-aware, via
+  `ShiftHours.standard`) and `dueSoonCount`.
+- **Schedule UI:** the create/edit form's Deadline field became a **Schedule** section
+  (`_ScheduleField`/`_ScheduleBanner`) — Start + Due **date & time**, pre-filled when a
+  shift is picked, with a banner "Suggested from Morning shift · 08:30 – 16:30 · Reset"
+  that flips to "Custom schedule · Reset to shift" the moment either value is edited.
+  Never locked.
+- **Dashboard/cards:** admin Today strip gains **Due soon** (`dueSoonCount`); the task
+  card shows a "Starts …" chip while upcoming, and Task Details shows the start→due
+  window (Overdue already reads `dueAt`).
+- **Refinement pass (2026-07-08):** (1) **smart default beyond shift assignment** —
+  `TaskCubit.resolveAssigneeShift` reads the branch roster and, for an individual/team
+  task, suggests the assignees' shift when unanimous, shows a **Morning/Night/Custom
+  chooser** when mixed, or stays manual when nobody's rostered (pure `assigneeShiftFit`);
+  (2) **validation** — a due-at/before-start is a blocking error, an outside-shift-hours
+  window is a **non-blocking** warning (user stays in control); (3) **overnight** fully
+  supported (absolute instants; start 23:00 → due 03:00 next day); (4) the banner keeps
+  the **original** shift after customization ("Custom schedule / Originally: Morning shift
+  · 08:30–16:30 / Reset to shift"); (5) **estimated duration** (`dueAt−startsAt`) shown in
+  the Schedule section; (6) Task Details shows Starts · Due · **phase** · **Completed** ·
+  **Est. duration**.
+- **Verification:** `flutter analyze` clean; build_runner regenerated the entity;
+  `task_schedule_test.dart` (16) + `task_model_schedule_test.dart` (2, incl. legacy-absent
+  → null). Full suite **625 pass / 3 pre-existing fail** (2 splash + 1 stale
+  notification-category test — untouched files). The Schedule banner/chooser are private
+  `part` widgets over the unit-tested pure logic (`shiftDefaultSchedule` / `assigneeShiftFit`
+  / duration / phase), so their pixels are left to on-device QA.
+- **Deferred (follow-up):** schedule-aware notifications (`reminder_rules.dart` + Cloud
+  Functions: starts-in-15m · due-in-30m · shift-ended-incomplete) and duration analytics
+  (expected `dueAt−startsAt` vs actual `completedAt−startsAt`).
 
 ---
 

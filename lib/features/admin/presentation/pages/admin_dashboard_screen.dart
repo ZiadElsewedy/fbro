@@ -36,6 +36,7 @@ import 'package:drop/features/statistics/presentation/cubit/statistics_state.dar
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/domain/task_feed.dart';
 import 'package:drop/features/task/domain/task_metrics.dart';
+import 'package:drop/features/task/domain/task_schedule.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
 import 'package:drop/features/task/presentation/cubit/task_state.dart';
 import 'package:drop/features/task/presentation/pages/filtered_tasks_screen.dart';
@@ -403,16 +404,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return BlocBuilder<StatisticsCubit, StatisticsState>(
       builder: (context, statsState) {
         final s = statsState.maybeWhen(loaded: (s) => s, orElse: () => null);
-        return BlocSelector<TaskCubit, TaskState, (int, int)>(
+        return BlocSelector<TaskCubit, TaskState, (int, int, int)>(
           selector: (state) {
             final tasks = state.maybeWhen(
               loaded: (t, _, _, _, _) => t,
               orElse: () => const <TaskEntity>[],
             );
-            return (runningNowCount(tasks), overdueCount(tasks, DateTime.now()));
+            final now = DateTime.now();
+            return (
+              runningNowCount(tasks),
+              overdueCount(tasks, now),
+              dueSoonCount(tasks, now),
+            );
           },
           builder: (context, c) {
-            final (running, overdue) = c;
+            final (running, overdue, dueSoon) = c;
             final rate = approvalRatePct(
               approved: s?.completedTasks ?? 0,
               rejected: s?.rejectedTasks ?? 0,
@@ -421,6 +427,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               stats: [
                 Stat(label: 'Completed today', value: '${s?.completedTasksToday ?? 0}'),
                 Stat(label: 'Running now', value: '$running'),
+                Stat(
+                  label: 'Due soon',
+                  value: '$dueSoon',
+                  tone: dueSoon > 0 ? AppColors.warning : null,
+                ),
                 Stat(
                   label: 'Delayed',
                   value: '$overdue',

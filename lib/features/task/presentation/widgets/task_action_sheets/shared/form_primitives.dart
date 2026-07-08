@@ -176,98 +176,300 @@ class _PickerTile extends StatelessWidget {
   }
 }
 
-/// The optional-deadline control — a summary tile plus quick "Today / Tomorrow /
-/// Next week" chips, so the common cases are one tap and precise dates stay one
-/// tap deeper (progressive disclosure). Empty by default; nothing is imposed.
-class _DeadlineField extends StatelessWidget {
-  const _DeadlineField({
-    required this.value,
-    required this.onPick,
-    required this.onQuick,
-    required this.onClear,
+/// The **Schedule** control (Task Scheduling V2) — a Start row and a Due row,
+/// each carrying a date **and** time, plus the estimated duration, validation,
+/// and a smart-default banner. Times are pre-filled from the resolved shift as a
+/// *suggestion*; the moment the manager edits either value the banner flips to
+/// "Custom schedule / Originally: Morning shift · 08:30 – 16:30 / Reset to
+/// shift". Suggestions **never lock** the fields; overnight windows (due on a
+/// later day) are fully supported.
+class _ScheduleField extends StatelessWidget {
+  const _ScheduleField({
+    required this.start,
+    required this.due,
+    required this.onPickStart,
+    required this.onPickDue,
+    required this.onClearStart,
+    required this.onClearDue,
+    this.resolving = false,
+    this.sourceLabel,
+    this.custom = false,
+    this.onReset,
+    this.warning,
+    this.error,
   });
 
-  final DateTime? value;
-  final VoidCallback onPick;
-  final ValueChanged<DateTime> onQuick;
-  final VoidCallback onClear;
+  final DateTime? start;
+  final DateTime? due;
+  final VoidCallback onPickStart;
+  final VoidCallback onPickDue;
+  final VoidCallback onClearStart;
+  final VoidCallback onClearDue;
 
-  static String _fmt(DateTime d) => AppDateFormatter.monthDayYear(d);
+  /// A rostered-shift resolve is in flight (subtle "Checking roster…" hint).
+  final bool resolving;
 
-  bool _sameDay(DateTime a, DateTime b) =>
+  /// The suggestion source (e.g. "Morning shift · 08:30 – 16:30"), or null when
+  /// nothing resolved (no banner — pure manual scheduling).
+  final String? sourceLabel;
+
+  /// True once the manager has overridden the suggestion.
+  final bool custom;
+
+  /// Restore the suggestion; null when there's nothing to reset to.
+  final VoidCallback? onReset;
+
+  /// Non-blocking advisory (e.g. "Outside Morning shift hours"), or null.
+  final String? warning;
+
+  /// Blocking validation (e.g. due before start), or null.
+  final String? error;
+
+  static String _fmt(DateTime d) => AppDateFormatter.dayMonthYearTime(d);
+  static bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final quicks = <(String, DateTime)>[
-      ('Today', today),
-      ('Tomorrow', today.add(const Duration(days: 1))),
-      ('Next week', today.add(const Duration(days: 7))),
-    ];
+    Duration? span;
+    if (error == null && start != null && due != null) {
+      final d = due!.difference(start!);
+      if (d.inMinutes > 0) span = d;
+    }
+    final overnight =
+        start != null && due != null && !_sameDay(start!, due!);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _PickerTile(
-          icon: Icons.event_outlined,
-          label: 'Deadline',
-          value: value == null ? null : _fmt(value!),
-          placeholder: 'No deadline',
-          onTap: onPick,
-          onClear: onClear,
+          icon: Icons.play_circle_outline_rounded,
+          label: 'Start',
+          value: start == null ? null : _fmt(start!),
+          placeholder: 'Not set',
+          onTap: onPickStart,
+          onClear: onClearStart,
         ),
         const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
+        _PickerTile(
+          icon: Icons.flag_outlined,
+          label: 'Due',
+          value: due == null ? null : _fmt(due!),
+          placeholder: 'No due time',
+          onTap: onPickDue,
+          onClear: onClearDue,
+        ),
+        if (resolving)
+          _scheduleNote(
+            Icons.sync_rounded,
+            'Checking roster…',
+            AppColors.textSecondary,
+          ),
+        if (error != null)
+          _scheduleNote(Icons.error_outline_rounded, error!, AppColors.error)
+        else if (span != null)
+          _scheduleNote(
+            Icons.timelapse_rounded,
+            'Estimated duration · ${formatScheduleDuration(span)}'
+            '${overnight ? ' · overnight' : ''}',
+            AppColors.textSecondary,
+          ),
+        if (warning != null)
+          _scheduleNote(
+            Icons.warning_amber_rounded,
+            warning!,
+            AppColors.warning,
+          ),
+        if (sourceLabel != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _ScheduleBanner(
+            sourceLabel: sourceLabel!,
+            custom: custom,
+            onReset: onReset,
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// A small icon + text info line under the schedule rows.
+  static Widget _scheduleNote(IconData icon, String text, Color color) =>
+      Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.sm, left: 2),
+        child: Row(
           children: [
-            for (final (label, date) in quicks)
-              _MiniChip(
-                label: label,
-                selected: value != null && _sameDay(value!, date),
-                onTap: () => onQuick(date),
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                text,
+                style: AppTypography.caption.copyWith(color: color),
               ),
+            ),
           ],
         ),
-      ],
+      );
+}
+
+/// The Suggested / Custom banner under the Schedule rows. When suggested it's a
+/// single confirming line; once customized it keeps the **original** shift on
+/// screen ("Originally: …") so the manager always knows what the system proposed
+/// and can snap back with one tap.
+class _ScheduleBanner extends StatelessWidget {
+  const _ScheduleBanner({
+    required this.sourceLabel,
+    required this.custom,
+    required this.onReset,
+  });
+
+  final String sourceLabel;
+  final bool custom;
+  final VoidCallback? onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurfaceElevated,
+        borderRadius: AppRadius.mdAll,
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            custom ? Icons.tune_rounded : Icons.check_circle_outline_rounded,
+            size: 15,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: custom
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Custom schedule',
+                        style: AppTypography.labelSmall
+                            .copyWith(color: AppColors.textPrimary),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        'Originally: $sourceLabel',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.caption
+                            .copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  )
+                : Text(
+                    'Suggested from $sourceLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.caption
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+          ),
+          if (onReset != null) ...[
+            const SizedBox(width: AppSpacing.sm),
+            GestureDetector(
+              onTap: onReset,
+              behavior: HitTestBehavior.opaque,
+              child: Text(
+                custom ? 'Reset to shift' : 'Reset',
+                style: AppTypography.labelSmall
+                    .copyWith(color: AppColors.textPrimary),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
 
-/// A compact selectable chip for quick presets (e.g. deadline shortcuts).
-class _MiniChip extends StatelessWidget {
-  const _MiniChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
+/// Shown when a team's assignees span **different** shifts — the schedule can't
+/// be auto-suggested, so the manager picks Morning / Night / Custom (keeping
+/// them in control per the "smart defaults, never locked" principle).
+class _MixedShiftChooser extends StatelessWidget {
+  const _MixedShiftChooser({required this.onPick, required this.onCustom});
+
+  final void Function(ScheduleShift) onPick;
+  final VoidCallback onCustom;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurfaceElevated,
+        borderRadius: AppRadius.mdAll,
+        border: Border.all(color: AppColors.warning.withAlpha(90)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.groups_2_outlined,
+                  size: 15, color: AppColors.warning),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'This team works mixed shifts — pick a schedule',
+                  style: AppTypography.caption
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              _ChooserChip(
+                label: ScheduleShift.morning.label,
+                onTap: () => onPick(ScheduleShift.morning),
+              ),
+              _ChooserChip(
+                label: ScheduleShift.night.label,
+                onTap: () => onPick(ScheduleShift.night),
+              ),
+              _ChooserChip(label: 'Custom', onTap: onCustom),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChooserChip extends StatelessWidget {
+  const _ChooserChip({required this.label, required this.onTap});
   final String label;
-  final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: 7),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 7),
         decoration: BoxDecoration(
-          color: selected
-              ? AppColors.primary
-              : AppColors.darkSurfaceElevated,
+          color: AppColors.darkSurface,
           borderRadius: AppRadius.fullAll,
-          border: Border.all(
-              color: selected ? AppColors.primary : AppColors.darkBorder),
+          border: Border.all(color: AppColors.darkBorder),
         ),
         child: Text(
           label,
-          style: AppTypography.caption.copyWith(
-            color: selected ? AppColors.onPrimary : AppColors.textSecondary,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-          ),
+          style: AppTypography.labelSmall
+              .copyWith(color: AppColors.textPrimary),
         ),
       ),
     );
