@@ -24,6 +24,7 @@ class _FakeRequestRepository implements RequestRepository {
 
   final List<({RequestStatus to, String? by})> statusChanges = [];
   final List<RequestEvent> added = [];
+  final List<String> deleted = [];
 
   void pushRequest(RequestEntity? r) => _requestCtrl.add(r);
   void pushEvents(List<RequestEvent> e) => _eventsCtrl.add(e);
@@ -78,7 +79,9 @@ class _FakeRequestRepository implements RequestRepository {
   @override
   Future<RequestEntity> createRequest(RequestEntity request) async => request;
   @override
-  Future<void> deleteRequest(String requestId) async {}
+  Future<void> deleteRequest(String requestId) async {
+    deleted.add(requestId);
+  }
 }
 
 void main() {
@@ -166,6 +169,53 @@ void main() {
     await cubit.approve();
     expect(repo.statusChanges, isEmpty);
     await cubit.close();
+  });
+
+  test('an admin can reopen a decided request (stamps the actor)', () async {
+    final repo = _FakeRequestRepository();
+    final cubit = build(repo, u('admin', UserRole.admin));
+    repo.pushRequest(req(status: RequestStatus.approved));
+    await Future<void>.delayed(Duration.zero);
+
+    await cubit.reopen();
+    expect(repo.statusChanges.single.to, RequestStatus.pending);
+    expect(repo.statusChanges.single.by, 'admin');
+    await cubit.close();
+  });
+
+  test('a manager cannot reopen; nobody reopens a pending request', () async {
+    final repo = _FakeRequestRepository();
+    final mgr = build(repo, u('mgr', UserRole.manager, branch: 'b1'));
+    repo.pushRequest(req(status: RequestStatus.rejected));
+    await Future<void>.delayed(Duration.zero);
+    await mgr.reopen();
+    expect(repo.statusChanges, isEmpty);
+    await mgr.close();
+
+    final admin = build(repo, u('admin', UserRole.admin));
+    repo.pushRequest(req(status: RequestStatus.pending));
+    await Future<void>.delayed(Duration.zero);
+    await admin.reopen();
+    expect(repo.statusChanges, isEmpty);
+    await admin.close();
+  });
+
+  test('delete is admin-only and soft (routes through the repository)',
+      () async {
+    final repo = _FakeRequestRepository();
+    final mgr = build(repo, u('mgr', UserRole.manager, branch: 'b1'));
+    repo.pushRequest(req());
+    await Future<void>.delayed(Duration.zero);
+    expect(await mgr.deleteRequest(), isFalse);
+    expect(repo.deleted, isEmpty);
+    await mgr.close();
+
+    final admin = build(repo, u('admin', UserRole.admin));
+    repo.pushRequest(req());
+    await Future<void>.delayed(Duration.zero);
+    expect(await admin.deleteRequest(), isTrue);
+    expect(repo.deleted, ['r1']);
+    await admin.close();
   });
 
   test('a comment is a single event add, tagged by author role', () async {

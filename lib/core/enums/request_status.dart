@@ -18,15 +18,13 @@ enum RequestStatus {
   bool get isPending => this == RequestStatus.pending;
   bool get isApproved => this == RequestStatus.approved;
   bool get isRejected => this == RequestStatus.rejected;
+  bool get isNegative => this == RequestStatus.rejected;
 
   /// Still awaiting a decision — stays in the active inbox section; decided
   /// requests sink to the archive.
   bool get isActive => this == RequestStatus.pending;
 
   bool get isTerminal => !isActive;
-
-  /// A negative outcome (drives the muted "rejected" status colour).
-  bool get isNegative => this == RequestStatus.rejected;
 
   String get label => switch (this) {
         RequestStatus.pending => 'Pending',

@@ -2201,21 +2201,28 @@ exports.onRequestUpdated = onDocumentUpdated(`${REQUESTS}/{requestId}`, async (e
   const afterStatus = String(after.status || "pending");
   if (beforeStatus === afterStatus) return;
 
-  const kinds = { approved: "approved", rejected: "rejected" };
+  // approved / rejected = a decision; pending (from a decided state) = an
+  // admin REOPEN — the client cleared `decided*` and stamped `reopened*`.
+  const kinds = { approved: "approved", rejected: "rejected", pending: "reopened" };
   const kind = kinds[afterStatus];
   if (!kind) return;
 
   const deciderName = String(after.decidedByName || "").trim();
+  const reopenerName = String(after.reopenedByName || "").trim();
   const label = {
     approved: deciderName ? `Approved by ${deciderName}` : "Approved",
     rejected: deciderName ? `Rejected by ${deciderName}` : "Rejected",
+    pending: reopenerName ? `Reopened by ${reopenerName}` : "Reopened",
   }[afterStatus];
+  const actorUid = afterStatus === "pending"
+    ? String(after.reopenedBy || "")
+    : String(after.decidedBy || "");
 
   await appendServerRequestEvent(
     requestId,
     {
-      authorId: String(after.decidedBy || ""),
-      authorName: deciderName || "System",
+      authorId: actorUid,
+      authorName: (afterStatus === "pending" ? reopenerName : deciderName) || "System",
       actor: "system",
       kind,
       text: label,
@@ -2224,8 +2231,34 @@ exports.onRequestUpdated = onDocumentUpdated(`${REQUESTS}/{requestId}`, async (e
     label,
   );
 
-  // Notify the requester of the decision.
   const requesterUid = String(after.requesterId || "");
+  if (afterStatus === "pending") {
+    // Reopened → it needs a decision again: tell the branch approvers (minus
+    // the admin who reopened) and the requester.
+    const approvers = await resolveRequestApprovers(after, actorUid);
+    const body = reopenerName
+      ? `${reopenerName} reopened this request — it needs a decision again`
+      : "This request was reopened and needs a decision again";
+    await writeRequestNotifications(approvers, {
+      type: "requestSubmitted",
+      title: "Request reopened",
+      body,
+      requestId,
+      senderUid: actorUid,
+    });
+    if (requesterUid && requesterUid !== actorUid) {
+      await writeRequestNotifications([requesterUid], {
+        type: "requestSubmitted",
+        title: "Request reopened",
+        body: "Your request is being reviewed again",
+        requestId,
+        senderUid: actorUid,
+      });
+    }
+    return;
+  }
+
+  // Notify the requester of the decision.
   if (requesterUid) {
     const byStatus = {
       approved: { type: "requestApproved", title: "Request Approved", body: "Your request was approved" },

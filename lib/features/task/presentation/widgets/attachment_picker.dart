@@ -80,8 +80,15 @@ class AttachmentPickerField extends StatelessWidget {
               Icon(allowVideo ? Icons.attachment_rounded : Icons.image_outlined,
                   size: 16, color: AppColors.textTertiary),
               const SizedBox(width: AppSpacing.sm),
-              Text(title, style: AppTypography.labelSmall),
-              const Spacer(),
+              // Flexible so the row can never overflow on narrow widths or
+              // large accessibility text — the title truncates, the counts stay.
+              Expanded(
+                child: Text(title,
+                    style: AppTypography.labelSmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ),
+              const SizedBox(width: AppSpacing.sm),
               Text(
                 allowVideo
                     ? 'Photos $_images/${AttachmentLimits.maxImages} · '

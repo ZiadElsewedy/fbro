@@ -7,9 +7,11 @@ import 'package:drop/features/requests/domain/entities/request_entity.dart';
 import 'package:drop/features/requests/presentation/request_format.dart';
 
 /// A single request row in the inbox — communicates, at a glance: type (icon +
-/// name), status, requester, branch, time, and a one-line summary. Premium
-/// monochrome: a soft surface, hairline border, a status-tinted type tile, and a
-/// status dot. Deliberately restrained — no information overload.
+/// name), status, requester, branch, time, and the one-line message. Premium
+/// monochrome: a soft surface, hairline border, a status-tinted type tile and
+/// pill, and the REQ reference as a quiet trailing meta. A **pending** row wears
+/// a faint status-tinted border — the one thing in the list that needs action.
+/// Deliberately restrained — no information overload.
 class RequestCard extends StatelessWidget {
   const RequestCard({
     super.key,
@@ -17,7 +19,6 @@ class RequestCard extends StatelessWidget {
     required this.onTap,
     this.branchName,
     this.showRequester = true,
-    this.selected = false,
   });
 
   final RequestEntity request;
@@ -26,9 +27,6 @@ class RequestCard extends StatelessWidget {
 
   /// Hidden on an employee's own list (they know it's theirs).
   final bool showRequester;
-
-  /// Desktop split-pane selected state (subtle emphasis).
-  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -42,10 +40,14 @@ class RequestCard extends StatelessWidget {
         borderRadius: AppRadius.lgAll,
         child: Ink(
           decoration: BoxDecoration(
-            color: selected ? AppColors.darkSurfaceElevated : AppColors.darkSurface,
+            color: AppColors.darkSurface,
             borderRadius: AppRadius.lgAll,
+            // Pending = the one row that needs action — it alone wears a faint
+            // status tint; decided rows stay on the quiet hairline.
             border: Border.all(
-              color: selected ? AppColors.primary.withAlpha(60) : AppColors.darkBorder,
+              color: request.isPending
+                  ? statusColor.withAlpha(48)
+                  : AppColors.darkBorder,
             ),
           ),
           padding: const EdgeInsets.all(AppSpacing.md),
@@ -66,6 +68,7 @@ class RequestCard extends StatelessWidget {
                             style: AppTypography.label.copyWith(
                               color: AppColors.textPrimary,
                               fontWeight: FontWeight.w600,
+                              letterSpacing: 0.1,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -75,11 +78,11 @@ class RequestCard extends StatelessWidget {
                         _StatusPill(request: request),
                       ],
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
                       request.summary,
                       style: AppTypography.bodySmall
-                          .copyWith(color: AppColors.textSecondary),
+                          .copyWith(color: AppColors.textSecondary, height: 1.35),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -109,14 +112,20 @@ class _TypeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 40,
-      height: 40,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
-        color: tint.withAlpha(28),
+        // A soft vertical wash reads richer than a flat fill, still monochrome
+        // discipline — the tint stays the status colour at whisper alpha.
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [tint.withAlpha(34), tint.withAlpha(16)],
+        ),
         borderRadius: AppRadius.mdAll,
-        border: Border.all(color: tint.withAlpha(60)),
+        border: Border.all(color: tint.withAlpha(55)),
       ),
-      child: Icon(RequestFormat.icon(request.type), size: 20, color: tint),
+      child: Icon(RequestFormat.icon(request.type), size: 21, color: tint),
     );
   }
 }
@@ -175,7 +184,7 @@ class _MetaRow extends StatelessWidget {
     if (branch != null && branch.isNotEmpty) {
       parts.add(_MetaText(icon: Icons.storefront_outlined, text: branch));
     }
-    // For a pending request show how long it's been waiting; else its ref + time.
+    // For a pending request show how long it's been waiting; else its time.
     if (request.status.isPending && pendingFor != null) {
       parts.add(_MetaText(
         icon: Icons.schedule_rounded,
@@ -188,6 +197,8 @@ class _MetaRow extends StatelessWidget {
         text: RequestFormat.relativeTime(request.lastActivityAt),
       ));
     }
+    // The quiet ops reference — always last, always whisper-level.
+    parts.add(_MetaText(icon: Icons.tag_rounded, text: request.refLabel));
 
     return Wrap(
       spacing: AppSpacing.md,

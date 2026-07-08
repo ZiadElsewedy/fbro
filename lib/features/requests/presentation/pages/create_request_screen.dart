@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/enums/request_type.dart';
+import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
@@ -216,16 +217,104 @@ class _TypePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.extent(
+    // Phone/tablet → full-width rows: big touch targets, the blurb reads in
+    // full, and rows size to their content so nothing can overflow. Desktop →
+    // a card grid with a FIXED tile height (never an aspect ratio, which is
+    // what let tiles overflow on narrow layouts).
+    if (!context.isDesktop) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xxxl),
+        children: [
+          // The mobile app bar has no subtitle slot, so the guiding question
+          // leads the list instead.
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: Text(
+              'What do you need your manager to approve?',
+              style: AppTypography.bodySmall
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+          ),
+          for (final type in RequestType.values)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _TypeRow(type: type, onTap: () => onPick(type)),
+            ),
+        ],
+      );
+    }
+    return GridView(
       padding: const EdgeInsets.all(AppSpacing.lg),
-      maxCrossAxisExtent: 260,
-      mainAxisSpacing: AppSpacing.md,
-      crossAxisSpacing: AppSpacing.md,
-      childAspectRatio: 1.5,
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 260,
+        mainAxisExtent: 150,
+        mainAxisSpacing: AppSpacing.md,
+        crossAxisSpacing: AppSpacing.md,
+      ),
       children: [
         for (final type in RequestType.values)
           _TypeTileCard(type: type, onTap: () => onPick(type)),
       ],
+    );
+  }
+}
+
+/// The phone-tier picker row — icon tile, title + full blurb, chevron.
+class _TypeRow extends StatelessWidget {
+  const _TypeRow({required this.type, required this.onTap});
+  final RequestType type;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppRadius.lgAll,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: AppColors.darkSurface,
+            borderRadius: AppRadius.lgAll,
+            border: Border.all(color: AppColors.darkBorder),
+          ),
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySurface,
+                  borderRadius: AppRadius.mdAll,
+                ),
+                child: Icon(RequestFormat.icon(type),
+                    color: AppColors.textPrimary, size: 20),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(type.label,
+                        style: AppTypography.label.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(type.blurb,
+                        style: AppTypography.bodySmall
+                            .copyWith(color: AppColors.textSecondary)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 20, color: AppColors.textTertiary),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

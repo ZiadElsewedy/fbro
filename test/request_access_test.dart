@@ -83,6 +83,39 @@ void main() {
     });
   });
 
+  group('canReopenRequest', () {
+    test('admin can reopen only a DECIDED request', () {
+      final admin = user('admin', UserRole.admin);
+      expect(canReopenRequest(admin, request(status: RequestStatus.approved)),
+          isTrue);
+      expect(canReopenRequest(admin, request(status: RequestStatus.rejected)),
+          isTrue);
+      expect(canReopenRequest(admin, request(status: RequestStatus.pending)),
+          isFalse);
+    });
+
+    test('managers and employees can never reopen', () {
+      final decided = request(status: RequestStatus.approved);
+      expect(
+          canReopenRequest(user('mgr', UserRole.manager, branch: 'b1'), decided),
+          isFalse);
+      expect(
+          canReopenRequest(
+              user('emp1', UserRole.employee, branch: 'b1'), decided),
+          isFalse);
+    });
+  });
+
+  group('canDeleteRequest', () {
+    test('admin only', () {
+      expect(canDeleteRequest(user('admin', UserRole.admin)), isTrue);
+      expect(canDeleteRequest(user('mgr', UserRole.manager, branch: 'b1')),
+          isFalse);
+      expect(canDeleteRequest(user('emp1', UserRole.employee, branch: 'b1')),
+          isFalse);
+    });
+  });
+
   group('canCommentOnRequest', () {
     test('participants can comment while pending, not once decided', () {
       final pending = request(status: RequestStatus.pending);

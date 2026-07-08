@@ -18,11 +18,6 @@ class RequestMetrics {
     required this.total,
   });
 
-  static const empty =
-      RequestMetrics(pending: 0, approved: 0, rejected: 0, total: 0);
-
-  bool get hasData => total > 0;
-
   factory RequestMetrics.from(List<RequestEntity> requests) {
     var pending = 0, approved = 0, rejected = 0;
     for (final r in requests) {

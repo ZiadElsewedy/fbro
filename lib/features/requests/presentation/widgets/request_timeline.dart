@@ -200,12 +200,15 @@ class _SystemMarker extends StatelessWidget {
   RequestStatus? _statusFor(RequestEventKind kind) => switch (kind) {
         RequestEventKind.approved => RequestStatus.approved,
         RequestEventKind.rejected => RequestStatus.rejected,
+        // Reopened = pending again, so it wears the pending tint.
+        RequestEventKind.reopened => RequestStatus.pending,
         _ => null,
       };
 
   IconData _icon(RequestEventKind kind) => switch (kind) {
         RequestEventKind.approved => Icons.check_circle_outline_rounded,
         RequestEventKind.rejected => Icons.cancel_outlined,
+        RequestEventKind.reopened => Icons.replay_rounded,
         _ => Icons.circle_outlined,
       };
 
@@ -214,6 +217,7 @@ class _SystemMarker extends StatelessWidget {
     final base = switch (event.kind) {
       RequestEventKind.approved => 'Approved',
       RequestEventKind.rejected => 'Rejected',
+      RequestEventKind.reopened => 'Reopened',
       _ => 'Updated',
     };
     return who.isEmpty ? base : '$base by $who';

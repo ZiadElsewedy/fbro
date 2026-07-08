@@ -25,7 +25,10 @@ abstract class RequestRemoteDataSource {
 
   Future<RequestModel> createRequest(RequestModel request);
 
-  /// Single targeted update — status + decision/completion stamps only.
+  /// Single targeted update — status + decision stamps. Moving to a decision
+  /// stamps `decided*`; moving back to pending (an admin REOPEN) clears them and
+  /// stamps `reopened*` instead — [decidedBy]/[decidedByName] carry the acting
+  /// user either way.
   Future<void> changeStatus(
     String requestId,
     RequestStatus to, {
@@ -36,6 +39,8 @@ abstract class RequestRemoteDataSource {
   /// Single `add` of one event document (no whole-array rewrite).
   Future<void> addEvent(String requestId, RequestEvent event);
 
+  /// SOFT delete — stamps `deletedAt`; the doc stays as a record and the inbox
+  /// streams filter it out. Never a hard Firestore delete.
   Future<void> deleteRequest(String requestId);
 
   Future<TaskAttachment> uploadAttachment({
@@ -155,6 +160,15 @@ class RequestRemoteDataSourceImpl implements RequestRemoteDataSource {
         data['decidedBy'] = decidedBy;
         data['decidedByName'] = decidedByName;
         data['decidedAt'] = FieldValue.serverTimestamp();
+      } else if (to.isPending) {
+        // Admin reopen — the request is pending again: clear the decision and
+        // record who reopened (feeds the server-written `reopened` event).
+        data['decidedBy'] = null;
+        data['decidedByName'] = null;
+        data['decidedAt'] = null;
+        data['reopenedBy'] = decidedBy;
+        data['reopenedByName'] = decidedByName;
+        data['reopenedAt'] = FieldValue.serverTimestamp();
       }
       await _requests.doc(requestId).update(data);
     } on FirebaseException catch (e) {
@@ -177,9 +191,14 @@ class RequestRemoteDataSourceImpl implements RequestRemoteDataSource {
   @override
   Future<void> deleteRequest(String requestId) async {
     try {
-      // The events subcollection is left in place — deleting a request is a rare
-      // admin-only operation and the subdocs are orphaned harmlessly.
-      await _requests.doc(requestId).delete();
+      // SOFT delete (owner ruling): stamp `deletedAt` and keep the doc + its
+      // events as a record. The inbox streams filter deleted requests out
+      // client-side, so no index/migration is needed. Passes rules as a plain
+      // admin update — no rules change.
+      await _requests.doc(requestId).update({
+        'deletedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to delete request.');
     }

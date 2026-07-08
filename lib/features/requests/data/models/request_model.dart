@@ -36,6 +36,7 @@ class RequestModel {
   final String? decidedBy;
   final String? decidedByName;
   final DateTime? decidedAt;
+  final DateTime? deletedAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -57,6 +58,7 @@ class RequestModel {
     this.decidedBy,
     this.decidedByName,
     this.decidedAt,
+    this.deletedAt,
     this.createdAt,
     this.updatedAt,
   });
@@ -80,6 +82,7 @@ class RequestModel {
         decidedBy: map['decidedBy'] as String?,
         decidedByName: map['decidedByName'] as String?,
         decidedAt: map.date('decidedAt'),
+        deletedAt: map.date('deletedAt'),
         createdAt: map.date('createdAt'),
         updatedAt: map.date('updatedAt'),
       );
@@ -102,6 +105,7 @@ class RequestModel {
         decidedBy: e.decidedBy,
         decidedByName: e.decidedByName,
         decidedAt: e.decidedAt,
+        deletedAt: e.deletedAt,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
       );
@@ -141,6 +145,7 @@ class RequestModel {
         decidedBy: decidedBy,
         decidedByName: decidedByName,
         decidedAt: decidedAt,
+        deletedAt: deletedAt,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
@@ -163,6 +168,7 @@ class RequestModel {
         decidedBy: decidedBy,
         decidedByName: decidedByName,
         decidedAt: decidedAt,
+        deletedAt: deletedAt,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );

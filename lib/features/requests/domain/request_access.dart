@@ -33,3 +33,13 @@ bool canDecideRequest(UserEntity user, RequestEntity request) =>
 /// is still active (a decided request is a read-only record).
 bool canCommentOnRequest(UserEntity user, RequestEntity request) =>
     request.isActive && canAccessRequest(user, request);
+
+/// Whether the viewer may REOPEN a decided request (send it back to Pending) —
+/// admin only, and only once a decision exists. The escape hatch for a decision
+/// made by mistake or that needs another look.
+bool canReopenRequest(UserEntity user, RequestEntity request) =>
+    user.role.isAdmin && request.isTerminal;
+
+/// Whether the viewer may (soft-)delete a request — admin only. The doc is kept
+/// as a record; the inbox just stops showing it.
+bool canDeleteRequest(UserEntity user) => user.role.isAdmin;

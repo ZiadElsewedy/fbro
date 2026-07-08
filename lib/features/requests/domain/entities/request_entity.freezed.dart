@@ -49,6 +49,10 @@ mixin _$RequestEntity {
   String? get decidedBy => throw _privateConstructorUsedError;
   String? get decidedByName => throw _privateConstructorUsedError;
   DateTime? get decidedAt => throw _privateConstructorUsedError;
+
+  /// Soft delete (admin-only): the doc stays as a record, the inbox filters
+  /// it out. Never a hard Firestore delete.
+  DateTime? get deletedAt => throw _privateConstructorUsedError;
   DateTime? get createdAt => throw _privateConstructorUsedError;
   DateTime? get updatedAt => throw _privateConstructorUsedError;
 
@@ -84,6 +88,7 @@ abstract class $RequestEntityCopyWith<$Res> {
     String? decidedBy,
     String? decidedByName,
     DateTime? decidedAt,
+    DateTime? deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   });
@@ -121,6 +126,7 @@ class _$RequestEntityCopyWithImpl<$Res, $Val extends RequestEntity>
     Object? decidedBy = freezed,
     Object? decidedByName = freezed,
     Object? decidedAt = freezed,
+    Object? deletedAt = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
   }) {
@@ -194,6 +200,10 @@ class _$RequestEntityCopyWithImpl<$Res, $Val extends RequestEntity>
                 ? _value.decidedAt
                 : decidedAt // ignore: cast_nullable_to_non_nullable
                       as DateTime?,
+            deletedAt: freezed == deletedAt
+                ? _value.deletedAt
+                : deletedAt // ignore: cast_nullable_to_non_nullable
+                      as DateTime?,
             createdAt: freezed == createdAt
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
@@ -235,6 +245,7 @@ abstract class _$$RequestEntityImplCopyWith<$Res>
     String? decidedBy,
     String? decidedByName,
     DateTime? decidedAt,
+    DateTime? deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   });
@@ -271,6 +282,7 @@ class __$$RequestEntityImplCopyWithImpl<$Res>
     Object? decidedBy = freezed,
     Object? decidedByName = freezed,
     Object? decidedAt = freezed,
+    Object? deletedAt = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
   }) {
@@ -344,6 +356,10 @@ class __$$RequestEntityImplCopyWithImpl<$Res>
             ? _value.decidedAt
             : decidedAt // ignore: cast_nullable_to_non_nullable
                   as DateTime?,
+        deletedAt: freezed == deletedAt
+            ? _value.deletedAt
+            : deletedAt // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
         createdAt: freezed == createdAt
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
@@ -378,6 +394,7 @@ class _$RequestEntityImpl extends _RequestEntity {
     this.decidedBy,
     this.decidedByName,
     this.decidedAt,
+    this.deletedAt,
     this.createdAt,
     this.updatedAt,
   }) : _details = details,
@@ -453,6 +470,11 @@ class _$RequestEntityImpl extends _RequestEntity {
   final String? decidedByName;
   @override
   final DateTime? decidedAt;
+
+  /// Soft delete (admin-only): the doc stays as a record, the inbox filters
+  /// it out. Never a hard Firestore delete.
+  @override
+  final DateTime? deletedAt;
   @override
   final DateTime? createdAt;
   @override
@@ -460,7 +482,7 @@ class _$RequestEntityImpl extends _RequestEntity {
 
   @override
   String toString() {
-    return 'RequestEntity(id: $id, refCode: $refCode, seq: $seq, branchId: $branchId, type: $type, status: $status, requesterId: $requesterId, requesterName: $requesterName, requesterRole: $requesterRole, details: $details, attachments: $attachments, lastEventPreview: $lastEventPreview, lastEventAt: $lastEventAt, eventCount: $eventCount, decidedBy: $decidedBy, decidedByName: $decidedByName, decidedAt: $decidedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'RequestEntity(id: $id, refCode: $refCode, seq: $seq, branchId: $branchId, type: $type, status: $status, requesterId: $requesterId, requesterName: $requesterName, requesterRole: $requesterRole, details: $details, attachments: $attachments, lastEventPreview: $lastEventPreview, lastEventAt: $lastEventAt, eventCount: $eventCount, decidedBy: $decidedBy, decidedByName: $decidedByName, decidedAt: $decidedAt, deletedAt: $deletedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -498,6 +520,8 @@ class _$RequestEntityImpl extends _RequestEntity {
                 other.decidedByName == decidedByName) &&
             (identical(other.decidedAt, decidedAt) ||
                 other.decidedAt == decidedAt) &&
+            (identical(other.deletedAt, deletedAt) ||
+                other.deletedAt == deletedAt) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
             (identical(other.updatedAt, updatedAt) ||
@@ -524,6 +548,7 @@ class _$RequestEntityImpl extends _RequestEntity {
     decidedBy,
     decidedByName,
     decidedAt,
+    deletedAt,
     createdAt,
     updatedAt,
   ]);
@@ -556,6 +581,7 @@ abstract class _RequestEntity extends RequestEntity {
     final String? decidedBy,
     final String? decidedByName,
     final DateTime? decidedAt,
+    final DateTime? deletedAt,
     final DateTime? createdAt,
     final DateTime? updatedAt,
   }) = _$RequestEntityImpl;
@@ -610,6 +636,11 @@ abstract class _RequestEntity extends RequestEntity {
   String? get decidedByName;
   @override
   DateTime? get decidedAt;
+
+  /// Soft delete (admin-only): the doc stays as a record, the inbox filters
+  /// it out. Never a hard Firestore delete.
+  @override
+  DateTime? get deletedAt;
   @override
   DateTime? get createdAt;
   @override

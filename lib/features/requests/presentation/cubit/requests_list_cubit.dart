@@ -15,16 +15,17 @@ import 'package:drop/features/task/presentation/cubit/task_cubit.dart'
     show PickedAttachment;
 import 'requests_list_state.dart';
 
-/// Drives the Operations Requests inbox (the list) for all three roles. Unlike
-/// Cases there is **no privacy split**, so every role reads a single realtime
-/// stream (no one-shot collectionGroup):
-///   admin    → every request;
-///   manager  → own-branch requests (includes any they filed themselves);
+/// Drives the employee approval-requests inbox (the list) for all three roles.
+/// Unlike Cases there is **no privacy split**, so every role reads a single
+/// realtime stream (no one-shot collectionGroup):
+///   admin    → every request (global visibility);
+///   manager  → own-branch requests (their approval inbox);
 ///   employee → their own requests (`requesterId == uid`).
 ///
-/// Filing a request lives here (mirrors `CaseListCubit.openCase`); the per-request
-/// timeline + decisions live in [RequestDetailCubit]. Notifications are produced
-/// **server-side** by the `onRequest*` Cloud Functions.
+/// Filing a request lives here (employees only — approvers never file); the
+/// per-request timeline + decisions + admin reopen/delete live in
+/// [RequestDetailCubit]. Notifications are produced **server-side** by the
+/// `onRequest*` Cloud Functions.
 class RequestsListCubit extends Cubit<RequestsListState> {
   final RequestRepository _repository;
   final BranchRepository _branchRepository;
@@ -34,11 +35,9 @@ class RequestsListCubit extends Cubit<RequestsListState> {
   UserEntity? _user;
   StreamSubscription<List<RequestEntity>>? _sub;
   bool _mutating = false;
-  String? _selectedId;
   final Map<String, String> _branchNames = {};
 
   Map<String, String> get branchNames => Map.unmodifiable(_branchNames);
-  String? get selectedId => _selectedId;
 
   RequestsListCubit({
     required this._repository,
@@ -48,14 +47,7 @@ class RequestsListCubit extends Cubit<RequestsListState> {
   }) : super(const RequestsListState.initial());
 
   List<RequestEntity> get _requests =>
-      state.maybeWhen(loaded: (r, _, _, _) => r, orElse: () => const []);
-
-  RequestEntity? requestById(String id) {
-    for (final r in _requests) {
-      if (r.id == id) return r;
-    }
-    return null;
-  }
+      state.maybeWhen(loaded: (r, _) => r, orElse: () => const []);
 
   static String _scopeKey(UserEntity u) =>
       '${u.uid}:${u.role.value}:${u.branchId ?? ''}';
@@ -65,15 +57,12 @@ class RequestsListCubit extends Cubit<RequestsListState> {
     final sameScope = _user != null && _scopeKey(_user!) == _scopeKey(user);
     if (!forceRefresh && !inError && _sub != null && sameScope) return;
 
-    if (!sameScope) {
-      _branchNames.clear();
-      _selectedId = null;
-    }
+    if (!sameScope) _branchNames.clear();
     _user = user;
     _loadBranchNames();
 
     final hasData =
-        state.maybeWhen(loaded: (_, _, _, _) => true, orElse: () => false);
+        state.maybeWhen(loaded: (_, _) => true, orElse: () => false);
     if (!hasData) emit(const RequestsListState.loading());
 
     await _sub?.cancel();
@@ -112,21 +101,13 @@ class RequestsListCubit extends Cubit<RequestsListState> {
     if (isClosed) return;
     emit(RequestsListState.loaded(
       requests,
-      busy: _mutating,
       branchNames: Map.of(_branchNames),
-      selectedId: _selectedId,
     ));
   }
 
   Future<void> refresh() async {
     final user = _user;
     if (user != null) await load(user, forceRefresh: true);
-  }
-
-  /// Select a request for the desktop split-pane's right side.
-  void select(String? requestId) {
-    _selectedId = requestId;
-    _emitLoaded(_requests);
   }
 
   Future<void> _loadBranchNames() async {
@@ -143,7 +124,7 @@ class RequestsListCubit extends Cubit<RequestsListState> {
     } catch (_) {}
   }
 
-  // ─── Filing a request ──────────────────────────────────────────
+  // ─── Filing a request (employees only — the UI gates the entry point) ──
   /// Files a new request. Pre-generates the id so opening media uploads under it
   /// BEFORE the doc is written (so `onRequestCreated` sees the attachments when it
   /// builds the opening event). Returns the created request, or null on failure.
@@ -155,7 +136,6 @@ class RequestsListCubit extends Cubit<RequestsListState> {
     final user = _user;
     if (user == null || _mutating) return null;
     _mutating = true;
-    _emitLoaded(_requests);
 
     try {
       final requestId = _repository.newRequestId();
@@ -195,32 +175,6 @@ class RequestsListCubit extends Cubit<RequestsListState> {
       emit(const RequestsListState.error(
           'Something went wrong filing your request.'));
       return null;
-    } finally {
-      _mutating = false;
-      _emitLoaded(_requests);
-    }
-  }
-
-  /// Fetches a single request by id (a deep-link not in the current scoped list).
-  Future<RequestEntity?> fetchRequest(String requestId) async {
-    try {
-      return await _repository.getRequest(requestId);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> deleteRequest(String requestId) async {
-    if (_user == null || _mutating) return;
-    _mutating = true;
-    _emitLoaded(_requests);
-    try {
-      await _repository.deleteRequest(requestId);
-      if (_selectedId == requestId) _selectedId = null;
-    } on Failure catch (e) {
-      emit(RequestsListState.error(e.message));
-    } catch (_) {
-      emit(const RequestsListState.error('Failed to delete the request.'));
     } finally {
       _mutating = false;
       _emitLoaded(_requests);

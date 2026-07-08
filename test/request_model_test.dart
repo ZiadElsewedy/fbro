@@ -104,6 +104,29 @@ void main() {
       expect(restored.type, AttachmentType.image);
     });
 
+    test('deletedAt marks a soft-deleted request', () {
+      final live = RequestModel.fromMap({
+        'type': 'other',
+        'requesterId': 'u1',
+      }, id: 'r6');
+      expect(live.deletedAt, isNull);
+      expect(live.toEntity().isDeleted, isFalse);
+
+      final gone = RequestModel.fromMap({
+        'type': 'other',
+        'requesterId': 'u1',
+        'deletedAt': Timestamp.fromDate(DateTime(2026, 7, 8)),
+      }, id: 'r7');
+      expect(gone.deletedAt, isNotNull);
+      expect(gone.toEntity().isDeleted, isTrue);
+    });
+
+    test('reopened event kind parses (server-written)', () {
+      expect(RequestEventKind.fromString('reopened'),
+          RequestEventKind.reopened);
+      expect(RequestEventKind.reopened.isSystem, isTrue);
+    });
+
     test('event round-trips kind + actor', () {
       final event = RequestEvent(
         id: 'e1',

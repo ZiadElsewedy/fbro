@@ -88,7 +88,7 @@ class RequestDetailCubit extends Cubit<RequestDetailState> {
     emit(RequestDetailState.loaded(r, _events, busy: _busy));
   }
 
-  // ─── Approver decisions (approve / reject / complete) ───────────
+  // ─── Approver decisions (approve / reject) ─────────────────────
   Future<void> _transition(RequestStatus to) async {
     final user = _user;
     final r = _request;
@@ -116,6 +116,55 @@ class RequestDetailCubit extends Cubit<RequestDetailState> {
 
   Future<void> approve() => _transition(RequestStatus.approved);
   Future<void> reject() => _transition(RequestStatus.rejected);
+
+  /// Admin-only: send a decided request back to Pending (clears the decision,
+  /// stamps who reopened; the `reopened` timeline event is written server-side).
+  Future<void> reopen() async {
+    final user = _user;
+    final r = _request;
+    if (user == null || r == null || _busy) return;
+    if (!canReopenRequest(user, r)) return;
+    _busy = true;
+    _emit();
+    try {
+      await _changeStatus(
+        requestId,
+        RequestStatus.pending,
+        decidedBy: user.uid,
+        decidedByName: user.displayName,
+      );
+    } on Failure catch (e) {
+      emit(RequestDetailState.error(e.message));
+    } catch (_) {
+      emit(const RequestDetailState.error('Failed to reopen the request.'));
+    } finally {
+      _busy = false;
+      _emit();
+    }
+  }
+
+  /// Admin-only SOFT delete. Returns whether it succeeded so the screen can pop.
+  Future<bool> deleteRequest() async {
+    final user = _user;
+    final r = _request;
+    if (user == null || r == null || _busy) return false;
+    if (!canDeleteRequest(user)) return false;
+    _busy = true;
+    _emit();
+    try {
+      await _repository.deleteRequest(requestId);
+      return true;
+    } on Failure catch (e) {
+      emit(RequestDetailState.error(e.message));
+      return false;
+    } catch (_) {
+      emit(const RequestDetailState.error('Failed to delete the request.'));
+      return false;
+    } finally {
+      _busy = false;
+      _emit();
+    }
+  }
 
   // ─── Comment (single event create) ─────────────────────────────
   /// Returns whether the comment was posted. The composer keys its input-clearing

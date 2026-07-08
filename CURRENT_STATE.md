@@ -11,7 +11,7 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-08 (Requests freeze fixed + Requests simplified)
+**Last updated:** 2026-07-08 (Requests closed out: analyzer clean + tests green)
 **Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
 
 ---
@@ -31,7 +31,13 @@ fixed: both empty-state widgets now clamp `minHeight` to `0` when `maxHeight`
 isn't finite (`isFinite ? maxHeight : 0`). Protects every empty list app-wide.
 
 **Then simplified the Requests feature** to the owner ruling
-([[project_requests_simplicity]]) — a Request is a simple approval, not a ticket:
+([[project_requests_simplicity]]) — a Request is an **employee approval
+request**, not a ticket or a generic workflow engine:
+- **Business rule:** employee files → own-branch manager decides; admin has
+  global visibility and may decide when necessary. **Create is employee-only**
+  (the FAB hides for manager/admin), so self-approval is structurally
+  impossible — authors and deciders are disjoint roles, no guard logic exists
+  or is needed.
 - Flow only **Create → Pending → Approved / Rejected** (3 statuses; dropped
   completed/cancelled).
 - Create = pick type → **one message field** → optional attachments (deleted the
@@ -43,6 +49,18 @@ isn't finite (`isFinite ? maxHeight : 0`). Protects every empty list app-wide.
   no priority/policy/completed/cancelled). `refCode` (REQ-######) kept.
 - **Verified live** (file → Pending → Approve → decision chip + read-only lock,
   `REQ-000001`); all request test suites green. See [CHANGELOG.md](CHANGELOG.md).
+- **Later the same day:** admin **soft delete** (`deletedAt`, filtered
+  client-side, record kept, no rules change), admin **reopen** (decided →
+  Pending, `reopened*` stamps + server `reopened` timeline event —
+  **functions deploy pending** for the chip/notifications), and a premium card
+  pass (status-tinted gradient tile, pending-only tinted border, `# REQ-…`
+  meta). Reopen verified live end-to-end. 44 request tests green.
+- **Close-out pass:** the stale `RequestsListState.freezed.dart` signature was
+  regenerated after the list state was simplified; `RequestRepository.getRequest`
+  and `RequestStatus.isNegative` now match the implementation/tests again; the
+  unrelated `AuthCubit` constructor style issue was cleaned so
+  `flutter analyze` reports **No issues found**. Focused Requests suites remain
+  **44 passing**.
 
 ---
 

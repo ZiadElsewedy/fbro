@@ -94,6 +94,8 @@ class _Loaded extends StatelessWidget {
     final u = user;
     final canDecide = u != null && canDecideRequest(u, request);
     final canComment = u != null && canCommentOnRequest(u, request);
+    final canReopen = u != null && canReopenRequest(u, request);
+    final canDelete = u != null && canDeleteRequest(u);
     final branchName = request.branchId == null
         ? null
         : context.read<RequestsListCubit>().branchNames[request.branchId];
@@ -103,6 +105,17 @@ class _Loaded extends StatelessWidget {
       title: request.type.label,
       subtitle: request.refLabel,
       contentMaxWidth: 820,
+      actions: [
+        // Admin housekeeping — a SOFT delete (the record is kept, the inbox
+        // stops showing it). Quiet icon, destructive confirm.
+        if (canDelete)
+          IconButton(
+            tooltip: 'Delete request',
+            icon: const Icon(Icons.delete_outline_rounded,
+                color: AppColors.textSecondary),
+            onPressed: busy ? null : () => _confirmDelete(context, cubit),
+          ),
+      ],
       body: Column(
         children: [
           Expanded(
@@ -130,9 +143,11 @@ class _Loaded extends StatelessWidget {
           _ActionBar(
             request: request,
             canDecide: canDecide,
+            canReopen: canReopen,
             busy: busy,
             onApprove: cubit.approve,
             onReject: () => _confirmReject(context, cubit),
+            onReopen: () => _confirmReopen(context, cubit),
           ),
           RequestComposer(
             sending: busy,
@@ -159,6 +174,37 @@ class _Loaded extends StatelessWidget {
       destructive: true,
     );
     if (ok) await cubit.reject();
+  }
+
+  Future<void> _confirmReopen(
+      BuildContext context, RequestDetailCubit cubit) async {
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Reopen request?',
+      message:
+          'It goes back to Pending for a fresh decision, and comments unlock. '
+          'The requester and branch manager will be notified.',
+      confirmLabel: 'Reopen',
+    );
+    if (ok) await cubit.reopen();
+  }
+
+  Future<void> _confirmDelete(
+      BuildContext context, RequestDetailCubit cubit) async {
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Delete request?',
+      message:
+          'It disappears from everyone’s inbox but is kept as a record.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!ok) return;
+    final deleted = await cubit.deleteRequest();
+    if (deleted && context.mounted) {
+      context.showSuccess('Request deleted');
+      if (context.canPop()) context.pop();
+    }
   }
 }
 
@@ -356,32 +402,27 @@ class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.request,
     required this.canDecide,
+    required this.canReopen,
     required this.busy,
     required this.onApprove,
     required this.onReject,
+    required this.onReopen,
   });
 
   final RequestEntity request;
   final bool canDecide;
+  final bool canReopen;
   final bool busy;
   final VoidCallback onApprove;
   final VoidCallback onReject;
+  final VoidCallback onReopen;
 
   @override
   Widget build(BuildContext context) {
-    // The only decision is approve / reject, only by an approver, only while
-    // the request is still pending.
-    if (!(canDecide && request.status.isPending)) {
-      return const SizedBox.shrink();
-    }
-    return Container(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, AppSpacing.sm,
-          AppSpacing.pagePadding, AppSpacing.sm),
-      decoration: const BoxDecoration(
-        color: AppColors.darkBg,
-        border: Border(top: BorderSide(color: AppColors.darkBorder)),
-      ),
-      child: Row(children: [
+    final List<Widget> children;
+    if (canDecide && request.status.isPending) {
+      // The decision — approve / reject, only while pending.
+      children = [
         Expanded(
           child: PremiumButton(
             label: 'Approve',
@@ -399,7 +440,30 @@ class _ActionBar extends StatelessWidget {
             onPressed: busy ? null : onReject,
           ),
         ),
-      ]),
+      ];
+    } else if (canReopen) {
+      // Admin escape hatch on a decided request — back to Pending.
+      children = [
+        Expanded(
+          child: PremiumButton(
+            label: 'Reopen request',
+            icon: Icons.replay_rounded,
+            style: PremiumButtonStyle.ghost,
+            onPressed: busy ? null : onReopen,
+          ),
+        ),
+      ];
+    } else {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.pagePadding, AppSpacing.sm,
+          AppSpacing.pagePadding, AppSpacing.sm),
+      decoration: const BoxDecoration(
+        color: AppColors.darkBg,
+        border: Border(top: BorderSide(color: AppColors.darkBorder)),
+      ),
+      child: Row(children: children),
     );
   }
 }

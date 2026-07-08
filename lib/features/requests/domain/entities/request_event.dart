@@ -13,6 +13,8 @@ part 'request_event.freezed.dart';
 /// [approved] /
 /// [rejected]         — decision markers, written server-side by
 ///                      `onRequestUpdated`; rendered as centered system chips.
+/// [reopened]         — an admin sent a decided request back to Pending
+///                      (written server-side, same as decisions).
 /// [attachmentAdded]  — media added to an existing request (a comment carrying
 ///                      only attachments).
 enum RequestEventKind {
@@ -20,23 +22,18 @@ enum RequestEventKind {
   comment,
   approved,
   rejected,
+  reopened,
   attachmentAdded;
 
   String get value => name;
 
   bool get isSubmitted => this == RequestEventKind.submitted;
-  bool get isComment => this == RequestEventKind.comment;
-  bool get isAttachmentAdded => this == RequestEventKind.attachmentAdded;
 
   /// A decision/status marker rendered as a centered chip, not a bubble.
   bool get isSystem =>
       this == RequestEventKind.approved ||
-      this == RequestEventKind.rejected;
-
-  /// A message-style event that aligns to a side + can carry text/media.
-  bool get isMessage =>
-      this == RequestEventKind.comment ||
-      this == RequestEventKind.attachmentAdded;
+      this == RequestEventKind.rejected ||
+      this == RequestEventKind.reopened;
 
   static RequestEventKind fromString(String? raw) {
     for (final k in RequestEventKind.values) {
@@ -88,7 +85,6 @@ class RequestEvent with _$RequestEvent {
 
   bool get isSystem => kind.isSystem;
   bool get isSubmitted => kind.isSubmitted;
-  bool get isComment => kind.isComment;
   bool get hasAttachments => attachments.isNotEmpty;
   bool get hasText => (text ?? '').trim().isNotEmpty;
 }

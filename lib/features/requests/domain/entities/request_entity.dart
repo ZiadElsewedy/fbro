@@ -55,6 +55,10 @@ class RequestEntity with _$RequestEntity {
     String? decidedBy,
     String? decidedByName,
     DateTime? decidedAt,
+
+    /// Soft delete (admin-only): the doc stays as a record, the inbox filters
+    /// it out. Never a hard Firestore delete.
+    DateTime? deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _RequestEntity;
@@ -62,6 +66,7 @@ class RequestEntity with _$RequestEntity {
   bool get isActive => status.isActive;
   bool get isTerminal => status.isTerminal;
   bool get isPending => status.isPending;
+  bool get isDeleted => deletedAt != null;
   bool get hasAttachments => attachments.isNotEmpty;
 
   /// The requester's short reason (the only captured field).
@@ -84,11 +89,6 @@ class RequestEntity with _$RequestEntity {
   /// once decided.
   Duration? get pendingFor => status.isPending && createdAt != null
       ? DateTime.now().difference(createdAt!)
-      : null;
-
-  /// Time from submission to decision (approved / rejected) — feeds metrics.
-  Duration? get timeToDecision => (createdAt != null && decidedAt != null)
-      ? decidedAt!.difference(createdAt!)
       : null;
 }
 

@@ -23,9 +23,7 @@ mixin _$RequestsListState {
     required TResult Function() loading,
     required TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )
     loaded,
     required TResult Function(String message) error,
@@ -36,9 +34,7 @@ mixin _$RequestsListState {
     TResult? Function()? loading,
     TResult? Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -49,9 +45,7 @@ mixin _$RequestsListState {
     TResult Function()? loading,
     TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -150,9 +144,7 @@ class _$InitialImpl implements _Initial {
     required TResult Function() loading,
     required TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )
     loaded,
     required TResult Function(String message) error,
@@ -167,9 +159,7 @@ class _$InitialImpl implements _Initial {
     TResult? Function()? loading,
     TResult? Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -184,9 +174,7 @@ class _$InitialImpl implements _Initial {
     TResult Function()? loading,
     TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -287,9 +275,7 @@ class _$LoadingImpl implements _Loading {
     required TResult Function() loading,
     required TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )
     loaded,
     required TResult Function(String message) error,
@@ -304,9 +290,7 @@ class _$LoadingImpl implements _Loading {
     TResult? Function()? loading,
     TResult? Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -321,9 +305,7 @@ class _$LoadingImpl implements _Loading {
     TResult Function()? loading,
     TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -384,12 +366,7 @@ abstract class _$$LoadedImplCopyWith<$Res> {
     $Res Function(_$LoadedImpl) then,
   ) = __$$LoadedImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({
-    List<RequestEntity> requests,
-    bool busy,
-    Map<String, String> branchNames,
-    String? selectedId,
-  });
+  $Res call({List<RequestEntity> requests, Map<String, String> branchNames});
 }
 
 /// @nodoc
@@ -405,30 +382,17 @@ class __$$LoadedImplCopyWithImpl<$Res>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({
-    Object? requests = null,
-    Object? busy = null,
-    Object? branchNames = null,
-    Object? selectedId = freezed,
-  }) {
+  $Res call({Object? requests = null, Object? branchNames = null}) {
     return _then(
       _$LoadedImpl(
         null == requests
             ? _value._requests
             : requests // ignore: cast_nullable_to_non_nullable
                   as List<RequestEntity>,
-        busy: null == busy
-            ? _value.busy
-            : busy // ignore: cast_nullable_to_non_nullable
-                  as bool,
         branchNames: null == branchNames
             ? _value._branchNames
             : branchNames // ignore: cast_nullable_to_non_nullable
                   as Map<String, String>,
-        selectedId: freezed == selectedId
-            ? _value.selectedId
-            : selectedId // ignore: cast_nullable_to_non_nullable
-                  as String?,
       ),
     );
   }
@@ -439,9 +403,7 @@ class __$$LoadedImplCopyWithImpl<$Res>
 class _$LoadedImpl implements _Loaded {
   const _$LoadedImpl(
     final List<RequestEntity> requests, {
-    this.busy = false,
     final Map<String, String> branchNames = const <String, String>{},
-    this.selectedId,
   }) : _requests = requests,
        _branchNames = branchNames;
 
@@ -453,9 +415,6 @@ class _$LoadedImpl implements _Loaded {
     return EqualUnmodifiableListView(_requests);
   }
 
-  @override
-  @JsonKey()
-  final bool busy;
   final Map<String, String> _branchNames;
   @override
   @JsonKey()
@@ -466,11 +425,8 @@ class _$LoadedImpl implements _Loaded {
   }
 
   @override
-  final String? selectedId;
-
-  @override
   String toString() {
-    return 'RequestsListState.loaded(requests: $requests, busy: $busy, branchNames: $branchNames, selectedId: $selectedId)';
+    return 'RequestsListState.loaded(requests: $requests, branchNames: $branchNames)';
   }
 
   @override
@@ -479,22 +435,17 @@ class _$LoadedImpl implements _Loaded {
         (other.runtimeType == runtimeType &&
             other is _$LoadedImpl &&
             const DeepCollectionEquality().equals(other._requests, _requests) &&
-            (identical(other.busy, busy) || other.busy == busy) &&
             const DeepCollectionEquality().equals(
               other._branchNames,
               _branchNames,
-            ) &&
-            (identical(other.selectedId, selectedId) ||
-                other.selectedId == selectedId));
+            ));
   }
 
   @override
   int get hashCode => Object.hash(
     runtimeType,
     const DeepCollectionEquality().hash(_requests),
-    busy,
     const DeepCollectionEquality().hash(_branchNames),
-    selectedId,
   );
 
   /// Create a copy of RequestsListState
@@ -512,14 +463,12 @@ class _$LoadedImpl implements _Loaded {
     required TResult Function() loading,
     required TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )
     loaded,
     required TResult Function(String message) error,
   }) {
-    return loaded(requests, busy, branchNames, selectedId);
+    return loaded(requests, branchNames);
   }
 
   @override
@@ -529,14 +478,12 @@ class _$LoadedImpl implements _Loaded {
     TResult? Function()? loading,
     TResult? Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult? Function(String message)? error,
   }) {
-    return loaded?.call(requests, busy, branchNames, selectedId);
+    return loaded?.call(requests, branchNames);
   }
 
   @override
@@ -546,16 +493,14 @@ class _$LoadedImpl implements _Loaded {
     TResult Function()? loading,
     TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
     if (loaded != null) {
-      return loaded(requests, busy, branchNames, selectedId);
+      return loaded(requests, branchNames);
     }
     return orElse();
   }
@@ -601,15 +546,11 @@ class _$LoadedImpl implements _Loaded {
 abstract class _Loaded implements RequestsListState {
   const factory _Loaded(
     final List<RequestEntity> requests, {
-    final bool busy,
     final Map<String, String> branchNames,
-    final String? selectedId,
   }) = _$LoadedImpl;
 
   List<RequestEntity> get requests;
-  bool get busy;
   Map<String, String> get branchNames;
-  String? get selectedId;
 
   /// Create a copy of RequestsListState
   /// with the given fields replaced by the non-null parameter values.
@@ -692,9 +633,7 @@ class _$ErrorImpl implements _Error {
     required TResult Function() loading,
     required TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )
     loaded,
     required TResult Function(String message) error,
@@ -709,9 +648,7 @@ class _$ErrorImpl implements _Error {
     TResult? Function()? loading,
     TResult? Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -726,9 +663,7 @@ class _$ErrorImpl implements _Error {
     TResult Function()? loading,
     TResult Function(
       List<RequestEntity> requests,
-      bool busy,
       Map<String, String> branchNames,
-      String? selectedId,
     )?
     loaded,
     TResult Function(String message)? error,

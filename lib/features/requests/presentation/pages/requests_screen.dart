@@ -20,11 +20,15 @@ import 'package:drop/features/requests/presentation/cubit/requests_list_state.da
 import 'package:drop/features/requests/presentation/request_format.dart';
 import 'package:drop/features/requests/presentation/widgets/request_card.dart';
 
-/// The Operations Requests inbox — shared by every role, self-scoping by role
-/// (admin: all branches · manager: own branch · employee: own requests). Managers
-/// and admins get a KPI strip that doubles as status filters (tap Pending → see
-/// only pending). Employees get a focused "My Requests" list. A single FAB files
-/// a new request.
+/// The employee approval-requests inbox — shared by every role, self-scoping
+/// (admin: all branches · manager: own branch · employee: own requests).
+///
+/// The flow is deliberately one-directional: an **employee** files a request,
+/// their **branch manager** approves or rejects it, and the **admin** has global
+/// visibility and may decide when necessary. Only employees get the "New
+/// request" FAB — approvers never file requests, so self-approval can't happen
+/// structurally (no extra guard logic needed). Managers and admins get a KPI
+/// strip that doubles as status filters (tap Pending → see only pending).
 class RequestsScreen extends StatefulWidget {
   const RequestsScreen({super.key});
 
@@ -59,18 +63,21 @@ class _RequestsScreenState extends State<RequestsScreen> {
           : context.isAdmin
               ? 'Approval requests across every branch'
               : 'Your approval requests',
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(RouteNames.requestsCreate),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.onPrimary,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('New request'),
-      ),
+      // Employees only — approvers (manager/admin) never file requests, so a
+      // request can never be decided by its own author.
+      floatingActionButton: _isApprover
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => context.push(RouteNames.requestsCreate),
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.onPrimary,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('New request'),
+            ),
       body: BlocBuilder<RequestsListCubit, RequestsListState>(
         builder: (context, state) => state.maybeWhen(
           loading: () => const DropLoadingState(message: 'Loading requests…'),
-          loaded: (requests, busy, branchNames, _) =>
-              _Body(
+          loaded: (requests, branchNames) => _Body(
             requests: requests,
             branchNames: branchNames,
             user: user,
