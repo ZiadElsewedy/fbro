@@ -12,6 +12,56 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Refactored (2026-07-08 — Sprint 1: single `AppDateFormatter`, `core/optimization`)
+
+Code-quality consolidation — **maintainability only, zero visual change** (every
+screen shows the exact same text; verified by analyzer + the full suite, incl.
+the `clockTime`/`attachmentTimestamp` output-pinning tests).
+
+- **Added** `lib/core/utils/app_date_formatter.dart` — the single source for
+  turning a `DateTime` into a user-visible string. Pure Dart (no Flutter, no
+  `intl`). Exposes only the styles the app actually shows: `time` (`4:32 PM`),
+  `dayMonth` (`6 Jul`), `dayMonthYear` (`6 Jul 2026`), `monthDayYear`
+  (`Jul 6, 2026`), `dayMonthYearTime` (`20 Jun 2026 • 4:32 PM`),
+  `weekdayDayMonth` (`Monday, 6 Jul`), `numeric` (`8/7/2026`), `relative`
+  (`Just now`/`5m ago`/…/`6 Jul`). Locked by `test/app_date_formatter_test.dart`.
+- **Removed 21 duplicated month-name arrays** (+2 long-weekday arrays, +4
+  copy-pasted 12h AM/PM blocks) across 21 files (task cards/feeds/details/sheets,
+  schedule, admin, cases, profile, employee home, notifications, communications,
+  requests, auth). Net `lib/`: **+58 / −250** lines.
+- Feature format helpers (`activity_format`, `attachment_format`,
+  `communications_format`, `request_format`) now **delegate** to
+  `AppDateFormatter` (their public call sites are unchanged; only the duplicated
+  internals were deleted).
+- **Not unified (documented):** the domain `notify_task_event` usecase (would add
+  a `domain → core/utils` dependency the codebase deliberately avoids), 24-hour
+  shift-window times (`ShiftHours.format`), machine `yyyy-MM-dd` keys/filenames/
+  persisted values, and elapsed-`Duration` labels (video length, "Waiting 3d",
+  "Synced 3m ago", swap "2w ago"). The 3 divergent relative-time variants
+  (requests/communications/tasks) keep their own wording but share the formatter
+  for their absolute fallback.
+
+### Added (2026-07-08 — Phase 0.1: Performance Baseline, `core/optimization`)
+
+Measurement-only phase — **zero code changes**, no refactor, no optimization. Two
+new documents under `docs/performance/`:
+
+- `PERFORMANCE_BASELINE.md` — current-state measurement across startup, screens,
+  resource usage, Firestore usage, and architecture metrics. Static metrics
+  (📐) captured directly from source (`grep`/`wc`/reads); runtime metrics (⏱ —
+  cold/warm start ms, TTFF/TTI, memory, CPU, FPS) are honestly marked
+  `NOT CAPTURED` with a reproducible `flutter run --profile --trace-startup` +
+  DevTools capture protocol (no numbers fabricated).
+- `PERFORMANCE_BASELINE_ACTIONS.md` — every finding prioritized Critical/High/
+  Medium/Low (backlog only, nothing implemented).
+- **Headline findings:** 🔴 unbounded Firestore reads/streams — **0 `startAfter`
+  cursors anywhere**, only 2 `.limit()` sites (notifications, profile); 🟠 TTI
+  gated on `Future.wait` of home-critical reads; 🟠 non-virtualized list
+  rendering (10 `.builder` vs 76 plain `ListView`); 🟠 wholesale rebuilds
+  (`buildWhen`=0, `BlocSelector`=2, `BlocBuilder`=41); 🟠 `task_cubit` 1264 LOC /
+  `task_action_sheets` 2452 LOC. Two prior-audit facts corrected (notifications
+  have **no** cursor; `package:intl` used in **0** files).
+
 ### Fixed (2026-07-08 — Requests close-out: generated state + analyzer clean)
 
 - Regenerated `requests_list_state.freezed.dart` after the Requests list state

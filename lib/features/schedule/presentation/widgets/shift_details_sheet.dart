@@ -5,6 +5,7 @@ import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/utils/app_date_formatter.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
@@ -393,13 +394,7 @@ class ShiftDetailsSheet extends StatelessWidget {
     return 'Also on ${others.first.label} — double shift';
   }
 
-  String _dateLabel(DateTime d) {
-    const m = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${d.day} ${m[d.month - 1]}';
-  }
+  String _dateLabel(DateTime d) => AppDateFormatter.dayMonth(d);
 }
 
 /// Small circular icon action used inline in employee / orphan rows.

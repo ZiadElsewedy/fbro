@@ -18,6 +18,35 @@
 
 ---
 
+## 📐 Performance Baseline (Phase 0.1, `core/optimization`, 2026-07-08)
+
+**Measurement only — no code changed.** New docs: `docs/performance/PERFORMANCE_BASELINE.md`
+(current-state metrics: startup, screens, resources, Firestore, architecture) +
+`docs/performance/PERFORMANCE_BASELINE_ACTIONS.md` (findings ranked Critical→Low,
+backlog only). Static metrics captured from source; runtime numbers (start ms,
+memory, CPU, FPS) marked `NOT CAPTURED` with a device-profiling capture protocol
+(nothing fabricated). **#1 finding:** unbounded Firestore reads — 0 cursor
+pagination anywhere, only 2 `.limit()` sites — the scaling blocker. Do **not**
+implement any action in this phase.
+
+---
+
+## 🧹 Sprint 1 — single `AppDateFormatter` (`core/optimization`, 2026-07-08)
+
+**Code-quality consolidation, zero visual change.** `lib/core/utils/app_date_formatter.dart`
+is now the ONE place a `DateTime` becomes user-visible text (methods: `time`,
+`dayMonth`, `dayMonthYear`, `monthDayYear`, `dayMonthYearTime`, `weekdayDayMonth`,
+`numeric`, `relative`). Deleted 21 duplicated month arrays (+2 weekday arrays,
++4 AM/PM blocks; net −192 lines) across 21 files; feature `*_format.dart`
+helpers now delegate to it.
+Analyzer clean; full suite green (only 3 pre-existing, date-unrelated failures).
+Intentionally left out: domain `notify_task_event` (avoids domain→core/utils
+coupling), 24h `ShiftHours.format`, machine `yyyy-MM-dd` keys, and `Duration`
+labels. **New date formatting must go through `AppDateFormatter` — do not
+re-introduce inline month arrays.**
+
+---
+
 ## ✅ Work Details design system — one language, composed per type (2026-07-08)
 
 **Presentation-only.** No business logic / domain / persistence change (same

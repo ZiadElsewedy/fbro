@@ -9,6 +9,7 @@ import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/utils/app_date_formatter.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/app_glass_card.dart';
 import 'package:drop/core/widgets/app_motion.dart';
@@ -274,21 +275,7 @@ class _GreetingSection extends StatelessWidget {
 
   String get _dateLabel {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]}';
+    return '${days[now.weekday - 1]}, ${AppDateFormatter.dayMonth(now)}';
   }
 
   @override
@@ -1315,21 +1302,6 @@ class _MetaRow extends StatelessWidget {
         d.isBefore(DateTime.now());
   }
 
-  static const _months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
   String _relativeDue(DateTime d) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -1339,7 +1311,7 @@ class _MetaRow extends StatelessWidget {
     if (diff == 0) return 'Due today';
     if (diff == 1) return 'Due tomorrow';
     if (diff < 7) return 'Due in ${diff}d';
-    return 'Due ${d.day} ${_months[d.month - 1]}';
+    return 'Due ${AppDateFormatter.dayMonth(d)}';
   }
 
   @override

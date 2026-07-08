@@ -6,6 +6,7 @@ import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/utils/app_date_formatter.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
@@ -411,32 +412,7 @@ class _GreetingHeader extends StatelessWidget {
     return n.split(RegExp(r'\s+')).first;
   }
 
-  String _dateLabel(DateTime d) {
-    const days = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]}';
-  }
+  String _dateLabel(DateTime d) => AppDateFormatter.weekdayDayMonth(d);
 }
 
 // ─── No Schedule Card ────────────────────────────────────────────────────────
@@ -1440,23 +1416,9 @@ class _WeekSectionHeader extends StatelessWidget {
   }
 
   String _range(DateTime s, DateTime e) {
-    const m = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
     return s.month == e.month
-        ? '${s.day} – ${e.day} ${m[e.month - 1]}'
-        : '${s.day} ${m[s.month - 1]} – ${e.day} ${m[e.month - 1]}';
+        ? '${s.day} – ${AppDateFormatter.dayMonth(e)}'
+        : '${AppDateFormatter.dayMonth(s)} – ${AppDateFormatter.dayMonth(e)}';
   }
 }
 

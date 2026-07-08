@@ -6,6 +6,7 @@ import 'package:drop/core/enums/user_role.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/utils/app_date_formatter.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
 import 'package:drop/core/widgets/premium_button.dart';
 import 'package:drop/core/widgets/status_badge.dart';
@@ -80,8 +81,8 @@ class TaskCard extends StatelessWidget {
         _MetaChip(
           icon: overdue ? Icons.event_busy_outlined : Icons.event_outlined,
           label: overdue
-              ? 'Due ${_dateLabel(task.deadline!)} · Overdue'
-              : 'Due ${_dateLabel(task.deadline!)}',
+              ? 'Due ${AppDateFormatter.dayMonth(task.deadline!)} · Overdue'
+              : 'Due ${AppDateFormatter.dayMonth(task.deadline!)}',
           tone: overdue ? AppColors.error : null,
         ),
       if (task.hasReferences)
@@ -269,13 +270,6 @@ double liveOrbitSpeed(TaskEntity task) {
 
 /// Whether the task is overdue — drives the subtle glow-intensity pulse.
 bool taskOverdue(TaskEntity task) => _isOverdue(task);
-
-const _months = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
-
-String _dateLabel(DateTime d) => '${d.day} ${_months[d.month - 1]}';
 
 String _bestName(UserEntity u) =>
     (u.displayName != null && u.displayName!.isNotEmpty)

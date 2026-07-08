@@ -9,6 +9,7 @@ import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/utils/app_date_formatter.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/widgets/action_card.dart';
 import 'package:drop/core/widgets/admin_section_header.dart';
@@ -830,20 +831,6 @@ class _Greeting extends StatelessWidget {
   final StatisticsEntity? stats;
   final String? name;
 
-  static const _weekdays = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-  ];
-  static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-
   String get _salutation {
     final h = DateTime.now().hour;
     if (h < 12) return 'Good morning';
@@ -851,10 +838,7 @@ class _Greeting extends StatelessWidget {
     return 'Good evening';
   }
 
-  String get _date {
-    final n = DateTime.now();
-    return '${_weekdays[n.weekday - 1]}, ${n.day} ${_months[n.month - 1]}';
-  }
+  String get _date => AppDateFormatter.weekdayDayMonth(DateTime.now());
 
   String get _scope {
     final s = stats;
