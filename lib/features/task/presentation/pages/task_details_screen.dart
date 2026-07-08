@@ -34,6 +34,7 @@ import 'package:drop/features/task/presentation/widgets/submission_loading_overl
 import 'package:drop/features/task/presentation/widgets/task_action_sheets.dart';
 import 'package:drop/features/task/presentation/widgets/task_card.dart';
 import 'package:drop/features/task/presentation/widgets/task_surface.dart';
+import 'package:drop/features/task/presentation/widgets/work_detail_sections.dart';
 import 'package:drop/features/task/presentation/widgets/work_type_panel.dart';
 import 'package:drop/features/task/presentation/work_type_presenter.dart';
 
@@ -223,6 +224,23 @@ class _DetailsView extends StatelessWidget {
             const SizedBox(height: AppSpacing.xl),
           ],
 
+          // ── Work type (adaptive) — the metrics sit right under the
+          // status so the whole job reads in seconds (Summary → Status →
+          // Metrics → Details).
+          if (WorkTypePanel.hasContentFor(task)) ...[
+            _Section(
+              icon: WorkTypePresenter.iconFor(task.workType),
+              title: task.workDefinition.label,
+              child: WorkTypePanel(
+                task: task,
+                cubit: cubit,
+                interactive: isEmployee && task.status == TaskStatus.started,
+                showReviewHint: isManagerOrAdmin,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+          ],
+
           // ── Assignment ─────────────────────────────────────────
           _Section(
             icon: Icons.people_alt_outlined,
@@ -240,21 +258,6 @@ class _DetailsView extends StatelessWidget {
                 task.description!,
                 style: AppTypography.body
                     .copyWith(color: AppColors.textSecondary, height: 1.6),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-          ],
-
-          // ── Work type (adaptive) ───────────────────────────────
-          if (WorkTypePanel.hasContentFor(task)) ...[
-            _Section(
-              icon: WorkTypePresenter.iconFor(task.workType),
-              title: task.workDefinition.label,
-              child: WorkTypePanel(
-                task: task,
-                cubit: cubit,
-                interactive: isEmployee && task.status == TaskStatus.started,
-                showReviewHint: isManagerOrAdmin,
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
@@ -413,18 +416,7 @@ class _DetailsView extends StatelessWidget {
                 branchName: cubit.branchNames[task.branchId ?? ''],
               ),
               const SizedBox(height: AppSpacing.xl),
-              if ((task.description ?? '').isNotEmpty) ...[
-                _Section(
-                  icon: Icons.notes_rounded,
-                  title: 'Description',
-                  child: Text(
-                    task.description!,
-                    style: AppTypography.body.copyWith(
-                        color: AppColors.textSecondary, height: 1.6),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-              ],
+              // Metrics first (Summary → Status → Metrics → Details).
               if (WorkTypePanel.hasContentFor(task)) ...[
                 _Section(
                   icon: WorkTypePresenter.iconFor(task.workType),
@@ -435,6 +427,18 @@ class _DetailsView extends StatelessWidget {
                     interactive:
                         isEmployee && task.status == TaskStatus.started,
                     showReviewHint: isManagerOrAdmin,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+              if ((task.description ?? '').isNotEmpty) ...[
+                _Section(
+                  icon: Icons.notes_rounded,
+                  title: 'Description',
+                  child: Text(
+                    task.description!,
+                    style: AppTypography.body.copyWith(
+                        color: AppColors.textSecondary, height: 1.6),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
@@ -999,32 +1003,31 @@ class _ChecklistBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Progress bar
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: task.checklistProgress),
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOutCubic,
-            builder: (context, value, _) => LinearProgressIndicator(
-              value: value,
-              minHeight: 4,
-              backgroundColor: AppColors.darkSurfaceElevated,
-              valueColor: const AlwaysStoppedAnimation(AppColors.textPrimary),
+    final done = task.checklistDone;
+    final total = task.checklistTotal;
+    final complete = total > 0 && done == total;
+    return WorkCard(
+      child: Column(
+        children: [
+          // Completion headline + progress — reads as work getting done.
+          WorkProgressBar(
+            value: task.checklistProgress,
+            leading: complete ? 'All steps done' : '$done of $total done',
+            trailing: complete
+                ? '100%'
+                : '${(task.checklistProgress * 100).round()}%',
+            tone: complete ? WorkTone.positive : WorkTone.neutral,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // Checklist items
+          for (final item in task.checklist)
+            _ChecklistRow(
+              item: item,
+              interactive: interactive,
+              onTap: () => onToggle(item),
             ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        // Checklist items
-        for (final item in task.checklist)
-          _ChecklistRow(
-            item: item,
-            interactive: interactive,
-            onTap: () => onToggle(item),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1094,8 +1097,9 @@ class _ChecklistRow extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.sm, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppColors.darkSurfaceElevated,
+                  color: AppColors.darkBg,
                   borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.darkBorder),
                 ),
                 child: Text('optional',
                     style: AppTypography.caption
@@ -1119,23 +1123,21 @@ class _SubmittedBlock extends StatelessWidget {
     final notes = task.notes ?? '';
     final media = latestAttachments(task);
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurfaceElevated,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.darkBorder),
-      ),
+    return WorkCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (notes.isNotEmpty)
+          if (notes.isNotEmpty) ...[
+            const WorkEyebrow('Notes', icon: Icons.notes_rounded),
+            const SizedBox(height: AppSpacing.sm),
             Text(notes,
                 style: AppTypography.body
                     .copyWith(color: AppColors.textSecondary, height: 1.5)),
+          ],
           if (media.isNotEmpty) ...[
-            if (notes.isNotEmpty) const SizedBox(height: AppSpacing.md),
+            if (notes.isNotEmpty) const SizedBox(height: AppSpacing.lg),
+            const WorkEyebrow('Evidence', icon: Icons.photo_library_outlined),
+            const SizedBox(height: AppSpacing.md),
             AttachmentGallery(attachments: media, tileSize: 84),
           ],
         ],

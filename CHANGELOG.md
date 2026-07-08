@@ -12,6 +12,70 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Refactored (2026-07-08 — Work Details design system: one language, composed per type)
+
+A **presentation-only** unification of the work-type detail experience — no
+business logic, no domain changes, every save/read path identical. Instead of
+each work type inventing a layout, there is now **one Apple-flavoured section
+kit** that every type *composes* differently.
+
+- **New design-system kit** `work_detail_sections.dart` — the shared alphabet:
+  `WorkCard` (the one card surface), `WorkStatStrip`/`WorkStat` (Apple
+  Health/Wallet three-up metrics), `WorkProgressBar`, `WorkSegmentBar`
+  (pass/warn/fail distribution), `WorkStatePill` (monochrome; red only for the
+  off-nominal case), `WorkFacts` (premium captured-data, not a table),
+  `WorkEyebrow`, and `WorkFmt` number/money formatting.
+- **`WorkTypePanel` is now a composer, not a custom layout.** It assembles the
+  same sections per type: **Purchase** → budget card (Budget · Spent ·
+  Remaining + burn-down progress + within/over-budget state); **Inventory** →
+  Expected · Counted · Difference with a reconciled/surplus/shrinkage state;
+  **Inspection** → score card (`n of N passed`) + pass/warn/fail segment bar +
+  markable points; **Transfer** → route (dispatch → destination) + a connected
+  timeline. An **unrecognised type composes the generic sections** from its own
+  declared fields/timeline/points — so a new work type still gets a premium
+  detail view with **no screen edit** (the Open/Closed promise, preserved).
+- **Screen hierarchy** now reads Summary → Status → **Metrics** → Details →
+  Evidence → Activity → Review: the work panel moved directly under the status
+  header on both mobile and the desktop two-column record, so the whole job is
+  legible in seconds.
+- **Shared blocks elevated** into the same language: the **Checklist** now leads
+  with an "X of Y done" progress bar inside a card (reads as completed work),
+  and **Submitted Work** is a premium summary card (Notes / Evidence).
+- Panel tests rewritten to the new system (budget, over-budget, inspection
+  score + points, transfer route + timeline, reconciled fast-path); `flutter
+  analyze` clean, full suite green.
+
+### Refactored (2026-07-08 — Create Work sheet: premium workflow-builder UX)
+
+A focused, **presentation-only** pass on the create/edit task sheet
+(`task_action_sheets.dart` + `dynamic_work_form.dart`) — no logic, architecture,
+persistence or business rules changed. The long flat stack of bordered
+containers now reads as a **workflow builder**: grouped, staggered sections
+(Overview · Steps · Reference · Assignment · Scheduling) that fade + lift in on
+open, with a monochrome premium kit shared across the form.
+
+- **Work type is now a hero card → rich chooser sheet** (was a row of chips):
+  the defining choice opens the form as an icon · kind · blurb summary, and
+  tapping it reveals a scannable sheet listing every registered type with its
+  one-line blurb. Locked to a static (lock-glyphed) card in edit mode, unchanged.
+- **Dropdown-heavy selectors replaced by modern controls:** priority, assignment
+  mode and recurrence are **sliding iOS-style segmented controls** (`_Segmented`
+  with an eased white thumb); the **admin branch dropdown** and the **assignee
+  picker** are now **searchable bottom sheets** fronted by summary tiles (branch
+  name / stacked assignee avatars + count). Same state, same `assigneeIds` /
+  `branchId` / `assignmentType` / `priority` / `recurrence` wiring underneath.
+- **Premium checklist builder:** numbered, ordered steps (an ordinal badge
+  instead of a fake drag handle), an animated add/remove, a dashed "Add step"
+  affordance, and a quiet empty state.
+- **Better validation & scheduling:** the top-level error is an **animated
+  monochrome error banner** (slides open / collapses) instead of raw red text;
+  the deadline is a summary tile with **Today / Tomorrow / Next week** quick
+  chips over the calendar picker.
+- **Consistency:** kept the app-wide "New Task" / "Create Task" wording, the
+  shift-mode pickers (`ShiftChipPicker` / `ShiftRepeatPicker`, still reused by the
+  recurring-shift sheet), and every save path. Tests updated for the new
+  work-type interaction; `flutter analyze` clean, full suite green.
+
 ### Added (2026-07-07 — Work-type framework: polymorphic tasks (complete: domain · persistence · create · details · workflow))
 
 A task is no longer "title + description + checklist." Each **operational work

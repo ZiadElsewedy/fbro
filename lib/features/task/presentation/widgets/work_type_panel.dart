@@ -1,28 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/features/auth/presentation/widgets/app_button.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/domain/work_types/definitions/inspection_work_type.dart';
+import 'package:drop/features/task/domain/work_types/definitions/inventory_count_work_type.dart';
+import 'package:drop/features/task/domain/work_types/definitions/purchase_errand_work_type.dart';
+import 'package:drop/features/task/domain/work_types/definitions/transfer_work_type.dart';
 import 'package:drop/features/task/domain/work_types/task_work_x.dart';
+import 'package:drop/features/task/domain/work_types/work_context.dart';
 import 'package:drop/features/task/domain/work_types/work_field_spec.dart';
 import 'package:drop/features/task/domain/work_types/work_review.dart';
+import 'package:drop/features/task/domain/work_types/work_type_definition.dart';
 import 'package:drop/features/task/presentation/cubit/task_cubit.dart';
 import 'package:drop/features/task/presentation/widgets/dynamic_work_form.dart';
+import 'package:drop/features/task/presentation/widgets/work_detail_sections.dart';
 
-/// The **adaptive** section of the task details screen — everything specific to
-/// the task's work type, driven entirely by its `WorkTypeDefinition`. The screen
-/// injects one of these and never branches on the type: this panel asks the
-/// definition for its fields, milestones, inspection points, summary and review
-/// disposition.
+/// The **adaptive** section of the task-details screen — everything specific to
+/// the task's work type, expressed entirely in the shared
+/// [work_detail_sections] design language. The screen injects one of these and
+/// never branches on the type; this panel *composes* the same premium sections
+/// (hero summary, metric cards, progress, captured data, points, timeline,
+/// completion) differently per type.
 ///
-/// Renders (only the parts a given type has):
-///  * a one-line **summary / metric** (+ a manager "auto-approvable" hint),
-///  * **setup details** the creator captured (read-only),
-///  * **inspection points** (pass/warning/fail per checklist point),
-///  * **completion capture** (the employee's fields — counted qty, amount spent),
-///  * the **milestone spine** (a transfer's dispatch → receive handshake).
+/// Composition is the only per-type knowledge, and it lives here in
+/// presentation (mirroring `WorkTypePresenter`): an unrecognised type falls
+/// through to the **generic** composition built from its own declared fields /
+/// timeline / points — so a brand-new work type gets a coherent premium detail
+/// view with no screen edit (the framework's Open/Closed promise, preserved).
 class WorkTypePanel extends StatelessWidget {
   const WorkTypePanel({
     super.key,
@@ -56,123 +63,493 @@ class WorkTypePanel extends StatelessWidget {
     if (!hasContentFor(task)) return const SizedBox.shrink();
     final def = task.workDefinition;
     final ctx = task.workContext;
+
+    final sections = <Widget>[
+      _summary(ctx, def),
+      ..._compose(def, ctx),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < sections.length; i++) ...[
+          if (i > 0) const SizedBox(height: AppSpacing.lg),
+          sections[i],
+        ],
+      ],
+    );
+  }
+
+  /// The one-line headline (summary-before-detail) + a manager fast-path hint.
+  Widget _summary(WorkContext ctx, WorkTypeDefinition def) {
+    final fastTrack = showReviewHint &&
+        task.status.index >= 1 &&
+        def.reviewDisposition(ctx) == ReviewDisposition.fastTrack;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            def.summarize(ctx, title: task.title),
+            style: AppTypography.body
+                .copyWith(color: AppColors.textSecondary, height: 1.4),
+          ),
+        ),
+        if (fastTrack) ...[
+          const SizedBox(width: AppSpacing.sm),
+          const WorkStatePill(label: 'Auto-approvable', icon: Icons.bolt_rounded),
+        ],
+      ],
+    );
+  }
+
+  /// The per-type section list. Unknown types → the generic composition.
+  List<Widget> _compose(WorkTypeDefinition def, WorkContext ctx) {
+    switch (task.workType) {
+      case 'purchaseErrand':
+        return _purchase(ctx);
+      case 'inventoryCount':
+        return _inventory(ctx);
+      case 'inspection':
+        return _inspection(ctx);
+      case 'transfer':
+        return _transfer(ctx);
+      default:
+        return _generic(def, ctx);
+    }
+  }
+
+  // ── Purchase / Errand ─────────────────────────────────────────────
+  List<Widget> _purchase(WorkContext ctx) {
+    const def = PurchaseErrandWorkType();
+    final budget = def.budget(ctx);
+    final spent = def.spent(ctx);
+    final over = def.overBudget(ctx);
+    final reimburse = def.reimbursementRequested(ctx);
+    final remaining =
+        (budget != null && spent != null) ? budget - spent : null;
+    final item = ctx.text(PurchaseErrandWorkType.kItem);
+
+    final (String, WorkTone, IconData) state = spent == null
+        ? ('Awaiting spend', WorkTone.neutral, Icons.schedule_rounded)
+        : over
+            ? ('Over budget', WorkTone.attention, Icons.warning_amber_rounded)
+            : ('Within budget', WorkTone.neutral, Icons.check_rounded);
+
+    return [
+      WorkCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            WorkEyebrow(
+              'Purchase',
+              icon: Icons.account_balance_wallet_outlined,
+              trailing:
+                  WorkStatePill(label: state.$1, icon: state.$3, tone: state.$2),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            WorkStatStrip(stats: [
+              WorkStat(
+                  value: budget == null ? '—' : WorkFmt.money(budget),
+                  label: 'Budget'),
+              WorkStat(
+                value: spent == null ? '—' : WorkFmt.money(spent),
+                label: 'Spent',
+                tone: over ? WorkTone.attention : WorkTone.neutral,
+              ),
+              WorkStat(
+                value: remaining == null
+                    ? '—'
+                    : (remaining < 0
+                        ? WorkFmt.signed(remaining)
+                        : WorkFmt.money(remaining)),
+                label: 'Remaining',
+                tone: (remaining != null && remaining < 0)
+                    ? WorkTone.attention
+                    : WorkTone.neutral,
+              ),
+            ]),
+            if (budget != null && budget > 0 && spent != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              WorkProgressBar(
+                value: spent / budget,
+                leading: 'Spent of budget',
+                trailing: '${(spent / budget * 100).round()}%',
+                tone: over ? WorkTone.attention : WorkTone.neutral,
+              ),
+            ],
+            if (reimburse) ...[
+              const SizedBox(height: AppSpacing.lg),
+              _NoteRow(
+                icon: Icons.account_balance_wallet_outlined,
+                text: 'Employee paid out of pocket — reimbursement requested.',
+              ),
+            ],
+          ],
+        ),
+      ),
+      if (item != null)
+        WorkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const WorkEyebrow('What to buy', icon: Icons.shopping_bag_outlined),
+              const SizedBox(height: AppSpacing.sm),
+              Text(item,
+                  style: AppTypography.body
+                      .copyWith(color: AppColors.textSecondary, height: 1.5)),
+            ],
+          ),
+        ),
+      if (interactive) _CompletionCapture(task: task, cubit: cubit),
+    ];
+  }
+
+  // ── Inventory Count ───────────────────────────────────────────────
+  List<Widget> _inventory(WorkContext ctx) {
+    const def = InventoryCountWorkType();
+    final expected = ctx.number(InventoryCountWorkType.kExpectedQty)?.toInt();
+    final counted = ctx.number(InventoryCountWorkType.kCountedQty)?.toInt();
+    final variance = def.variance(ctx);
+    final area = ctx.text(InventoryCountWorkType.kArea);
+    final reason = ctx.text(InventoryCountWorkType.kDiscrepancyReason);
+
+    final (String, WorkTone, IconData) state = counted == null
+        ? ('Awaiting count', WorkTone.neutral, Icons.schedule_rounded)
+        : variance == 0
+            ? ('Reconciled', WorkTone.neutral, Icons.check_rounded)
+            : (variance! > 0
+                ? ('Surplus +$variance', WorkTone.attention,
+                    Icons.trending_up_rounded)
+                : ('Shrinkage $variance', WorkTone.attention,
+                    Icons.trending_down_rounded));
+
+    return [
+      WorkCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            WorkEyebrow(
+              'Stock count',
+              icon: Icons.inventory_2_outlined,
+              trailing:
+                  WorkStatePill(label: state.$1, icon: state.$3, tone: state.$2),
+            ),
+            if (area != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(area,
+                  style: AppTypography.bodySmall
+                      .copyWith(color: AppColors.textSecondary)),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            WorkStatStrip(stats: [
+              WorkStat(
+                  value: expected?.toString() ?? '—', label: 'Expected'),
+              WorkStat(value: counted?.toString() ?? '—', label: 'Counted'),
+              WorkStat(
+                value: variance == null ? '—' : WorkFmt.signed(variance),
+                label: 'Difference',
+                tone: variance == null
+                    ? WorkTone.neutral
+                    : (variance == 0 ? WorkTone.neutral : WorkTone.attention),
+              ),
+            ]),
+          ],
+        ),
+      ),
+      if (interactive)
+        _CompletionCapture(task: task, cubit: cubit)
+      else if (reason != null)
+        WorkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const WorkEyebrow('Discrepancy note',
+                  icon: Icons.edit_note_rounded),
+              const SizedBox(height: AppSpacing.sm),
+              Text(reason,
+                  style: AppTypography.body
+                      .copyWith(color: AppColors.textSecondary, height: 1.5)),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  // ── Inspection ────────────────────────────────────────────────────
+  List<Widget> _inspection(WorkContext ctx) {
+    const def = InspectionWorkType();
+    final pass = def.passes(ctx);
+    final warn = def.warnings(ctx);
+    final fail = def.failures(ctx);
+    final total = task.checklist.length;
+    final marked = pass + warn + fail;
+
+    final (String, WorkTone, IconData) state = fail > 0
+        ? ('$fail failed', WorkTone.attention, Icons.report_gmailerrorred_rounded)
+        : marked < total
+            ? ('In progress', WorkTone.neutral, Icons.timelapse_rounded)
+            : ('All clear', WorkTone.neutral, Icons.verified_outlined);
+
+    return [
+      WorkCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            WorkEyebrow(
+              'Inspection score',
+              icon: Icons.fact_check_outlined,
+              trailing:
+                  WorkStatePill(label: state.$1, icon: state.$3, tone: state.$2),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text('$pass',
+                    style: const TextStyle(
+                      fontFamily: 'SF Pro Display',
+                      fontSize: 34,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
+                      letterSpacing: -1,
+                      color: AppColors.textPrimary,
+                    )),
+                const SizedBox(width: AppSpacing.sm),
+                Text('of $total points passed',
+                    style: AppTypography.body
+                        .copyWith(color: AppColors.textSecondary)),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            WorkSegmentBar(pass: pass, warning: warn, fail: fail),
+          ],
+        ),
+      ),
+      WorkCard(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
+        child: _InspectionPoints(
+          task: task,
+          cubit: cubit,
+          interactive: interactive,
+        ),
+      ),
+    ];
+  }
+
+  // ── Transfer / Handover ───────────────────────────────────────────
+  List<Widget> _transfer(WorkContext ctx) {
+    final goods = ctx.text(TransferWorkType.kGoods);
+    final qty = ctx.number(TransferWorkType.kQuantity);
+    final dest = ctx.text(TransferWorkType.kDestination);
+    final dispatched = ctx.hasEvent(TransferWorkType.eventDispatched);
+    final received = ctx.hasEvent(TransferWorkType.eventReceived);
+
+    final (String, WorkTone, IconData) state = received
+        ? ('Received', WorkTone.positive, Icons.task_alt_rounded)
+        : dispatched
+            ? ('In transit', WorkTone.neutral, Icons.local_shipping_outlined)
+            : ('Preparing', WorkTone.neutral, Icons.inventory_2_outlined);
+
+    return [
+      WorkCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            WorkEyebrow(
+              'Transfer',
+              icon: Icons.swap_horiz_rounded,
+              trailing:
+                  WorkStatePill(label: state.$1, icon: state.$3, tone: state.$2),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text(goods ?? 'Goods',
+                style: AppTypography.h3.copyWith(color: AppColors.textPrimary)),
+            if (qty != null) ...[
+              const SizedBox(height: 2),
+              Text('Quantity ${WorkFmt.money(qty)}',
+                  style: AppTypography.caption
+                      .copyWith(color: AppColors.textTertiary)),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            _RouteBar(
+              fromDone: dispatched,
+              toDone: received,
+              destination: dest ?? 'Destination',
+            ),
+          ],
+        ),
+      ),
+      WorkCard(
+        child: _Timeline(task: task, cubit: cubit, interactive: interactive),
+      ),
+    ];
+  }
+
+  // ── Generic (default for any unrecognised type) ───────────────────
+  List<Widget> _generic(WorkTypeDefinition def, WorkContext ctx) {
     final setup = def.setupFields
         .where((f) => task.data[f.key] != null)
         .toList(growable: false);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Summary / metric headline.
-        Row(
-          children: [
-            Expanded(
-              child: Text(def.summarize(ctx, title: task.title),
-                  style: AppTypography.body
-                      .copyWith(color: AppColors.textPrimary)),
-            ),
-            if (showReviewHint &&
-                task.status.index >= 1 &&
-                def.reviewDisposition(ctx) == ReviewDisposition.fastTrack)
-              const _FastTrackChip(),
-          ],
+    return [
+      if (setup.isNotEmpty)
+        WorkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const WorkEyebrow('Details', icon: Icons.description_outlined),
+              const SizedBox(height: AppSpacing.md),
+              WorkFacts(facts: [
+                for (final f in setup)
+                  WorkFact(
+                    f.label,
+                    formatWorkValue(task.data[f.key]),
+                    multiline: f.kind == WorkFieldKind.multiline,
+                  ),
+              ]),
+            ],
+          ),
         ),
+      if (def.usesChecklistAsPoints)
+        WorkCard(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
+          child: _InspectionPoints(
+              task: task, cubit: cubit, interactive: interactive),
+        ),
+      if (def.completionFields.isNotEmpty)
+        if (interactive)
+          _CompletionCapture(task: task, cubit: cubit)
+        else
+          _RecordedCard(task: task),
+      if (def.timeline.isNotEmpty)
+        WorkCard(
+          child: _Timeline(task: task, cubit: cubit, interactive: interactive),
+        ),
+    ];
+  }
+}
 
-        if (setup.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.md),
-          _KeyValues(fields: setup, data: task.data),
-        ],
-
-        if (def.usesChecklistAsPoints) ...[
-          const SizedBox(height: AppSpacing.lg),
-          _InspectionPoints(
-            task: task,
-            cubit: cubit,
-            interactive: interactive,
+/// A quiet inline note row inside a card (e.g. a reimbursement flag).
+class _NoteRow extends StatelessWidget {
+  const _NoteRow({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.darkBg,
+        borderRadius: AppRadius.mdAll,
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.textTertiary),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(text,
+                style: AppTypography.caption
+                    .copyWith(color: AppColors.textSecondary, height: 1.4)),
           ),
         ],
-
-        if (def.completionFields.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.lg),
-          if (interactive)
-            _CompletionCapture(task: task, cubit: cubit)
-          else
-            _RecordedCompletion(task: task),
-        ],
-
-        if (def.timeline.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.lg),
-          _MilestoneSpine(task: task, cubit: cubit, interactive: interactive),
-        ],
-      ],
+      ),
     );
   }
 }
 
-class _FastTrackChip extends StatelessWidget {
-  const _FastTrackChip();
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm, vertical: 4),
-        decoration: BoxDecoration(
-          color: AppColors.darkSurfaceElevated,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.darkBorder),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.bolt_rounded,
-                size: 13, color: AppColors.textSecondary),
-            const SizedBox(width: 4),
-            Text('Auto-approvable',
-                style: AppTypography.caption
-                    .copyWith(color: AppColors.textSecondary)),
-          ],
-        ),
-      );
-}
-
-/// Read-only label:value list for captured fields.
-class _KeyValues extends StatelessWidget {
-  const _KeyValues({required this.fields, required this.data});
-  final List<WorkFieldSpec> fields;
-  final Map<String, dynamic> data;
+/// The two-endpoint transfer route (origin → destination) with a connecting
+/// track whose progress reflects the handshake.
+class _RouteBar extends StatelessWidget {
+  const _RouteBar({
+    required this.fromDone,
+    required this.toDone,
+    required this.destination,
+  });
+  final bool fromDone;
+  final bool toDone;
+  final String destination;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        for (final f in fields)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 120,
-                  child: Text(f.label,
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.textTertiary)),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(formatWorkValue(data[f.key]),
-                      style: AppTypography.body
-                          .copyWith(color: AppColors.textSecondary)),
-                ),
-              ],
-            ),
+        _node(
+          icon: Icons.outbox_rounded,
+          label: 'Dispatch',
+          done: fromDone,
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: _track(fromDone && toDone),
           ),
+        ),
+        _node(
+          icon: Icons.place_outlined,
+          label: destination,
+          done: toDone,
+          alignEnd: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _track(bool full) {
+    return Container(
+      height: 2,
+      decoration: BoxDecoration(
+        color: full ? AppColors.textPrimary : AppColors.darkBorder,
+        borderRadius: BorderRadius.circular(1),
+      ),
+    );
+  }
+
+  Widget _node({
+    required IconData icon,
+    required String label,
+    required bool done,
+    bool alignEnd = false,
+  }) {
+    return Column(
+      crossAxisAlignment:
+          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: done ? AppColors.primary : AppColors.darkBg,
+            shape: BoxShape.circle,
+            border: Border.all(
+                color: done ? AppColors.primary : AppColors.darkBorder),
+          ),
+          child: Icon(icon,
+              size: 19,
+              color: done ? AppColors.onPrimary : AppColors.textSecondary),
+        ),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: 92,
+          child: Text(label,
+              textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.caption
+                  .copyWith(color: AppColors.textSecondary)),
+        ),
       ],
     );
   }
 }
 
-class _RecordedCompletion extends StatelessWidget {
-  const _RecordedCompletion({required this.task});
+/// Read-only captured completion values, as a premium fact card (used by the
+/// generic composition for a viewer).
+class _RecordedCard extends StatelessWidget {
+  const _RecordedCard({required this.task});
   final TaskEntity task;
   @override
   Widget build(BuildContext context) {
@@ -180,19 +557,28 @@ class _RecordedCompletion extends StatelessWidget {
         .where((f) => task.data[f.key] != null)
         .toList(growable: false);
     if (fields.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SubLabel('Recorded'),
-        const SizedBox(height: AppSpacing.sm),
-        _KeyValues(fields: fields, data: task.data),
-      ],
+    return WorkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const WorkEyebrow('Recorded', icon: Icons.done_all_rounded),
+          const SizedBox(height: AppSpacing.md),
+          WorkFacts(facts: [
+            for (final f in fields)
+              WorkFact(
+                f.label,
+                formatWorkValue(task.data[f.key]),
+                multiline: f.kind == WorkFieldKind.multiline,
+              ),
+          ]),
+        ],
+      ),
     );
   }
 }
 
 /// The employee's completion-field editor (buffered → Save), reusing the same
-/// dynamic form as the create screen.
+/// dynamic form as the create screen, presented in the shared card language.
 class _CompletionCapture extends StatefulWidget {
   const _CompletionCapture({required this.task, required this.cubit});
   final TaskEntity task;
@@ -207,31 +593,33 @@ class _CompletionCaptureState extends State<_CompletionCapture> {
   @override
   Widget build(BuildContext context) {
     final def = widget.task.workDefinition;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SubLabel('Record'),
-        const SizedBox(height: AppSpacing.sm),
-        DynamicWorkForm(
-          definition: def,
-          fields: def.completionFields,
-          initialData: widget.task.data,
-          onChanged: (data) => _buffer = data,
-        ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: AppButton(
-            label: 'Save',
-            variant: AppButtonVariant.secondary,
-            onPressed: () {
-              final patch = <String, dynamic>{
-                for (final f in def.completionFields) f.key: _buffer[f.key],
-              };
-              widget.cubit.updateWorkData(widget.task, patch);
-            },
+    return WorkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const WorkEyebrow('Record your results', icon: Icons.edit_note_rounded),
+          const SizedBox(height: AppSpacing.md),
+          DynamicWorkForm(
+            definition: def,
+            fields: def.completionFields,
+            initialData: widget.task.data,
+            onChanged: (data) => _buffer = data,
           ),
-        ),
-      ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: AppButton(
+              label: 'Save',
+              variant: AppButtonVariant.secondary,
+              onPressed: () {
+                final patch = <String, dynamic>{
+                  for (final f in def.completionFields) f.key: _buffer[f.key],
+                };
+                widget.cubit.updateWorkData(widget.task, patch);
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -257,23 +645,25 @@ class _InspectionPoints extends StatelessWidget {
           style:
               AppTypography.caption.copyWith(color: AppColors.textTertiary));
     }
-    final results =
-        (task.data[InspectionWorkType.kResults] as Map?)?.cast<String, dynamic>() ??
-            const {};
+    final results = (task.data[InspectionWorkType.kResults] as Map?)
+            ?.cast<String, dynamic>() ??
+        const {};
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SubLabel('Inspection points'),
-        const SizedBox(height: AppSpacing.sm),
+        const WorkEyebrow('Inspection points', icon: Icons.checklist_rtl_rounded),
+        const SizedBox(height: AppSpacing.md),
         for (final item in task.checklist)
           Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.title, style: AppTypography.body),
-                const SizedBox(height: AppSpacing.xs),
+                Text(item.title,
+                    style: AppTypography.body
+                        .copyWith(color: AppColors.textPrimary)),
+                const SizedBox(height: AppSpacing.sm),
                 Wrap(
                   spacing: AppSpacing.sm,
                   runSpacing: AppSpacing.xs,
@@ -323,7 +713,7 @@ class _ResultChip extends StatelessWidget {
     // red (per the design system — colour for the destructive/attention case).
     final accent =
         result == InspectionResult.fail ? AppColors.error : AppColors.primary;
-    final bg = selected ? accent : AppColors.darkSurfaceElevated;
+    final bg = selected ? accent : AppColors.darkBg;
     final fg = selected ? AppColors.onPrimary : AppColors.textSecondary;
     return GestureDetector(
       onTap: onTap,
@@ -331,23 +721,22 @@ class _ResultChip extends StatelessWidget {
         opacity: onTap == null && !selected ? 0.5 : 1,
         child: Container(
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: 6),
+              horizontal: AppSpacing.md, vertical: 7),
           decoration: BoxDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-                color: selected ? accent : AppColors.darkBorder),
+            borderRadius: AppRadius.smAll,
+            border:
+                Border.all(color: selected ? accent : AppColors.darkBorder),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(_icon, size: 13, color: fg),
-              const SizedBox(width: 4),
+              Icon(_icon, size: 14, color: fg),
+              const SizedBox(width: 5),
               Text(_label,
                   style: AppTypography.caption.copyWith(
                     color: fg,
-                    fontWeight:
-                        selected ? FontWeight.w700 : FontWeight.normal,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
                   )),
             ],
           ),
@@ -369,10 +758,11 @@ class _ResultChip extends StatelessWidget {
       };
 }
 
-/// The ordered milestone spine (e.g. Dispatched → Received). The employee logs
-/// the next pending milestone; everyone sees what's done.
-class _MilestoneSpine extends StatelessWidget {
-  const _MilestoneSpine({
+/// The ordered milestone timeline (e.g. Dispatched → Received) drawn as a
+/// connected spine. The employee logs the next pending milestone; everyone sees
+/// what's done.
+class _Timeline extends StatelessWidget {
+  const _Timeline({
     required this.task,
     required this.cubit,
     required this.interactive,
@@ -391,69 +781,78 @@ class _MilestoneSpine extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SubLabel('Progress'),
-        const SizedBox(height: AppSpacing.sm),
+        const WorkEyebrow('Timeline', icon: Icons.timeline_rounded),
+        const SizedBox(height: AppSpacing.md),
         for (var i = 0; i < timeline.length; i++)
           Builder(builder: (_) {
             final e = timeline[i];
             final done = ctx.hasEvent(e.id);
             final isNext = i == nextIndex;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            final isLast = i == timeline.length - 1;
+            return IntrinsicHeight(
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    done
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                    size: 18,
-                    color: done
-                        ? AppColors.textPrimary
-                        : AppColors.textTertiary,
+                  // Spine: node + connector.
+                  Column(
+                    children: [
+                      Icon(
+                        done
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        size: 20,
+                        color: done
+                            ? AppColors.textPrimary
+                            : AppColors.textTertiary,
+                      ),
+                      if (!isLast)
+                        Expanded(
+                          child: Container(
+                            width: 2,
+                            margin: const EdgeInsets.symmetric(vertical: 2),
+                            color: done
+                                ? AppColors.textPrimary
+                                : AppColors.darkBorder,
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(e.label,
-                            style: AppTypography.body.copyWith(
-                              color: done
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
-                            )),
-                        if (e.actorHint != null)
-                          Text(e.actorHint!,
-                              style: AppTypography.caption
-                                  .copyWith(color: AppColors.textTertiary)),
-                      ],
-                    ),
-                  ),
-                  if (interactive && isNext)
-                    GestureDetector(
-                      onTap: () => cubit.logWorkEvent(task, eventId: e.id),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.add_task_rounded,
-                                size: 14, color: AppColors.onPrimary),
-                            const SizedBox(width: 5),
-                            Text('Log',
-                                style: AppTypography.caption.copyWith(
-                                  color: AppColors.onPrimary,
-                                  fontWeight: FontWeight.w700,
-                                )),
-                          ],
-                        ),
+                    child: Padding(
+                      padding:
+                          EdgeInsets.only(bottom: isLast ? 0 : AppSpacing.lg),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(e.label,
+                                    style: AppTypography.body.copyWith(
+                                      color: done
+                                          ? AppColors.textPrimary
+                                          : AppColors.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                    )),
+                                if (e.actorHint != null) ...[
+                                  const SizedBox(height: 1),
+                                  Text(e.actorHint!,
+                                      style: AppTypography.caption.copyWith(
+                                          color: AppColors.textTertiary)),
+                                ],
+                              ],
+                            ),
+                          ),
+                          if (interactive && isNext)
+                            _LogButton(
+                                onTap: () =>
+                                    cubit.logWorkEvent(task, eventId: e.id)),
+                        ],
                       ),
                     ),
+                  ),
                 ],
               ),
             );
@@ -463,18 +862,36 @@ class _MilestoneSpine extends StatelessWidget {
   }
 }
 
-class _SubLabel extends StatelessWidget {
-  const _SubLabel(this.text);
-  final String text;
+class _LogButton extends StatelessWidget {
+  const _LogButton({required this.onTap});
+  final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Text(
-        text.toUpperCase(),
-        style: AppTypography.caption.copyWith(
-          color: AppColors.textTertiary,
-          letterSpacing: 0.6,
-          fontWeight: FontWeight.w600,
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          borderRadius: AppRadius.smAll,
         ),
-      );
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.add_task_rounded,
+                size: 15, color: AppColors.onPrimary),
+            const SizedBox(width: 5),
+            Text('Log',
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.onPrimary,
+                  fontWeight: FontWeight.w700,
+                )),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Presentation formatting for a captured `data` value (dates, money, bools).

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:drop/core/theme/app_colors.dart';
+import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/features/auth/presentation/widgets/app_text_field.dart';
@@ -9,10 +10,11 @@ import 'package:drop/features/task/domain/work_types/work_type_definition.dart';
 import 'package:drop/features/task/domain/work_types/work_type_registry.dart';
 import 'package:drop/features/task/presentation/work_type_presenter.dart';
 
-/// The **work-type selector** at the top of the create form. Picks the kind of
-/// work (which regenerates the dynamic fields below). Locked to a single
-/// read-only chip in edit mode — a task's fundamental kind never changes
-/// mid-life (same stance as the assignment-type selector).
+/// The **work-type selector** that opens the create form — the defining choice
+/// of the whole workflow, so it reads as a premium hero card (icon · kind ·
+/// blurb) rather than a row of chips. Tapping it opens a rich chooser sheet.
+/// Locked to a static card in edit mode — a task's fundamental kind never
+/// changes mid-life (same stance as the assignment-type selector).
 class WorkTypePicker extends StatelessWidget {
   const WorkTypePicker({
     super.key,
@@ -27,48 +29,249 @@ class WorkTypePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final registry = WorkTypeRegistry.instance;
-    final selected = registry.byId(value);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.category_outlined,
-                size: 16, color: AppColors.textTertiary),
-            const SizedBox(width: AppSpacing.sm),
-            Text('Work type', style: AppTypography.bodySmall),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        if (enabled)
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: [
-              for (final def in registry.all)
-                _TypeChip(
-                  icon: WorkTypePresenter.iconFor(def.id),
-                  label: def.label,
-                  selected: def.id == value,
-                  onTap: () => onChanged(def.id),
-                ),
-            ],
-          )
-        else
-          _TypeChip(
-            icon: WorkTypePresenter.iconFor(selected.id),
-            label: selected.label,
-            selected: true,
-            onTap: () {},
-          ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(selected.blurb,
-            style: AppTypography.caption
-                .copyWith(color: AppColors.textTertiary)),
-      ],
+    final selected = WorkTypeRegistry.instance.byId(value);
+    return _WorkTypeCard(
+      definition: selected,
+      enabled: enabled,
+      onTap: enabled ? () => _open(context) : null,
     );
   }
+
+  Future<void> _open(BuildContext context) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.darkSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _WorkTypeSheet(current: value),
+    );
+    if (picked != null && picked != value) onChanged(picked);
+  }
+}
+
+/// The tappable hero summarising the selected work type. Shows a labelled kind +
+/// blurb behind a soft icon tile; the trailing glyph is a chooser affordance
+/// when [enabled] and a lock when it isn't (edit mode).
+class _WorkTypeCard extends StatelessWidget {
+  const _WorkTypeCard({
+    required this.definition,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final WorkTypeDefinition definition;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppRadius.xlAll,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: AppColors.darkSurfaceElevated,
+          borderRadius: AppRadius.xlAll,
+          border: Border.all(color: AppColors.darkBorder),
+        ),
+        child: Row(
+          children: [
+            _WorkTypeIcon(icon: WorkTypePresenter.iconFor(definition.id)),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('WORK TYPE',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textTertiary,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w600,
+                      )),
+                  const SizedBox(height: 3),
+                  Text(definition.label, style: AppTypography.label),
+                  const SizedBox(height: 2),
+                  Text(definition.blurb,
+                      style: AppTypography.caption
+                          .copyWith(color: AppColors.textTertiary),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Icon(
+              enabled ? Icons.unfold_more_rounded : Icons.lock_outline_rounded,
+              size: 18,
+              color: AppColors.textTertiary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The soft rounded icon tile used by the work-type card and chooser rows.
+class _WorkTypeIcon extends StatelessWidget {
+  const _WorkTypeIcon({required this.icon, this.selected = false});
+  final IconData icon;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: selected ? AppColors.primary : AppColors.darkBg,
+        borderRadius: AppRadius.mdAll,
+        border: Border.all(
+            color: selected ? AppColors.primary : AppColors.darkBorder),
+      ),
+      child: Icon(icon,
+          size: 21,
+          color: selected ? AppColors.onPrimary : AppColors.textSecondary),
+    );
+  }
+}
+
+/// The rich work-type chooser — one tap reveals every registered kind with its
+/// icon, name and one-line blurb, so the operator picks by *meaning*, not by a
+/// bare label in a dropdown. Returns the chosen id (or null if dismissed).
+class _WorkTypeSheet extends StatelessWidget {
+  const _WorkTypeSheet({required this.current});
+  final String current;
+
+  @override
+  Widget build(BuildContext context) {
+    final defs = WorkTypeRegistry.instance.all;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.pagePadding,
+        AppSpacing.md,
+        AppSpacing.pagePadding,
+        MediaQuery.of(context).padding.bottom + AppSpacing.lg,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SheetGrip(),
+          const SizedBox(height: AppSpacing.md),
+          Text('Work type', style: AppTypography.h3),
+          const SizedBox(height: 2),
+          Text('What kind of work is this?', style: AppTypography.caption),
+          const SizedBox(height: AppSpacing.lg),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: defs.length,
+              separatorBuilder: (_, _) =>
+                  const SizedBox(height: AppSpacing.sm),
+              itemBuilder: (context, i) {
+                final def = defs[i];
+                return _WorkTypeRow(
+                  definition: def,
+                  selected: def.id == current,
+                  onTap: () => Navigator.of(context).pop(def.id),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkTypeRow extends StatelessWidget {
+  const _WorkTypeRow({
+    required this.definition,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final WorkTypeDefinition definition;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppRadius.lgAll,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primarySurface
+              : AppColors.darkSurfaceElevated,
+          borderRadius: AppRadius.lgAll,
+          border: Border.all(
+              color: selected ? AppColors.primary : AppColors.darkBorder),
+        ),
+        child: Row(
+          children: [
+            _WorkTypeIcon(
+                icon: WorkTypePresenter.iconFor(definition.id),
+                selected: selected),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(definition.label,
+                      style: AppTypography.label.copyWith(
+                        color: selected
+                            ? AppColors.textPrimary
+                            : AppColors.textPrimary,
+                        fontWeight:
+                            selected ? FontWeight.w700 : FontWeight.w500,
+                      )),
+                  const SizedBox(height: 2),
+                  Text(definition.blurb,
+                      style: AppTypography.caption
+                          .copyWith(color: AppColors.textTertiary),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Icon(
+              selected
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              size: 20,
+              color: selected ? AppColors.primary : AppColors.textTertiary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small drag grip for this file's chooser sheet (mirrors the shared
+/// `SheetHandle` without importing the form-sheet module).
+class _SheetGrip extends StatelessWidget {
+  const _SheetGrip();
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Container(
+          width: 36,
+          height: 4,
+          decoration: BoxDecoration(
+            color: AppColors.darkBorder,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      );
 }
 
 class _TypeChip extends StatelessWidget {

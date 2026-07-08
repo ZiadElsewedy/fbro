@@ -93,7 +93,7 @@ void main() {
   });
 
   group('WorkTypePicker', () {
-    testWidgets('lists every registered type and reports a selection',
+    testWidgets('opens a chooser listing every type and reports a selection',
         (tester) async {
       String? picked;
       await tester.pumpWidget(_host(WorkTypePicker(
@@ -101,22 +101,35 @@ void main() {
         onChanged: (id) => picked = id,
       )));
 
-      // All five type labels are shown as chips.
+      // The hero card summarises the current pick; the full list lives in the
+      // chooser sheet.
       expect(find.text('General Task'), findsOneWidget);
+      expect(find.text('Inventory Count'), findsNothing);
+
+      // Tapping the card opens the chooser with every registered type.
+      await tester.tap(find.text('General Task'));
+      await tester.pumpAndSettle();
       expect(find.text('Transfer / Handover'), findsOneWidget);
       expect(find.text('Inventory Count'), findsOneWidget);
 
       await tester.tap(find.text('Inventory Count'));
+      await tester.pumpAndSettle();
       expect(picked, 'inventoryCount');
     });
 
-    testWidgets('locked (edit mode) shows only the current type', (tester) async {
+    testWidgets('locked (edit mode) shows only the current type, no chooser',
+        (tester) async {
       await tester.pumpWidget(_host(WorkTypePicker(
         value: 'transfer',
         enabled: false,
         onChanged: (_) {},
       )));
       expect(find.text('Transfer / Handover'), findsOneWidget);
+      expect(find.text('Inventory Count'), findsNothing);
+
+      // The card is inert when locked — tapping opens nothing.
+      await tester.tap(find.text('Transfer / Handover'));
+      await tester.pumpAndSettle();
       expect(find.text('Inventory Count'), findsNothing);
     });
   });

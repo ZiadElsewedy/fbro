@@ -11,10 +11,60 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-07 (Work-type framework — polymorphic tasks)
+**Last updated:** 2026-07-08 (Work Details design system + Create Work sheet UX)
 **Version:** 1.0.0+1 · **Branch:** `feature/work-management-system` (DROP — monochrome premium desktop UX)
 
 ---
+
+## ✅ Work Details design system — one language, composed per type (2026-07-08)
+
+**Presentation-only.** No business logic / domain / persistence change (same
+cubit calls, same `data` reads). The work-type detail experience is now a single
+Apple-flavoured **section kit** that every type composes differently, instead of
+per-type custom layouts.
+
+- **Kit:** `lib/features/task/presentation/widgets/work_detail_sections.dart` —
+  `WorkCard`, `WorkStatStrip`/`WorkStat` (three-up metrics), `WorkProgressBar`,
+  `WorkSegmentBar`, `WorkStatePill` (monochrome; red only off-nominal),
+  `WorkFacts`, `WorkEyebrow`, `WorkFmt`.
+- **Composer:** `work_type_panel.dart` rewritten — Purchase→budget card
+  (Budget/Spent/Remaining + progress + state), Inventory→Expected/Counted/
+  Difference + variance state, Inspection→score + pass/warn/fail segment +
+  points, Transfer→route + timeline. **Unknown type → generic sections from its
+  own fields/timeline/points (no screen edit — OCP preserved).**
+- **Hierarchy:** Summary → Status → **Metrics** → Details → Evidence → Activity →
+  Review; the work panel moved directly under the status header on mobile + the
+  desktop two-column record. Checklist ("X of Y done" progress card) and
+  Submitted Work (premium Notes/Evidence card) elevated to the same language.
+- Panel tests rewritten (budget/over-budget/inspection/transfer/reconciled);
+  analyze clean, suite green (only the 2 pre-existing splash-centering geometry
+  failures remain, unrelated).
+
+---
+
+## ✅ Create Work sheet — premium workflow-builder UX (2026-07-08)
+
+**Presentation-only** refinement of the create/edit task sheet — no logic,
+architecture, persistence or rules changed (same cubit calls, same
+`assigneeIds` / `branchId` / `assignmentType` / `priority` / `recurrence` /
+`workType` + `data` save paths). The flat form now reads as a workflow builder.
+
+- **Grouped, staggered sections** (`_SheetHeader` + `_SectionLabel` dividers):
+  Overview · Steps · Reference · Assignment · Scheduling, each fading + lifting
+  in via `EntranceFade`/`staggerDelay` on open.
+- **Work type = hero card → rich chooser sheet** (`WorkTypePicker` rebuilt in
+  `dynamic_work_form.dart`): icon · kind · blurb summary; tapping opens a
+  scannable list of every registered type. Static lock card in edit mode.
+- **Dropdowns → modern controls:** sliding segmented control (`_Segmented`) for
+  priority / assignment mode / recurrence; **searchable bottom sheets** for the
+  admin **branch** picker and the **assignee** multi-select, fronted by summary
+  tiles (`_PickerTile`, stacked-avatar `_AvatarStack`).
+- **Premium checklist builder** (`_ChecklistBuilder`): numbered steps, animated
+  add/remove, dashed "Add step", quiet empty state.
+- **Animated error banner** (`_FormErrorBanner`) and a deadline tile with
+  Today / Tomorrow / Next week quick chips. Tests updated for the new work-type
+  interaction; `flutter analyze` clean, suite green (pre-existing splash-centering
+  test failures are unrelated).
 
 ## ✅ Work-type framework — polymorphic tasks (2026-07-07)
 
