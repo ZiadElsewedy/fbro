@@ -12,6 +12,71 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-07-09 — Schedule V2, Pillar 2: Assignment Craft, `feature/schedule-optimization`)
+
+Second pillar of **Schedule V2** — premium assignment-chip interaction, built by
+**extending** `assignment_chip.dart` (no scheduling-architecture change). Every
+new path reuses the **one validated move seam** (`onMoveChip` →
+`MoveValidation.checkMove` → the existing Firestore write). Presentation +
+interaction only.
+
+- **Premium chips:** larger avatar (17→18) with the existing initials fallback,
+  and the person's **`position`** ("Cashier"/"Supervisor") trailing the name in
+  a quieter tone — single-line, ellipsizes first so a chip never outgrows the
+  140px cell. Desktop hover tooltip shows the **full name + position** (touch
+  keeps its caution-only tooltip, unchanged).
+- **Bigger, richer target:** roomier chip padding (easier to grab) + a whisper
+  of lift (soft shadow) on hover / keyboard focus.
+- **Cross-day drag:** confirmed already routed through `MoveValidation` (the cell
+  DragTarget was never same-day-only) — now **test-locked**.
+- **Keyboard move (desktop):** Tab focuses a chip (focus ring), **arrows move the
+  person** — ←/→ hop days on the same shift, ↑/↓ flip Morning↔Night — through the
+  same validated seam. Edges are a quiet no-op.
+- **Motion:** a one-shot **scale-in** when a person lands in a slot (chips keyed
+  by uid so a person who stays put never re-animates); scale-only so it stays
+  hit-testable mid-animation; honours reduce-motion.
+- **Touch unchanged:** drag/keyboard/focus are desktop-gated; long-press still
+  opens the action sheet (test-locked).
+- **Tests:** `test/assignment_chip_interactions_test.dart` (6) — cross-day drag,
+  ArrowRight/ArrowDown moves, edge no-op, position rendering, touch long-press.
+  Full schedule/shell regression: **60 pass**, analyze clean.
+
+### Added (2026-07-09 — Schedule V2, Pillar 1: Focus Mode + adaptive inspector, `feature/schedule-optimization`)
+
+First pillar of the **Schedule V2** plan (scope locked in
+`docs/design/SCHEDULE_V2.md` — a 20-point WMS brief triaged down to 7 lean
+pillars). Presentation/chrome only: **no schema/rules/functions/route/DI change.**
+
+- **Added — Pillar 1b, adaptive inspector layout** (`manager_schedule_view.dart`):
+  on desktop / iPad-landscape (≥1024) the manager+admin schedule stops being a
+  stretched phone — the **grid becomes the hero** in a left column and the
+  at-a-glance analytics (**week totals + Schedule Health card**) dock into a
+  right-hand **inspector rail**, visible alongside the roster instead of scrolled
+  past. Touch widths keep the single stacked column + tap-to-open bottom sheets.
+  Pure recomposition of existing widgets — the same insights/health are computed
+  once and every edit/validation/save path is byte-identical. Verified via
+  `flutter analyze` (clean) + the schedule/shell suite (58 pass, no regression).
+
+- **Added — Focus Mode** (`core/widgets/app_shell.dart` + `app_sidebar.dart`):
+  the persistent desktop nav sidebar collapses so the active screen runs
+  full-width — Notion/Linear-style distraction-free mode. Toggle with **⌘\\** or
+  the header collapse control; a quiet floating handle (⌘\\ too) restores it.
+  App-wide (collapsing the shell sidebar is global by nature), MED risk but
+  contained. Reduced-motion honoured; Semantics labels on both controls.
+- **Architecture note:** `AppShell` became a `StatefulWidget` holding the
+  `_focusMode` flag. Only the **sidebar width** animates (clip + `OverflowBox`
+  so its contents never reflow); the `Expanded(child: …)` shell Navigator keeps
+  a **stable position** in the tree, so the GlobalKey child is never remounted
+  (the macOS nav-freeze failure mode) — guarded by a test.
+- **Persistence:** in-session only — the shell is mounted once by the
+  `ShellRoute`, so the choice survives every route change but resets on a cold
+  launch. Cross-restart memory needs a local-prefs store the app doesn't have
+  yet (deliberately not adding a dependency without sign-off).
+- **Tests:** `test/focus_mode_test.dart` (3) — collapse hands content full
+  width, restore brings the sidebar back, and the shell child `Element` is never
+  remounted across toggles. Shell-adjacent suite (brand chrome, first-login
+  gate, notification-tap probe) still green: 16/16.
+
 ### Added / Refactored (2026-07-08 — DROP Design System V2, Phase 1: Admin dashboard + reusable primitives, `core/optimization`)
 
 Re-ranked the Admin Home around **"what needs my attention right now?"** through

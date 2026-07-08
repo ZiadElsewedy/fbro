@@ -11,8 +11,46 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-08 (DROP Design System V2 — Phase 1: Admin dashboard + reusable primitives)
-**Version:** 1.0.0+1 · **Branch:** `core/optimization` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-09 (Schedule V2 — scope locked + Pillar 1a Focus Mode shipped)
+**Version:** 1.0.0+1 · **Branch:** `feature/schedule-optimization`
+
+---
+
+## 🚧 Schedule V2 — scope locked, building pillar by pillar (2026-07-09)
+
+A 20-point "premium scheduling system" brief was **triaged against DROP's lean
+philosophy** and locked into **7 pillars** — contract: `docs/design/SCHEDULE_V2.md`
+(IN = adaptive Mac/iPad shell + focus mode, richer assignment chip, clickable
+health breakdown, bounded shift templates, final-view polish, motion/a11y;
+OUT/Reserve = audit trail, versioning/history/rollback, offline write-merge,
+Excel keyboard grid, AI suggestions, isolates, export sprawl — each with a
+revisit trigger). ~⅓ of the brief already ships (`shift_hours`, `schedule_health`,
+`schedule_final_view` PNG export, the drag/swap chip), so most pillars *extend*.
+
+- **✅ Pillar 1a — Focus Mode (shipped):** the desktop nav sidebar collapses so
+  the active screen runs full-width (Notion/Linear focus mode). **⌘\\** or the
+  sidebar's collapse control toggles it; a floating handle restores it. App-wide,
+  in-session persistence (survives navigation, resets on cold launch — no
+  local-prefs store exists yet). `app_shell.dart` is now stateful; only the
+  sidebar width animates so the GlobalKey shell child is never remounted (test
+  `focus_mode_test.dart`, 3 pass).
+- **✅ Pillar 1b — Adaptive inspector (shipped):** on desktop / iPad-landscape
+  (≥1024) `manager_schedule_view.dart` puts the **grid as hero** on the left and
+  docks **week totals + Schedule Health** into a right-hand **inspector rail**
+  (was scrolled-past below the grid). Touch widths keep the stacked column +
+  bottom sheets. Presentation-only recomposition; every edit/save path unchanged.
+- **✅ Pillar 2 — Assignment Craft (shipped):** `assignment_chip.dart` enriched —
+  bigger avatar + inline **`position`** + desktop name/position tooltip, roomier
+  drag target, hover/focus lift. **Cross-day drag** confirmed + test-locked.
+  **Keyboard move** on desktop (Tab-focus a chip, arrows move the person) via the
+  same `onMoveChip`→`MoveValidation` seam. Scale-in on placement (keyed by uid,
+  reduce-motion aware). Touch unchanged. Tests:
+  `assignment_chip_interactions_test.dart` (6); schedule/shell regression 60 pass.
+- **▫︎ Next:** Pillar 3 (clickable health breakdown). Pillar 4 (shift templates)
+  is gated behind its own mini-design + owner GO.
+
+**Focus Mode persistence** across a cold launch is a deferred TODO (needs
+`shared_preferences`; owner to decide) — in-session persistence works today.
 
 ---
 

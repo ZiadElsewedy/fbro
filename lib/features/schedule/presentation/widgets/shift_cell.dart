@@ -40,6 +40,7 @@ class ShiftCell extends StatefulWidget {
     this.onSwapChip,
     this.onChipActions,
     this.onChipSwapWith,
+    this.onChipKeyboardMove,
   });
 
   final List<UserEntity> users;
@@ -88,6 +89,11 @@ class ShiftCell extends StatefulWidget {
 
   /// Desktop context-menu "Switch shifts with…" on a chip.
   final void Function(String uid)? onChipSwapWith;
+
+  /// A chip here received an arrow key on desktop — move that person into
+  /// [toDay]/[toShift] (the grid routes it through the validated move path).
+  final void Function(String uid, ScheduleDay toDay, ScheduleShift toShift)?
+      onChipKeyboardMove;
 
   static const double radius = 14;
 
@@ -268,6 +274,10 @@ class _ShiftCellState extends State<ShiftCell> {
             children: [
               for (final user in visible)
                 AssignmentChip(
+                  // Keyed by uid so a person who stays put keeps their element
+                  // (no re-animation on rebuild); a newly-placed person mounts
+                  // fresh and plays the entrance.
+                  key: ValueKey('chip-${user.uid}'),
                   user: user,
                   day: widget.day,
                   shift: widget.shift,
@@ -288,6 +298,10 @@ class _ShiftCellState extends State<ShiftCell> {
                   onSwapWith: widget.onChipSwapWith == null
                       ? null
                       : () => widget.onChipSwapWith!(user.uid),
+                  onKeyboardMove: widget.onChipKeyboardMove == null
+                      ? null
+                      : (toDay, toShift) =>
+                          widget.onChipKeyboardMove!(user.uid, toDay, toShift),
                 ),
               if (extra > 0)
                 // Tappable overflow pill → the full shift panel, where every

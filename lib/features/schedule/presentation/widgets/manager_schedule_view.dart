@@ -563,7 +563,9 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       ),
     );
 
-    return ListView(
+    // Touch widths keep the single stacked column — grid, then week summary and
+    // health beneath it; detail opens as bottom sheets on tap.
+    final stacked = ListView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.pagePadding,
         AppSpacing.md,
@@ -589,6 +591,111 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         const SizedBox(height: AppSpacing.md),
         _gridHint(),
       ],
+    );
+    if (!context.isDesktop) return stacked;
+
+    // Mac / iPad-landscape (≥1024): the grid becomes the hero and the
+    // at-a-glance analytics dock into a right-hand inspector rail, so health +
+    // totals stay visible ALONGSIDE the roster instead of scrolled past. Pure
+    // recomposition of the same widgets — every edit/save path is unchanged
+    // (Schedule V2 · Pillar 1b).
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.pagePadding,
+              AppSpacing.md,
+              AppSpacing.pagePadding,
+              AppSpacing.xl,
+            ),
+            children: [
+              _insightStrip(insights, activeInsight),
+              const SizedBox(height: AppSpacing.md),
+              if (orphanCount > 0) ...[
+                BrokenAssignmentBanner(
+                  count: orphanCount,
+                  onReview: () => showResolveBrokenSheet(context),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              SizedBox(height: grid.height, child: grid),
+              const SizedBox(height: AppSpacing.md),
+              _gridHint(),
+            ],
+          ),
+        ),
+        _inspectorRail(health, insights),
+      ],
+    );
+  }
+
+  // ── Inspector rail (Schedule V2 · Pillar 1b) ───────────────────
+  /// The Mac inspector — at-a-glance week analytics docked beside the grid.
+  /// Presentation-only: it renders the SAME health + totals the stacked layout
+  /// shows, just kept in view alongside the roster.
+  Widget _inspectorRail(ScheduleHealth health, ScheduleInsights insights) {
+    return Container(
+      width: 340,
+      decoration: const BoxDecoration(
+        border: Border(left: BorderSide(color: AppColors.darkBorder)),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+          20,
+          AppSpacing.md,
+          20,
+          AppSpacing.xl,
+        ),
+        children: [
+          _railSectionLabel('This week'),
+          const SizedBox(height: AppSpacing.sm),
+          _railStatRow('Morning', insights.morningAssignments),
+          _railStatRow('Night', insights.nightAssignments),
+          if (insights.leaveEntries > 0)
+            _railStatRow('On leave', insights.leaveEntries),
+          _railStatRow('Open shifts', insights.openCount),
+          _railStatRow('People scheduled', insights.scheduledPeople),
+          const SizedBox(height: AppSpacing.lg),
+          _railSectionLabel('Schedule health'),
+          const SizedBox(height: AppSpacing.sm),
+          ScheduleHealthCard(health: health),
+        ],
+      ),
+    );
+  }
+
+  Widget _railSectionLabel(String text) {
+    return Text(
+      text.toUpperCase(),
+      style: AppTypography.caption.copyWith(
+        color: AppColors.textTertiary,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.2,
+      ),
+    );
+  }
+
+  Widget _railStatRow(String label, int value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Text(
+            '$value',
+            style: AppTypography.label.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
     );
   }
 
