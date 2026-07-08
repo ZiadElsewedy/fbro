@@ -44,7 +44,11 @@ NotificationPriority notificationPriority(NotificationType type) =>
       // A new case needs a recipient to act; a new reply is the other party's
       // move.
       NotificationType.caseOpened ||
-      NotificationType.caseReplied =>
+      NotificationType.caseReplied ||
+      // A new request needs an approver to act; a new comment is the other
+      // party's move.
+      NotificationType.requestSubmitted ||
+      NotificationType.requestCommented =>
         NotificationPriority.high,
       NotificationType.taskApproved ||
       NotificationType.taskReminder ||
@@ -53,7 +57,11 @@ NotificationPriority notificationPriority(NotificationType type) =>
       NotificationType.swapApproved ||
       NotificationType.swapRejected ||
       NotificationType.caseUpdated ||
-      NotificationType.caseClosed =>
+      NotificationType.caseClosed ||
+      NotificationType.requestApproved ||
+      NotificationType.requestRejected ||
+      NotificationType.requestCompleted ||
+      NotificationType.requestCancelled =>
         NotificationPriority.normal,
     };
 
@@ -65,6 +73,7 @@ enum NotificationCategory {
   all,
   tasks,
   reviews,
+  requests,
   cases,
   schedule,
   broadcast;
@@ -73,6 +82,7 @@ enum NotificationCategory {
         NotificationCategory.all => 'All',
         NotificationCategory.tasks => 'Tasks',
         NotificationCategory.reviews => 'Reviews',
+        NotificationCategory.requests => 'Requests',
         NotificationCategory.cases => 'Cases',
         NotificationCategory.schedule => 'Schedule',
         NotificationCategory.broadcast => 'Broadcast',
@@ -108,6 +118,13 @@ NotificationCategory categoryOf(NotificationType type) => switch (type) {
       NotificationType.caseClosed ||
       NotificationType.caseReplied =>
         NotificationCategory.cases,
+      NotificationType.requestSubmitted ||
+      NotificationType.requestApproved ||
+      NotificationType.requestRejected ||
+      NotificationType.requestCompleted ||
+      NotificationType.requestCancelled ||
+      NotificationType.requestCommented =>
+        NotificationCategory.requests,
     };
 
 // ─── Time grouping ──────────────────────────────────────────────────

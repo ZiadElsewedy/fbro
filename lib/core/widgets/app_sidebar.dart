@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:drop/core/responsive/breakpoints.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_typography.dart';
-import 'package:drop/core/widgets/animated_drop_logo.dart';
+import 'package:drop/core/widgets/drop_logo.dart';
 
 /// A single navigable destination in the [AppSidebar].
 class SidebarItem {
@@ -82,14 +82,14 @@ class AppSidebar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Brand header — the real DROP artwork (assets/drop_logo.png),
-            // with the premium light-sweep motion (mirrors the splash lockup).
+            // Brand header — the real DROP artwork. Keep persistent desktop
+            // chrome static so idle navigation never burns the UI thread.
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const AnimatedDropLogo(height: 30),
+                  const DropLogo(height: 30),
                   const SizedBox(width: 8),
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),

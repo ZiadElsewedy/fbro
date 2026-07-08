@@ -44,6 +44,20 @@ class RouteNames {
   /// The concrete case-detail path for [caseId].
   static String caseDetail(String caseId) => '/case/$caseId';
 
+  // ─── Operations Requests (in-the-moment approvals) ─────────────
+  // Shared by every role (like cases) — the list self-scopes by role (admin:
+  // all · manager: branch · employee: own) and Firestore rules enforce access,
+  // so these sit outside the role-area guards.
+  static const String requests = '/requests';
+  static const String requestsCreate = '/requests/create';
+
+  /// The single-request deep-link pattern (`/request/:requestId`) — a request
+  /// notification opens the exact request here, for every role.
+  static const String requestDetailPattern = '/request/:requestId';
+
+  /// The concrete request-detail path for [requestId].
+  static String requestDetail(String requestId) => '/request/$requestId';
+
   // ─── Role shells (Phase 1) ──────────────────────────────────
   // The employee role uses [home] ('/') as its landing.
   static const String adminDashboard = '/admin';

@@ -1,14 +1,11 @@
 import 'package:drop/features/requests/domain/entities/request_entity.dart';
 
-/// Inbox ordering for the requests list (the left split-pane) — an approval inbox,
-/// not a task board. Pure Dart, deterministic given the same inputs.
+/// Inbox ordering for the requests list — an approval inbox, not a task board.
+/// Pure Dart, deterministic given the same inputs.
 ///
 /// Rules:
-///   1. Active requests (Pending / Approved) come first; terminal ones archive.
-///   2. Among active, **Pending** (needs a decision) floats above Approved.
-///   3. Then by **priority** (High → Normal → Low).
-///   4. Then by latest activity, newest first.
-///   5. The archive section is newest-decided first.
+///   1. Pending requests (awaiting a decision) come first; decided ones archive.
+///   2. Within each section, latest activity first.
 
 int _cmpDateDesc(DateTime? a, DateTime? b) {
   if (a == null && b == null) return 0;
@@ -17,21 +14,12 @@ int _cmpDateDesc(DateTime? a, DateTime? b) {
   return b.compareTo(a); // newest first
 }
 
-int _cmpActive(RequestEntity a, RequestEntity b) {
-  // Pending before Approved.
-  if (a.status.isPending != b.status.isPending) {
-    return a.status.isPending ? -1 : 1;
-  }
-  // Higher priority first.
-  if (a.priority.weight != b.priority.weight) {
-    return b.priority.weight.compareTo(a.priority.weight);
-  }
-  return _cmpDateDesc(a.lastActivityAt, b.lastActivityAt);
-}
+int _cmpActive(RequestEntity a, RequestEntity b) =>
+    _cmpDateDesc(a.lastActivityAt, b.lastActivityAt);
 
 int _cmpArchived(RequestEntity a, RequestEntity b) => _cmpDateDesc(
-      a.decidedAt ?? a.completedAt ?? a.lastActivityAt,
-      b.decidedAt ?? b.completedAt ?? b.lastActivityAt,
+      a.decidedAt ?? a.lastActivityAt,
+      b.decidedAt ?? b.lastActivityAt,
     );
 
 /// Splits requests into the two inbox sections, each already sorted.
@@ -48,7 +36,7 @@ int _cmpArchived(RequestEntity a, RequestEntity b) => _cmpDateDesc(
   return (active: active, archived: archived);
 }
 
-/// The full inbox order (active section then archive), for a single flat list.
+/// The full inbox order (pending section then archive), for a single flat list.
 List<RequestEntity> sortRequestsForInbox(List<RequestEntity> requests) {
   final parts = partitionRequests(requests);
   return [...parts.active, ...parts.archived];

@@ -1,7 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:drop/core/enums/attachment_type.dart';
-import 'package:drop/core/enums/request_approval_policy.dart';
-import 'package:drop/core/enums/request_priority.dart';
 import 'package:drop/core/enums/request_status.dart';
 import 'package:drop/core/enums/request_type.dart';
 import 'package:drop/core/enums/user_role.dart';
@@ -12,24 +10,21 @@ import 'package:drop/features/task/domain/entities/task_attachment.dart';
 
 /// Firestore (de)serialization for [RequestEntity] — collection `requests/{id}`.
 ///
-/// The dynamic form values live in `details` (`Map<String, dynamic>`). Firestore
-/// returns nested date/time values as [Timestamp], so [_detailsFromMap] /
-/// [_detailsToMap] normalize `Timestamp ⇄ DateTime` at this boundary — the domain
-/// only ever sees `DateTime` / `num` / `String` / `bool`.
+/// The free-text reason lives in `details` (`{'message': <reason>}`). Firestore
+/// returns any nested date/time values as [Timestamp], so [_detailsFromMap] /
+/// [_detailsToMap] normalize `Timestamp ⇄ DateTime` at this boundary.
 ///
 /// Server-managed fields (`refCode`, `seq`, `createdAt`, `updatedAt`,
-/// `lastEventAt`, `decided*`, `completedAt`) are written by the datasource
-/// (server timestamps) or the `onRequest*` Cloud Functions, so [toMap] (the create
-/// payload) omits them. The timeline lives in `requests/{id}/events` ([eventFromMap]).
+/// `lastEventAt`, `decided*`) are written by the datasource (server timestamps)
+/// or the `onRequest*` Cloud Functions, so [toMap] (the create payload) omits
+/// them. The timeline lives in `requests/{id}/events` ([eventFromMap]).
 class RequestModel {
   final String id;
   final String? refCode;
   final int? seq;
   final String? branchId;
   final RequestType type;
-  final RequestApprovalPolicy approvalPolicy;
   final RequestStatus status;
-  final RequestPriority priority;
   final String requesterId;
   final String? requesterName;
   final UserRole requesterRole;
@@ -41,7 +36,7 @@ class RequestModel {
   final String? decidedBy;
   final String? decidedByName;
   final DateTime? decidedAt;
-  final DateTime? completedAt;
+  final DateTime? deletedAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -51,9 +46,7 @@ class RequestModel {
     this.seq,
     this.branchId,
     required this.type,
-    this.approvalPolicy = RequestApprovalPolicy.managerOrAdmin,
     this.status = RequestStatus.pending,
-    this.priority = RequestPriority.normal,
     required this.requesterId,
     this.requesterName,
     this.requesterRole = UserRole.employee,
@@ -65,7 +58,7 @@ class RequestModel {
     this.decidedBy,
     this.decidedByName,
     this.decidedAt,
-    this.completedAt,
+    this.deletedAt,
     this.createdAt,
     this.updatedAt,
   });
@@ -77,10 +70,7 @@ class RequestModel {
         seq: (map['seq'] as num?)?.toInt(),
         branchId: map['branchId'] as String?,
         type: RequestType.fromString(map['type'] as String?),
-        approvalPolicy:
-            RequestApprovalPolicy.fromString(map['approvalPolicy'] as String?),
         status: RequestStatus.fromString(map['status'] as String?),
-        priority: RequestPriority.fromString(map['priority'] as String?),
         requesterId: map['requesterId'] as String? ?? '',
         requesterName: map['requesterName'] as String?,
         requesterRole: UserRole.fromString(map['requesterRole'] as String?),
@@ -92,7 +82,7 @@ class RequestModel {
         decidedBy: map['decidedBy'] as String?,
         decidedByName: map['decidedByName'] as String?,
         decidedAt: map.date('decidedAt'),
-        completedAt: map.date('completedAt'),
+        deletedAt: map.date('deletedAt'),
         createdAt: map.date('createdAt'),
         updatedAt: map.date('updatedAt'),
       );
@@ -103,9 +93,7 @@ class RequestModel {
         seq: e.seq,
         branchId: e.branchId,
         type: e.type,
-        approvalPolicy: e.approvalPolicy,
         status: e.status,
-        priority: e.priority,
         requesterId: e.requesterId,
         requesterName: e.requesterName,
         requesterRole: e.requesterRole,
@@ -117,21 +105,19 @@ class RequestModel {
         decidedBy: e.decidedBy,
         decidedByName: e.decidedByName,
         decidedAt: e.decidedAt,
-        completedAt: e.completedAt,
+        deletedAt: e.deletedAt,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
       );
 
   /// The **create** payload. Server-managed fields are written by the datasource /
   /// Cloud Functions, so they're omitted. `lastEventPreview` is seeded with the
-  /// summary so the inbox row has content before `onRequestCreated` bumps it.
+  /// message so the inbox row has content before `onRequestCreated` bumps it.
   Map<String, dynamic> toMap() => {
         'id': id,
         'branchId': branchId,
         'type': type.value,
-        'approvalPolicy': approvalPolicy.value,
         'status': status.value,
-        'priority': priority.value,
         'requesterId': requesterId,
         'requesterName': requesterName,
         'requesterRole': requesterRole.value,
@@ -147,9 +133,7 @@ class RequestModel {
         seq: seq,
         branchId: branchId,
         type: type,
-        approvalPolicy: approvalPolicy,
         status: status,
-        priority: priority,
         requesterId: requesterId,
         requesterName: requesterName,
         requesterRole: requesterRole,
@@ -161,7 +145,7 @@ class RequestModel {
         decidedBy: decidedBy,
         decidedByName: decidedByName,
         decidedAt: decidedAt,
-        completedAt: completedAt,
+        deletedAt: deletedAt,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
@@ -172,9 +156,7 @@ class RequestModel {
         seq: seq,
         branchId: branchId,
         type: type,
-        approvalPolicy: approvalPolicy,
         status: status,
-        priority: priority,
         requesterId: requesterId,
         requesterName: requesterName,
         requesterRole: requesterRole,
@@ -186,7 +168,7 @@ class RequestModel {
         decidedBy: decidedBy,
         decidedByName: decidedByName,
         decidedAt: decidedAt,
-        completedAt: completedAt,
+        deletedAt: deletedAt,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );

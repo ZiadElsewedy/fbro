@@ -28,18 +28,12 @@ mixin _$RequestEntity {
   /// Owning branch (the requester's branch). Scopes every read/query.
   String? get branchId => throw _privateConstructorUsedError;
   RequestType get type => throw _privateConstructorUsedError;
-
-  /// Who may decide this request — denormalized from [type] so rules + the
-  /// Cloud Functions + the UI enforce the same gate.
-  RequestApprovalPolicy get approvalPolicy =>
-      throw _privateConstructorUsedError;
   RequestStatus get status => throw _privateConstructorUsedError;
-  RequestPriority get priority => throw _privateConstructorUsedError;
   String get requesterId => throw _privateConstructorUsedError;
   String? get requesterName => throw _privateConstructorUsedError;
   UserRole get requesterRole => throw _privateConstructorUsedError;
 
-  /// Dynamic, schema-driven field values (keyed by [RequestFieldSpec.key]).
+  /// The captured values — currently just `{'message': <reason>}`.
   Map<String, dynamic> get details => throw _privateConstructorUsedError;
 
   /// Opening media the requester attached (consumed by `onRequestCreated` into
@@ -55,7 +49,10 @@ mixin _$RequestEntity {
   String? get decidedBy => throw _privateConstructorUsedError;
   String? get decidedByName => throw _privateConstructorUsedError;
   DateTime? get decidedAt => throw _privateConstructorUsedError;
-  DateTime? get completedAt => throw _privateConstructorUsedError;
+
+  /// Soft delete (admin-only): the doc stays as a record, the inbox filters
+  /// it out. Never a hard Firestore delete.
+  DateTime? get deletedAt => throw _privateConstructorUsedError;
   DateTime? get createdAt => throw _privateConstructorUsedError;
   DateTime? get updatedAt => throw _privateConstructorUsedError;
 
@@ -79,9 +76,7 @@ abstract class $RequestEntityCopyWith<$Res> {
     int? seq,
     String? branchId,
     RequestType type,
-    RequestApprovalPolicy approvalPolicy,
     RequestStatus status,
-    RequestPriority priority,
     String requesterId,
     String? requesterName,
     UserRole requesterRole,
@@ -93,7 +88,7 @@ abstract class $RequestEntityCopyWith<$Res> {
     String? decidedBy,
     String? decidedByName,
     DateTime? decidedAt,
-    DateTime? completedAt,
+    DateTime? deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   });
@@ -119,9 +114,7 @@ class _$RequestEntityCopyWithImpl<$Res, $Val extends RequestEntity>
     Object? seq = freezed,
     Object? branchId = freezed,
     Object? type = null,
-    Object? approvalPolicy = null,
     Object? status = null,
-    Object? priority = null,
     Object? requesterId = null,
     Object? requesterName = freezed,
     Object? requesterRole = null,
@@ -133,7 +126,7 @@ class _$RequestEntityCopyWithImpl<$Res, $Val extends RequestEntity>
     Object? decidedBy = freezed,
     Object? decidedByName = freezed,
     Object? decidedAt = freezed,
-    Object? completedAt = freezed,
+    Object? deletedAt = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
   }) {
@@ -159,18 +152,10 @@ class _$RequestEntityCopyWithImpl<$Res, $Val extends RequestEntity>
                 ? _value.type
                 : type // ignore: cast_nullable_to_non_nullable
                       as RequestType,
-            approvalPolicy: null == approvalPolicy
-                ? _value.approvalPolicy
-                : approvalPolicy // ignore: cast_nullable_to_non_nullable
-                      as RequestApprovalPolicy,
             status: null == status
                 ? _value.status
                 : status // ignore: cast_nullable_to_non_nullable
                       as RequestStatus,
-            priority: null == priority
-                ? _value.priority
-                : priority // ignore: cast_nullable_to_non_nullable
-                      as RequestPriority,
             requesterId: null == requesterId
                 ? _value.requesterId
                 : requesterId // ignore: cast_nullable_to_non_nullable
@@ -215,9 +200,9 @@ class _$RequestEntityCopyWithImpl<$Res, $Val extends RequestEntity>
                 ? _value.decidedAt
                 : decidedAt // ignore: cast_nullable_to_non_nullable
                       as DateTime?,
-            completedAt: freezed == completedAt
-                ? _value.completedAt
-                : completedAt // ignore: cast_nullable_to_non_nullable
+            deletedAt: freezed == deletedAt
+                ? _value.deletedAt
+                : deletedAt // ignore: cast_nullable_to_non_nullable
                       as DateTime?,
             createdAt: freezed == createdAt
                 ? _value.createdAt
@@ -248,9 +233,7 @@ abstract class _$$RequestEntityImplCopyWith<$Res>
     int? seq,
     String? branchId,
     RequestType type,
-    RequestApprovalPolicy approvalPolicy,
     RequestStatus status,
-    RequestPriority priority,
     String requesterId,
     String? requesterName,
     UserRole requesterRole,
@@ -262,7 +245,7 @@ abstract class _$$RequestEntityImplCopyWith<$Res>
     String? decidedBy,
     String? decidedByName,
     DateTime? decidedAt,
-    DateTime? completedAt,
+    DateTime? deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   });
@@ -287,9 +270,7 @@ class __$$RequestEntityImplCopyWithImpl<$Res>
     Object? seq = freezed,
     Object? branchId = freezed,
     Object? type = null,
-    Object? approvalPolicy = null,
     Object? status = null,
-    Object? priority = null,
     Object? requesterId = null,
     Object? requesterName = freezed,
     Object? requesterRole = null,
@@ -301,7 +282,7 @@ class __$$RequestEntityImplCopyWithImpl<$Res>
     Object? decidedBy = freezed,
     Object? decidedByName = freezed,
     Object? decidedAt = freezed,
-    Object? completedAt = freezed,
+    Object? deletedAt = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
   }) {
@@ -327,18 +308,10 @@ class __$$RequestEntityImplCopyWithImpl<$Res>
             ? _value.type
             : type // ignore: cast_nullable_to_non_nullable
                   as RequestType,
-        approvalPolicy: null == approvalPolicy
-            ? _value.approvalPolicy
-            : approvalPolicy // ignore: cast_nullable_to_non_nullable
-                  as RequestApprovalPolicy,
         status: null == status
             ? _value.status
             : status // ignore: cast_nullable_to_non_nullable
                   as RequestStatus,
-        priority: null == priority
-            ? _value.priority
-            : priority // ignore: cast_nullable_to_non_nullable
-                  as RequestPriority,
         requesterId: null == requesterId
             ? _value.requesterId
             : requesterId // ignore: cast_nullable_to_non_nullable
@@ -383,9 +356,9 @@ class __$$RequestEntityImplCopyWithImpl<$Res>
             ? _value.decidedAt
             : decidedAt // ignore: cast_nullable_to_non_nullable
                   as DateTime?,
-        completedAt: freezed == completedAt
-            ? _value.completedAt
-            : completedAt // ignore: cast_nullable_to_non_nullable
+        deletedAt: freezed == deletedAt
+            ? _value.deletedAt
+            : deletedAt // ignore: cast_nullable_to_non_nullable
                   as DateTime?,
         createdAt: freezed == createdAt
             ? _value.createdAt
@@ -409,9 +382,7 @@ class _$RequestEntityImpl extends _RequestEntity {
     this.seq,
     this.branchId,
     required this.type,
-    this.approvalPolicy = RequestApprovalPolicy.managerOrAdmin,
     this.status = RequestStatus.pending,
-    this.priority = RequestPriority.normal,
     required this.requesterId,
     this.requesterName,
     this.requesterRole = UserRole.employee,
@@ -423,7 +394,7 @@ class _$RequestEntityImpl extends _RequestEntity {
     this.decidedBy,
     this.decidedByName,
     this.decidedAt,
-    this.completedAt,
+    this.deletedAt,
     this.createdAt,
     this.updatedAt,
   }) : _details = details,
@@ -446,18 +417,9 @@ class _$RequestEntityImpl extends _RequestEntity {
   final String? branchId;
   @override
   final RequestType type;
-
-  /// Who may decide this request — denormalized from [type] so rules + the
-  /// Cloud Functions + the UI enforce the same gate.
-  @override
-  @JsonKey()
-  final RequestApprovalPolicy approvalPolicy;
   @override
   @JsonKey()
   final RequestStatus status;
-  @override
-  @JsonKey()
-  final RequestPriority priority;
   @override
   final String requesterId;
   @override
@@ -466,10 +428,10 @@ class _$RequestEntityImpl extends _RequestEntity {
   @JsonKey()
   final UserRole requesterRole;
 
-  /// Dynamic, schema-driven field values (keyed by [RequestFieldSpec.key]).
+  /// The captured values — currently just `{'message': <reason>}`.
   final Map<String, dynamic> _details;
 
-  /// Dynamic, schema-driven field values (keyed by [RequestFieldSpec.key]).
+  /// The captured values — currently just `{'message': <reason>}`.
   @override
   @JsonKey()
   Map<String, dynamic> get details {
@@ -508,8 +470,11 @@ class _$RequestEntityImpl extends _RequestEntity {
   final String? decidedByName;
   @override
   final DateTime? decidedAt;
+
+  /// Soft delete (admin-only): the doc stays as a record, the inbox filters
+  /// it out. Never a hard Firestore delete.
   @override
-  final DateTime? completedAt;
+  final DateTime? deletedAt;
   @override
   final DateTime? createdAt;
   @override
@@ -517,7 +482,7 @@ class _$RequestEntityImpl extends _RequestEntity {
 
   @override
   String toString() {
-    return 'RequestEntity(id: $id, refCode: $refCode, seq: $seq, branchId: $branchId, type: $type, approvalPolicy: $approvalPolicy, status: $status, priority: $priority, requesterId: $requesterId, requesterName: $requesterName, requesterRole: $requesterRole, details: $details, attachments: $attachments, lastEventPreview: $lastEventPreview, lastEventAt: $lastEventAt, eventCount: $eventCount, decidedBy: $decidedBy, decidedByName: $decidedByName, decidedAt: $decidedAt, completedAt: $completedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'RequestEntity(id: $id, refCode: $refCode, seq: $seq, branchId: $branchId, type: $type, status: $status, requesterId: $requesterId, requesterName: $requesterName, requesterRole: $requesterRole, details: $details, attachments: $attachments, lastEventPreview: $lastEventPreview, lastEventAt: $lastEventAt, eventCount: $eventCount, decidedBy: $decidedBy, decidedByName: $decidedByName, decidedAt: $decidedAt, deletedAt: $deletedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -531,11 +496,7 @@ class _$RequestEntityImpl extends _RequestEntity {
             (identical(other.branchId, branchId) ||
                 other.branchId == branchId) &&
             (identical(other.type, type) || other.type == type) &&
-            (identical(other.approvalPolicy, approvalPolicy) ||
-                other.approvalPolicy == approvalPolicy) &&
             (identical(other.status, status) || other.status == status) &&
-            (identical(other.priority, priority) ||
-                other.priority == priority) &&
             (identical(other.requesterId, requesterId) ||
                 other.requesterId == requesterId) &&
             (identical(other.requesterName, requesterName) ||
@@ -559,8 +520,8 @@ class _$RequestEntityImpl extends _RequestEntity {
                 other.decidedByName == decidedByName) &&
             (identical(other.decidedAt, decidedAt) ||
                 other.decidedAt == decidedAt) &&
-            (identical(other.completedAt, completedAt) ||
-                other.completedAt == completedAt) &&
+            (identical(other.deletedAt, deletedAt) ||
+                other.deletedAt == deletedAt) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
             (identical(other.updatedAt, updatedAt) ||
@@ -575,9 +536,7 @@ class _$RequestEntityImpl extends _RequestEntity {
     seq,
     branchId,
     type,
-    approvalPolicy,
     status,
-    priority,
     requesterId,
     requesterName,
     requesterRole,
@@ -589,7 +548,7 @@ class _$RequestEntityImpl extends _RequestEntity {
     decidedBy,
     decidedByName,
     decidedAt,
-    completedAt,
+    deletedAt,
     createdAt,
     updatedAt,
   ]);
@@ -610,9 +569,7 @@ abstract class _RequestEntity extends RequestEntity {
     final int? seq,
     final String? branchId,
     required final RequestType type,
-    final RequestApprovalPolicy approvalPolicy,
     final RequestStatus status,
-    final RequestPriority priority,
     required final String requesterId,
     final String? requesterName,
     final UserRole requesterRole,
@@ -624,7 +581,7 @@ abstract class _RequestEntity extends RequestEntity {
     final String? decidedBy,
     final String? decidedByName,
     final DateTime? decidedAt,
-    final DateTime? completedAt,
+    final DateTime? deletedAt,
     final DateTime? createdAt,
     final DateTime? updatedAt,
   }) = _$RequestEntityImpl;
@@ -646,15 +603,8 @@ abstract class _RequestEntity extends RequestEntity {
   String? get branchId;
   @override
   RequestType get type;
-
-  /// Who may decide this request — denormalized from [type] so rules + the
-  /// Cloud Functions + the UI enforce the same gate.
-  @override
-  RequestApprovalPolicy get approvalPolicy;
   @override
   RequestStatus get status;
-  @override
-  RequestPriority get priority;
   @override
   String get requesterId;
   @override
@@ -662,7 +612,7 @@ abstract class _RequestEntity extends RequestEntity {
   @override
   UserRole get requesterRole;
 
-  /// Dynamic, schema-driven field values (keyed by [RequestFieldSpec.key]).
+  /// The captured values — currently just `{'message': <reason>}`.
   @override
   Map<String, dynamic> get details;
 
@@ -686,8 +636,11 @@ abstract class _RequestEntity extends RequestEntity {
   String? get decidedByName;
   @override
   DateTime? get decidedAt;
+
+  /// Soft delete (admin-only): the doc stays as a record, the inbox filters
+  /// it out. Never a hard Firestore delete.
   @override
-  DateTime? get completedAt;
+  DateTime? get deletedAt;
   @override
   DateTime? get createdAt;
   @override

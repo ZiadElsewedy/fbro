@@ -39,7 +39,18 @@ enum NotificationType {
   caseOpened, // → the routed recipients (branch manager / admin)
   caseUpdated, // → the reporter (status moved: in discussion / waiting response)
   caseClosed, // → the reporter (closed)
-  caseReplied; // → the other party (a new reply in the conversation)
+  caseReplied, // → the other party (a new reply in the conversation)
+  // ── Operations Requests (server-side `onRequestCreated` / `onRequestUpdated`
+  //    / `onRequestEventCreated`) ──
+  // Produced SERVER-SIDE via the Admin SDK (routing depends on branch/role/policy
+  // lookups), so these are deliberately NOT in the client `sendNotification`
+  // whitelist.
+  requestSubmitted, // → the routed approvers (branch manager / admin)
+  requestApproved, // → the requester
+  requestRejected, // → the requester
+  requestCompleted, // → the requester
+  requestCancelled, // → the routed approvers (requester withdrew it)
+  requestCommented; // → the other party (a new comment on the request)
 
   String get value => name;
 

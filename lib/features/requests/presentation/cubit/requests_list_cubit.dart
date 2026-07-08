@@ -1,0 +1,189 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:drop/core/enums/request_type.dart';
+import 'package:drop/core/errors/failures.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/branch/domain/repositories/branch_repository.dart';
+import 'package:drop/features/requests/domain/entities/request_entity.dart';
+import 'package:drop/features/requests/domain/repositories/request_repository.dart';
+import 'package:drop/features/requests/domain/usecases/create_request.dart';
+import 'package:drop/features/requests/domain/usecases/upload_request_attachment.dart';
+import 'package:drop/features/task/domain/entities/task_attachment.dart';
+import 'package:drop/features/task/presentation/cubit/task_cubit.dart'
+    show PickedAttachment;
+import 'requests_list_state.dart';
+
+/// Drives the employee approval-requests inbox (the list) for all three roles.
+/// Unlike Cases there is **no privacy split**, so every role reads a single
+/// realtime stream (no one-shot collectionGroup):
+///   admin    → every request (global visibility);
+///   manager  → own-branch requests (their approval inbox);
+///   employee → their own requests (`requesterId == uid`).
+///
+/// Filing a request lives here (employees only — approvers never file); the
+/// per-request timeline + decisions + admin reopen/delete live in
+/// [RequestDetailCubit]. Notifications are produced **server-side** by the
+/// `onRequest*` Cloud Functions.
+class RequestsListCubit extends Cubit<RequestsListState> {
+  final RequestRepository _repository;
+  final BranchRepository _branchRepository;
+  final CreateRequest _createRequest;
+  final UploadRequestAttachment _uploadAttachment;
+
+  UserEntity? _user;
+  StreamSubscription<List<RequestEntity>>? _sub;
+  bool _mutating = false;
+  final Map<String, String> _branchNames = {};
+
+  Map<String, String> get branchNames => Map.unmodifiable(_branchNames);
+
+  RequestsListCubit({
+    required this._repository,
+    required this._branchRepository,
+    required this._createRequest,
+    required this._uploadAttachment,
+  }) : super(const RequestsListState.initial());
+
+  List<RequestEntity> get _requests =>
+      state.maybeWhen(loaded: (r, _) => r, orElse: () => const []);
+
+  static String _scopeKey(UserEntity u) =>
+      '${u.uid}:${u.role.value}:${u.branchId ?? ''}';
+
+  Future<void> load(UserEntity user, {bool forceRefresh = false}) async {
+    final inError = state.maybeWhen(error: (_) => true, orElse: () => false);
+    final sameScope = _user != null && _scopeKey(_user!) == _scopeKey(user);
+    if (!forceRefresh && !inError && _sub != null && sameScope) return;
+
+    if (!sameScope) _branchNames.clear();
+    _user = user;
+    _loadBranchNames();
+
+    final hasData =
+        state.maybeWhen(loaded: (_, _) => true, orElse: () => false);
+    if (!hasData) emit(const RequestsListState.loading());
+
+    await _sub?.cancel();
+    _sub = null;
+
+    developer.log(
+      '[REQUESTS] load: role=${user.role.value}, uid=${user.uid}, '
+      'branch=${user.branchId ?? '-'}',
+      name: 'REQUESTS',
+    );
+
+    final Stream<List<RequestEntity>> stream;
+    if (user.role.isAdmin) {
+      stream = _repository.watchAllRequests();
+    } else if (user.role.isManager) {
+      stream = _repository.watchBranchRequests(user.branchId ?? '');
+    } else {
+      stream = _repository.watchMyRequests(user.uid);
+    }
+    _subscribe(stream);
+  }
+
+  void _subscribe(Stream<List<RequestEntity>> stream) {
+    _sub = stream.listen(
+      (requests) => _emitLoaded(requests),
+      onError: (Object error, StackTrace st) {
+        developer.log('[REQUESTS] stream error: $error',
+            name: 'REQUESTS', error: error, stackTrace: st);
+        emit(const RequestsListState.error(
+            'Failed to load requests. Please try again.'));
+      },
+    );
+  }
+
+  void _emitLoaded(List<RequestEntity> requests) {
+    if (isClosed) return;
+    emit(RequestsListState.loaded(
+      requests,
+      branchNames: Map.of(_branchNames),
+    ));
+  }
+
+  Future<void> refresh() async {
+    final user = _user;
+    if (user != null) await load(user, forceRefresh: true);
+  }
+
+  Future<void> _loadBranchNames() async {
+    try {
+      final list = await _branchRepository.getBranches();
+      for (final b in list) {
+        _branchNames[b.id] = b.name;
+      }
+      if (!isClosed) {
+        state.mapOrNull(
+          loaded: (s) => emit(s.copyWith(branchNames: Map.of(_branchNames))),
+        );
+      }
+    } catch (_) {}
+  }
+
+  // ─── Filing a request (employees only — the UI gates the entry point) ──
+  /// Files a new request. Pre-generates the id so opening media uploads under it
+  /// BEFORE the doc is written (so `onRequestCreated` sees the attachments when it
+  /// builds the opening event). Returns the created request, or null on failure.
+  Future<RequestEntity?> submitRequest({
+    required RequestType type,
+    required Map<String, dynamic> details,
+    List<PickedAttachment> attachments = const [],
+  }) async {
+    final user = _user;
+    if (user == null || _mutating) return null;
+    _mutating = true;
+
+    try {
+      final requestId = _repository.newRequestId();
+      final uploaded = <TaskAttachment>[];
+      if (attachments.isNotEmpty) {
+        uploaded.addAll(await Future.wait([
+          for (final a in attachments)
+            _uploadAttachment(
+              requestId: requestId,
+              file: a.file,
+              type: a.type,
+              uploadedBy: user.uid,
+              uploadedByName: user.displayName,
+              durationMs: a.durationMs,
+            ),
+        ]));
+      }
+      final message = (details['message'] ?? '').toString().trim();
+      final entity = RequestEntity(
+        id: requestId,
+        branchId: user.branchId,
+        type: type,
+        requesterId: user.uid,
+        requesterName: user.displayName,
+        requesterRole: user.role,
+        details: details,
+        attachments: uploaded,
+        // Optimistic preview so the row has content before `onRequestCreated`.
+        lastEventPreview: message.isNotEmpty ? message : type.label,
+      );
+      final created = await _createRequest(entity);
+      return created;
+    } on Failure catch (e) {
+      emit(RequestsListState.error(e.message));
+      return null;
+    } catch (_) {
+      emit(const RequestsListState.error(
+          'Something went wrong filing your request.'));
+      return null;
+    } finally {
+      _mutating = false;
+      _emitLoaded(_requests);
+    }
+  }
+
+  @override
+  Future<void> close() {
+    _sub?.cancel();
+    return super.close();
+  }
+}

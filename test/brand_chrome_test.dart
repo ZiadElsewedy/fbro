@@ -67,7 +67,7 @@ void main() {
     expect(find.byType(DropLogo), findsNothing);
   });
 
-  testWidgets('AppSidebar brand header uses the real logo artwork',
+  testWidgets('AppSidebar brand header uses the static real logo artwork',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -89,6 +89,7 @@ void main() {
     ));
 
     expect(find.byType(DropLogo), findsOneWidget);
+    expect(find.byType(AnimatedDropLogo), findsNothing);
   });
 
   testWidgets('AnimatedDropLogo renders the artwork and loops without error',

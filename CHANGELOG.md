@@ -12,6 +12,174 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed (2026-07-08 — Requests close-out: generated state + analyzer clean)
+
+- Regenerated `requests_list_state.freezed.dart` after the Requests list state
+  was simplified, fixing the stale `loaded(requests, busy, branchNames,
+  selectedId)` generated signature that broke `RequestsListCubit` and
+  `RequestsScreen`.
+- Restored the `RequestRepository.getRequest` contract and
+  `RequestStatus.isNegative` helper expected by the implementation and request
+  tests.
+- Cleaned the unrelated `AuthCubit` constructor lint so `flutter analyze` now
+  finishes with **No issues found**. Focused Requests suites: **44 passing**.
+
+### Added (2026-07-08 — Requests: admin soft delete + reopen; premium card pass)
+
+Owner ask: delete (but soft), admin reopen as an escape hatch, and a more
+premium card. All three verified live on macOS (reopen exercised end-to-end on
+REQ-000002: Approved → Reopen → Pending with approve/reject + comments unlocked
+→ re-Approved).
+
+- **Soft delete (admin-only).** `deleteRequest` now stamps `deletedAt` instead
+  of hard-deleting — the doc + its events stay as a record; the inbox streams
+  filter deleted docs **client-side** (a `where(deletedAt, isNull)` query would
+  drop every pre-existing doc missing the field). UI: a quiet trash icon in the
+  detail header (admin only) with a destructive confirm → success toast → pop.
+  Passes the existing rules as a plain admin update — **no rules change**.
+- **Admin reopen.** `canReopenRequest` = admin ∧ decided. `reopen()` sends the
+  request back to `pending`, clears `decided*`, stamps
+  `reopenedBy/Name/At`; comments and the manager's Approve/Reject unlock again
+  (the same pure predicates gate everything, so no new hierarchy logic).
+  UI: a ghost "Reopen request" bar on a decided request (admin only), confirm
+  dialog. New `RequestEventKind.reopened` renders as a pending-tinted
+  `replay` chip; `onRequestUpdated` writes the event ("Reopened by X") and
+  notifies the branch approvers + requester. ⚠️ The timeline chip +
+  notifications require a **functions deploy**; until then reopen still works,
+  the old deployed function just ignores the pending transition safely.
+- **Premium card pass** (`request_card.dart`): 44pt icon tile with a soft
+  status-tinted vertical gradient wash, refined title/summary rhythm, and the
+  REQ reference (`# REQ-000002`) as a quiet trailing meta. **Pending rows alone
+  wear a faint status-tinted border** — signal over volume; decided rows stay on
+  the hairline. Detail action bar now three-state: decide / reopen / none.
+- Tests: +8 (reopen/delete access, cubit reopen + soft-delete routing, model
+  `deletedAt`, `reopened` kind parse) — 44 request tests green; freezed regen;
+  `functions/index.js` syntax-checked.
+
+### Fixed (2026-07-08 — New Request mobile UI: tile overflow + picker redesign)
+
+On phones the New Request type picker rendered every tile with "BOTTOM
+OVERFLOWED BY 5.7 PIXELS" — the grid used a fixed `childAspectRatio`, so on a
+narrow screen the tile height came out shorter than its content.
+
+- **Phone/tablet picker → full-width rows** (icon tile · title · full blurb ·
+  chevron): rows size to their content so they *can't* overflow, blurbs read in
+  full instead of truncating, and touch targets are bigger. The guiding question
+  ("What do you need your manager to approve?") now leads the list — the mobile
+  app bar has no subtitle slot, so it was previously invisible on phones.
+- **Desktop picker** keeps the card grid but with a fixed `mainAxisExtent`
+  (never an aspect ratio), so tiles are overflow-proof at any window width.
+- **Latent bug caught by the new test:** the shared `AttachmentPickerField`
+  header (`Text(title) + Spacer + counts`, used by task proof upload too) could
+  overflow horizontally on narrow widths / large accessibility text — the title
+  is now `Expanded` + ellipsized (identical rendering when space suffices).
+- **Regression test** `request_create_picker_test.dart`: pumps the create flow
+  at iPhone size (390×844) and desktop (1440×900), asserts zero layout
+  exceptions, and walks type-tap → single-message form. All request suites
+  green (36).
+
+### Changed (2026-07-08 — Requests are employee→manager approvals; create is employee-only)
+
+Owner ruling refinement: Requests are **employee approval requests**, not a
+generic workflow engine. Flow is one-directional — an **employee** files, their
+**branch manager** decides; the **admin** has global visibility and may decide
+when necessary but is not expected to create requests. No super-admin, no
+admin-to-admin workflow, no approval queue.
+
+- **Create is employee-only:** the "New request" FAB on `RequestsScreen` (its
+  only entry point) now renders for employees only. Because authors (employees)
+  and deciders (manager/admin) are disjoint roles, **self-approval is impossible
+  structurally** — no guard logic was added, none is needed. `canDecideRequest`
+  stays exactly "admin or own-branch manager".
+- **Copy reframed** (this + the previous pass): list subtitle per role ("Approval
+  requests from your branch" / "…across every branch" / "Your approval
+  requests"), role-aware empty states, create form says "What do you need your
+  manager to approve?" + "Message to your manager", type blurbs speak to the
+  employee ("Ask…", "Get your manager's help…", "Anything else that needs a
+  manager's OK"), new-request notification says "New approval request".
+- **Data cleanup:** deleted the admin-authored smoke-test request (REQ-000001)
+  filed during the freeze verification — it contradicted the rule and confused
+  the owner.
+- **Verified live** (macOS, admin): no FAB, clean empty state, no freeze. All
+  request test suites green; `flutter analyze` clean.
+
+### Changed (2026-07-08 — Requests simplified to a lean approval, not a ticket)
+
+Owner ruling ([[project_requests_simplicity]]): a Request is "someone asking
+approval before doing something" — it must feel like sending a message that
+needs a yes/no, **not** a Jira/helpdesk ticket. Stripped everything that made it
+feel like a ticketing platform. Flow is now only **Create → Pending → Approved /
+Rejected**.
+
+- **Statuses → 3.** `RequestStatus` is now `pending / approved / rejected`
+  (dropped `completed` + `cancelled`). `approved`/`rejected` are terminal;
+  `isActive` = pending. `RequestEventKind` lost `completed`/`cancelled`.
+- **Form → Type + one message.** Deleted the per-type dynamic schema
+  (`request_schema.dart`, `request_field_spec.dart`, `dynamic_request_form.dart`).
+  A request now captures a single free-text **message** (`details['message']`);
+  `RequestEntity.summary`/`message` read it. Create screen = pick type → one
+  message field → optional attachments → submit. Type-picker cards resized
+  (`GridView.extent`, no more giant tiles).
+- **Removed priority + approvalPolicy.** Deleted `RequestPriority` +
+  `RequestApprovalPolicy` (enums, entity/model fields, ordering, card chip,
+  create toggle, detail meta). Deciding is simply admin (global) or the
+  own-branch manager — `canDecideRequest` no longer consults a policy; the
+  `firestore.rules` update gate dropped the `adminOnly`/`cancelled` clauses.
+- **Metrics slimmed** to Pending/Approved/Rejected counts that double as the KPI
+  filters (dropped avg-approval-time, top-type, "done today").
+- **Detail actions** are just Approve / Reject (no complete/cancel); the detail
+  shows a **Message** card; a decided request is read-only.
+- **Cloud Functions** (`onRequestCreated`/`onRequestUpdated`): approver routing is
+  now "branch managers + admins" (no policy); dropped the priority tag and the
+  `completed`/`cancelled` lifecycle branches. `refCode` (REQ-######) + the
+  submitted/decision events + notifications are unchanged.
+- **Kept intentionally:** the server `refCode` sequence (invisible, doesn't make
+  the UX feel like a ticket) and the `requestCompleted`/`requestCancelled`
+  notification enum values (harmless back-compat for any already-sent notices).
+- **Verified live** (macOS): file a request → Pending → open → Approve → the
+  decision chip + read-only lock render, `REQ-000001` assigned. Tests: the 8
+  request suites updated/trimmed (36→ still green); full suite 535 pass (3
+  pre-existing failures are in the separate in-progress notifications/splash
+  work, not requests).
+
+### Fixed (2026-07-08 — Requests screen froze on open (empty-state infinite height))
+
+Opening **Requests** (or any list rendering an empty state as a `ListView`
+child) hard-froze the desktop app. This is the *real* cause of the "clicking
+Requests freezes" report — distinct from, and not fixed by, the earlier
+`AnimatedDropLogo` sidebar change below.
+
+- **Root cause:** `DropEmptyState` / `AppEmptyState` use the "fill the viewport,
+  still scroll" idiom (`LayoutBuilder` → `SingleChildScrollView` →
+  `ConstrainedBox(minHeight: constraints.maxHeight)`). That is correct as a
+  direct `RefreshIndicator` child (bounded height), but `RequestsScreen` renders
+  the empty state **inside its `ListView`**, which gives children *unbounded*
+  height. `minHeight` became `Infinity` → `BoxConstraints forces an infinite
+  height` re-thrown **every frame**, drowning the UI thread = the freeze.
+  Reproduced live: the assertion flooded the log the instant Requests opened;
+  gone after the fix.
+- **Fixed:** both empty-state widgets now clamp `minHeight` to `0` when
+  `constraints.maxHeight` is not finite (`isFinite ? maxHeight : 0`) — identical
+  behaviour in the normal bounded case, safe when nested in any scrollable.
+- **Scope:** two core widgets only (`drop_empty_state.dart`,
+  `app_empty_state.dart`); no route, schema, rules, repository, cubit, DI, or
+  function change. Protects every empty-list surface app-wide.
+
+### Fixed (2026-07-07 — Desktop sidebar idle freeze when clicking Reports/Requests)
+
+Clicking the old Reports/Requests area on macOS desktop could look like the app
+froze even though the target route was not crashing. The live process had an
+empty `last_crash.log`, the widget tree was still on `AdminShell`, and sampling
+showed Flutter frame/path work at idle.
+
+- **Root cause:** persistent `AppSidebar` chrome mounted `AnimatedDropLogo`, so
+  the forever-running shimmer kept the desktop UI/raster pipeline hot while the
+  user was idle or navigating.
+- **Fixed:** `AppSidebar` now uses static `DropLogo` again; `AnimatedDropLogo`
+  stays limited to transient brand surfaces. `brand_chrome_test.dart` now asserts
+  the sidebar does not mount `AnimatedDropLogo`.
+- **Scope:** no route, schema, rules, repository, cubit, DI, function,
+  dependency, or generated-file change.
 ### Refactored (2026-07-08 — Work Details design system: one language, composed per type)
 
 A **presentation-only** unification of the work-type detail experience — no
@@ -684,9 +852,9 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   the window centre (padding is `EdgeInsets.zero`, so the macOS title bar adds
   no offset).
 - **Changed** `AppSidebar`'s brand header from the static `DropLogo` to the
-  shimmering `AnimatedDropLogo` (owner-requested 2026-07-05) — **reverses the
-  2026-07-02 "chrome marks stay static" scoping** for the persistent desktop
-  sidebar; Splash/Login keep their existing treatment.
+  shimmering `AnimatedDropLogo` (owner-requested 2026-07-05) — **reversed on
+  2026-07-07** after the persistent desktop animation was root-caused as an idle
+  freeze/CPU issue; Splash/Login keep their animated treatment.
 - **Fixed** mismatched card heights on the admin dashboard's Overview grid
   (e.g. the "Managers" metric card sitting visibly shorter than its row
   siblings): `DashboardMetricCard` now reserves the trend line's height even

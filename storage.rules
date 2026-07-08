@@ -42,6 +42,19 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // Request media: requests/{requestId}/attachments/{id}.<ext> (Operations
+    // Requests). CREATE-ONLY, mirroring task/case evidence (M3): every upload
+    // mints a unique Firestore push id for its path, so overwrite/delete have no
+    // legitimate caller — a request's attached media is immutable from upload.
+    // The meaningful attach gate is the Firestore write of the URL onto the
+    // request / its event (firestore.rules); request ids are unguessable 20-char
+    // auto-ids.
+    match /requests/{requestId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+
     // Branch media (§8): branches/{branchId}/logo.jpg and cover.jpg. Any
     // signed-in user may read (logos appear on schedules / dashboards for every
     // role). Write is left to any signed-in user here because Storage rules

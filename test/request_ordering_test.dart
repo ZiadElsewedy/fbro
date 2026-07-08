@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:drop/core/enums/request_priority.dart';
 import 'package:drop/core/enums/request_status.dart';
 import 'package:drop/core/enums/request_type.dart';
 import 'package:drop/features/requests/domain/entities/request_entity.dart';
@@ -9,7 +8,6 @@ void main() {
   RequestEntity r(
     String id, {
     RequestStatus status = RequestStatus.pending,
-    RequestPriority priority = RequestPriority.normal,
     DateTime? lastEventAt,
     DateTime? decidedAt,
   }) =>
@@ -18,7 +16,6 @@ void main() {
         type: RequestType.other,
         requesterId: 'u1',
         status: status,
-        priority: priority,
         lastEventAt: lastEventAt,
         decidedAt: decidedAt,
       );
@@ -28,34 +25,17 @@ void main() {
   final t2 = DateTime(2026, 7, 7, 11);
 
   group('partitionRequests', () {
-    test('splits active (pending/approved) vs terminal', () {
+    test('splits pending (active) vs decided (archived)', () {
       final parts = partitionRequests([
         r('a', status: RequestStatus.pending),
-        r('b', status: RequestStatus.completed, decidedAt: t1),
-        r('c', status: RequestStatus.approved),
-        r('d', status: RequestStatus.rejected, decidedAt: t0),
+        r('b', status: RequestStatus.approved, decidedAt: t1),
+        r('c', status: RequestStatus.rejected, decidedAt: t0),
       ]);
-      expect(parts.active.map((e) => e.id), containsAll(['a', 'c']));
-      expect(parts.archived.map((e) => e.id), containsAll(['b', 'd']));
+      expect(parts.active.map((e) => e.id), ['a']);
+      expect(parts.archived.map((e) => e.id), containsAll(['b', 'c']));
     });
 
-    test('pending floats above approved in the active section', () {
-      final parts = partitionRequests([
-        r('approved', status: RequestStatus.approved, lastEventAt: t2),
-        r('pending', status: RequestStatus.pending, lastEventAt: t0),
-      ]);
-      expect(parts.active.first.id, 'pending');
-    });
-
-    test('within the same status, higher priority comes first', () {
-      final parts = partitionRequests([
-        r('normal', priority: RequestPriority.normal, lastEventAt: t2),
-        r('high', priority: RequestPriority.high, lastEventAt: t0),
-      ]);
-      expect(parts.active.first.id, 'high');
-    });
-
-    test('within the same status + priority, newest activity first', () {
+    test('within the active section, newest activity first', () {
       final parts = partitionRequests([
         r('old', lastEventAt: t0),
         r('new', lastEventAt: t2),
@@ -67,16 +47,15 @@ void main() {
     test('archive is newest-decided first', () {
       final parts = partitionRequests([
         r('older', status: RequestStatus.rejected, decidedAt: t0),
-        r('newer', status: RequestStatus.approved) // still active, ignore
+        r('newer', status: RequestStatus.approved, decidedAt: t2),
       ]);
-      // only the rejected one is archived
-      expect(parts.archived.map((e) => e.id), ['older']);
+      expect(parts.archived.map((e) => e.id), ['newer', 'older']);
     });
   });
 
   test('sortRequestsForInbox concatenates active then archive', () {
     final list = sortRequestsForInbox([
-      r('done', status: RequestStatus.completed, decidedAt: t0),
+      r('done', status: RequestStatus.approved, decidedAt: t0),
       r('todo', status: RequestStatus.pending, lastEventAt: t1),
     ]);
     expect(list.first.id, 'todo');

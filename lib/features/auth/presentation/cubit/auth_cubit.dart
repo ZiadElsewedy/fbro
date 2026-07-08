@@ -43,14 +43,25 @@ class AuthCubit extends Cubit<AuthState> {
     required ForgotPassword forgotPassword,
     required ChangePassword changePassword,
     Future<void> Function()? onPreSignOut,
-  })  : _repository = repository,
-        _signInWithEmail = signInWithEmail,
-        _signOut = signOut,
-        _getUser = getUser,
-        _forgotPassword = forgotPassword,
-        _changePassword = changePassword,
-        _onPreSignOut = onPreSignOut,
-        super(const AuthState.initial());
+  }) : this._(
+          repository: repository,
+          signInWithEmail: signInWithEmail,
+          signOut: signOut,
+          getUser: getUser,
+          forgotPassword: forgotPassword,
+          changePassword: changePassword,
+          onPreSignOut: onPreSignOut,
+        );
+
+  AuthCubit._({
+    required this._repository,
+    required this._signInWithEmail,
+    required this._signOut,
+    required this._getUser,
+    required this._forgotPassword,
+    required this._changePassword,
+    this._onPreSignOut,
+  }) : super(const AuthState.initial());
 
   /// Called once from SplashPage on cold start.
   Future<void> restoreSession() async {

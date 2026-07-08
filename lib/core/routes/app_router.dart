@@ -40,6 +40,9 @@ import 'package:drop/features/notifications/presentation/pages/notifications_scr
 import 'package:drop/features/cases/presentation/pages/cases_screen.dart';
 import 'package:drop/features/cases/presentation/pages/create_case_screen.dart';
 import 'package:drop/features/cases/presentation/pages/case_conversation_screen.dart';
+import 'package:drop/features/requests/presentation/pages/requests_screen.dart';
+import 'package:drop/features/requests/presentation/pages/create_request_screen.dart';
+import 'package:drop/features/requests/presentation/pages/request_detail_screen.dart';
 import 'route_names.dart';
 
 GoRouter createRouter(
@@ -266,6 +269,30 @@ GoRouter createRouter(
               state,
               CaseConversationScreen(
                 caseId: state.pathParameters['caseId'] ?? '',
+              ),
+            ),
+          ),
+          // ─── Operations Requests (in-the-moment approvals) ───────────────────
+          // Shared by every role; the list self-scopes by role and Firestore
+          // rules enforce access. The static `/requests/create` route is declared
+          // before the singular `/request/:requestId` deep-link (a distinct path,
+          // so it never captures `create`).
+          GoRoute(
+            path: RouteNames.requests,
+            pageBuilder: (context, state) =>
+                _slideTransition(state, const RequestsScreen()),
+          ),
+          GoRoute(
+            path: RouteNames.requestsCreate,
+            pageBuilder: (context, state) =>
+                _slideTransition(state, const CreateRequestScreen()),
+          ),
+          GoRoute(
+            path: RouteNames.requestDetailPattern,
+            pageBuilder: (context, state) => _slideTransition(
+              state,
+              RequestDetailScreen(
+                requestId: state.pathParameters['requestId'] ?? '',
               ),
             ),
           ),

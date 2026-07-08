@@ -23,12 +23,13 @@ abstract class RequestRepository {
   /// split, so this is a plain equality query (unlike Cases' collectionGroup).
   Stream<List<RequestEntity>> watchMyRequests(String uid);
 
-  /// A single request by id, or null if it doesn't exist.
-  Future<RequestEntity?> getRequest(String requestId);
-
   /// Realtime stream of one request doc — drives the detail header, status
   /// control, and the terminal/read-only gate. Emits null if deleted.
   Stream<RequestEntity?> watchRequest(String requestId);
+
+  /// One-shot fetch for a request doc. Mostly useful for command-style callers
+  /// and tests; realtime UI should prefer [watchRequest].
+  Future<RequestEntity?> getRequest(String requestId);
 
   /// Realtime stream of a request's timeline (`requests/{id}/events`), oldest
   /// first. Every role gets this.
@@ -44,8 +45,9 @@ abstract class RequestRepository {
   Future<RequestEntity> createRequest(RequestEntity request);
 
   /// Moves a request to [to] — a single targeted doc update. `onRequestUpdated`
-  /// appends the lifecycle event + notifies. [decidedBy]/[decidedByName] stamp
-  /// the deciding actor (for approve/reject).
+  /// appends the lifecycle event + notifies. [decidedBy]/[decidedByName] carry
+  /// the acting user: they stamp `decided*` on approve/reject, and `reopened*`
+  /// on an admin reopen back to pending.
   Future<void> changeStatus(
     String requestId,
     RequestStatus to, {

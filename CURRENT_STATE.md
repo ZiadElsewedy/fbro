@@ -11,6 +11,8 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
+**Last updated:** 2026-07-08 (Requests closed out: analyzer clean + tests green)
+**Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
 **Last updated:** 2026-07-08 (Work Details design system + Create Work sheet UX)
 **Version:** 1.0.0+1 · **Branch:** `feature/work-management-system` (DROP — monochrome premium desktop UX)
 
@@ -119,6 +121,78 @@ no `switch`, no screen edits, no rules change (Open/Closed).
   now (guarded — no silent drop; templates don't yet carry a work type);
   cross-user Transfer receiver-identity confirmation and a server-side
   reimbursement payout are future extensions.
+
+---
+
+## ✅ Requests: freeze fixed + feature simplified (2026-07-08)
+
+**The real "clicking Requests freezes" bug** (distinct from the sidebar-logo
+change below, which was a *misdiagnosis*): the admin had no requests, so the
+Requests list rendered the empty state. `DropEmptyState`/`AppEmptyState` use the
+"fill the viewport, still scroll" idiom (`LayoutBuilder` →
+`SingleChildScrollView` → `ConstrainedBox(minHeight: maxHeight)`), which is
+correct only as a direct `RefreshIndicator` child (bounded height) — but
+`RequestsScreen` renders it **inside a `ListView`** (unbounded height), so
+`minHeight` became `Infinity` and the `BoxConstraints forces an infinite height`
+assertion re-threw **every frame**, drowning the UI thread. Reproduced live, then
+fixed: both empty-state widgets now clamp `minHeight` to `0` when `maxHeight`
+isn't finite (`isFinite ? maxHeight : 0`). Protects every empty list app-wide.
+
+**Then simplified the Requests feature** to the owner ruling
+([[project_requests_simplicity]]) — a Request is an **employee approval
+request**, not a ticket or a generic workflow engine:
+- **Business rule:** employee files → own-branch manager decides; admin has
+  global visibility and may decide when necessary. **Create is employee-only**
+  (the FAB hides for manager/admin), so self-approval is structurally
+  impossible — authors and deciders are disjoint roles, no guard logic exists
+  or is needed.
+- Flow only **Create → Pending → Approved / Rejected** (3 statuses; dropped
+  completed/cancelled).
+- Create = pick type → **one message field** → optional attachments (deleted the
+  per-type dynamic schema/form).
+- Removed `RequestPriority` + `RequestApprovalPolicy` (deciding = admin or
+  own-branch manager); metrics slimmed to the 3 status-filter counts; detail
+  actions are Approve/Reject only; a decided request is read-only.
+- Rules + Cloud Functions aligned (approver routing = branch managers + admins;
+  no priority/policy/completed/cancelled). `refCode` (REQ-######) kept.
+- **Verified live** (file → Pending → Approve → decision chip + read-only lock,
+  `REQ-000001`); all request test suites green. See [CHANGELOG.md](CHANGELOG.md).
+- **Later the same day:** admin **soft delete** (`deletedAt`, filtered
+  client-side, record kept, no rules change), admin **reopen** (decided →
+  Pending, `reopened*` stamps + server `reopened` timeline event —
+  **functions deploy pending** for the chip/notifications), and a premium card
+  pass (status-tinted gradient tile, pending-only tinted border, `# REQ-…`
+  meta). Reopen verified live end-to-end. 44 request tests green.
+- **Close-out pass:** the stale `RequestsListState.freezed.dart` signature was
+  regenerated after the list state was simplified; `RequestRepository.getRequest`
+  and `RequestStatus.isNegative` now match the implementation/tests again; the
+  unrelated `AuthCubit` constructor style issue was cleaned so
+  `flutter analyze` reports **No issues found**. Focused Requests suites remain
+  **44 passing**.
+
+---
+
+## ✅ Desktop sidebar idle freeze investigation (2026-07-07) — superseded
+
+> ⚠️ This change (static sidebar logo) was believed to fix "clicking Requests
+> freezes" but did **not** — the real cause was the empty-state infinite-height
+> bug above. The static-logo change is still a valid micro-optimization and is
+> kept, but it was a misdiagnosis of the reported freeze.
+
+The desktop app no longer keeps the DROP sidebar logo animation running forever
+while the user is idle or moving between destinations such as Requests/Cases.
+
+- **Root cause (claimed):** the persistent `AppSidebar` mounted `AnimatedDropLogo`,
+  whose forever-running shimmer kept the Flutter frame pipeline active in desktop
+  chrome.
+- **Fix:** `AppSidebar` now renders the static `DropLogo` again. The animated
+  logo remains reserved for transient brand surfaces; persistent shell chrome is
+  static by design.
+- **Scope:** no route, schema, Firestore rule, cubit, repository, DI, function,
+  dependency, or generated-file change.
+- **Verification:** focused sidebar analyze and `test/brand_chrome_test.dart`
+  pass; the sidebar test now asserts `AnimatedDropLogo` is absent from
+  `AppSidebar`.
 
 ---
 
@@ -559,13 +633,10 @@ Client-only; no Firebase schema, rules, functions, or deploy change.
   lockup bbox framed 50px above centre at 1440×900 and 1024×720;
   `padding == EdgeInsets.zero`, so the macOS transparent title bar adds no
   offset).
-- **Sidebar brand mark now uses `AnimatedDropLogo`** (the light-sweep shimmer)
-  instead of the static `DropLogo` — **this reverses the 2026-07-02 "chrome
-  marks stay static" ruling** for the persistent desktop sidebar specifically
-  (owner-requested 2026-07-05); Splash and Login keep the same treatment they
-  already had. `test/brand_chrome_test.dart` still passes unchanged (it only
-  asserts a `DropLogo` exists somewhere in the tree, and `AnimatedDropLogo`
-  renders one internally).
+- **Sidebar brand mark is static again:** the persistent desktop `AppSidebar`
+  renders `DropLogo`, not `AnimatedDropLogo`, after the 2026-07-07 idle-freeze
+  fix. Splash and Login keep their animated treatment; always-mounted shell
+  chrome does not.
 - **Fixed uneven card heights** across the admin dashboard and task list grids:
   `DashboardMetricCard` now reserves its trend line's height even when a card
   has no trend (via `Visibility(maintainSize: true)`, not `Opacity`, to avoid
@@ -1133,9 +1204,9 @@ inspected; macOS debug build green). If the Dock caches the old icon:
 (`core/widgets/animated_drop_logo.dart`) — a soft diagonal light band sweeps
 the ~88%-white wordmark once per ~3.2s (ShaderMask srcATop, rests between
 passes, strictly monochrome). Live on the **Splash** lockup (under its
-entrance fade/scale) and the **Login desktop brand panel**; chrome marks stayed
-static at the time (superseded 2026-07-05 — the desktop sidebar now uses it
-too; see the entry near the top of this file). `flutter analyze` clean ·
+entrance fade/scale) and the **Login desktop brand panel**; persistent chrome
+marks stay static, including the desktop sidebar (restored 2026-07-07 after the
+idle-freeze fix). `flutter analyze` clean ·
 **268 tests pass** (+1).
 
 ---

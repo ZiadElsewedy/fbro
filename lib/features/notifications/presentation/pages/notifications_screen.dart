@@ -105,6 +105,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         } else {
           context.push(RouteNames.cases);
         }
+      case 'request_details':
+        final id = n.requestId;
+        if (id != null && id.isNotEmpty) {
+          context.push(RouteNames.requestDetail(id));
+        } else {
+          context.push(RouteNames.requests);
+        }
     }
   }
 

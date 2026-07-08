@@ -17,10 +17,15 @@ class RequestRepositoryImpl implements RequestRepository {
 
   RequestRepositoryImpl(this._remote);
 
-  /// Maps models → entities and orders them for the inbox (active first, pending
-  /// above approved, higher priority, latest activity desc; terminal archived).
+  /// Maps models → entities, drops soft-deleted docs, and orders for the inbox
+  /// (pending first by latest activity, then the decided archive). The deleted
+  /// filter is client-side on purpose: a `where(deletedAt, isNull)` query would
+  /// exclude every existing doc missing the field, and per-scope volume is small.
   List<RequestEntity> _ordered(List<RequestModel> models) =>
-      sortRequestsForInbox(models.map((m) => m.toEntity()).toList());
+      sortRequestsForInbox([
+        for (final m in models)
+          if (m.deletedAt == null) m.toEntity(),
+      ]);
 
   @override
   Stream<List<RequestEntity>> watchAllRequests() =>

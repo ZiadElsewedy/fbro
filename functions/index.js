@@ -51,6 +51,8 @@ const SHIFT_SWAPS = "shift_swaps";
 const RECURRING_TASK_TEMPLATES = "recurringTaskTemplates";
 const CONFIG = "config";
 const CASES = "cases";
+const REQUESTS = "requests";
+const COUNTERS = "counters";
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -2019,3 +2021,302 @@ exports.onCaseMessageCreated = onDocumentCreated(
   },
 );
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Operations Requests (in-the-moment approvals) — server-side timeline +
+//  notifications + the human-friendly REQ-###### sequence.
+//
+//  The client writes the request doc + its comment/attachment events; the Admin
+//  SDK owns everything a client can't be trusted with:
+//    • the opening `submitted` timeline event + the REQ-###### refCode,
+//    • the decision events (approved/rejected),
+//    • the `lastEvent*` inbox bumps,
+//    • every notification (routing depends on branch/role/policy lookups).
+//  No re-fire loop: the lastEvent*/refCode bumps never change `status`, and the
+//  server-written events are `submitted`/lifecycle kinds the event trigger skips.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// A one-line preview of a request event for the inbox row.
+function requestEventPreview(text, attachments) {
+  const t = String(text || "").trim();
+  if (t) return t.slice(0, 140);
+  if (Array.isArray(attachments) && attachments.length > 0) return "📎 Attachment";
+  return "";
+}
+
+// The routed approvers for a request — the request's own-branch managers and all
+// admins — minus [excludeUid]. A request is a simple approval, so the decider is
+// always "the branch manager or an admin"; there is no per-type policy.
+async function resolveRequestApprovers(requestData, excludeUid) {
+  const branchId = String(requestData.branchId || "");
+  const out = new Set();
+  if (branchId) {
+    try {
+      const snap = await db.collection(USERS)
+        .where("branchId", "==", branchId)
+        .where("role", "==", "manager").get();
+      snap.docs.forEach((d) => {
+        if ((d.data() || {}).isActive !== false) out.add(d.id);
+      });
+    } catch (e) { logger.warn("request manager lookup failed", { error: String(e) }); }
+  }
+  try {
+    const snap = await db.collection(USERS).where("role", "==", "admin").get();
+    snap.docs.forEach((d) => {
+      if ((d.data() || {}).isActive !== false) out.add(d.id);
+    });
+  } catch (e) { logger.warn("request admin lookup failed", { error: String(e) }); }
+  out.delete(excludeUid);
+  out.delete("");
+  return [...out];
+}
+
+// Writes one in-app notification doc per recipient (Admin SDK). onNotificationCreated
+// handles the matching push. Best-effort.
+async function writeRequestNotifications(recipientUids, { type, title, body, requestId, senderUid }) {
+  const uids = [...new Set(recipientUids.filter(Boolean))];
+  if (uids.length === 0) return;
+  const payload = { requestId, route: "request_details" };
+  try {
+    for (let i = 0; i < uids.length; i += BATCH_LIMIT) {
+      const slice = uids.slice(i, i + BATCH_LIMIT);
+      const batch = db.batch();
+      for (const uid of slice) {
+        const ref = db.collection(NOTIFICATIONS).doc();
+        batch.set(ref, {
+          id: ref.id,
+          recipientUid: uid,
+          senderUid: String(senderUid || ""),
+          type,
+          title: String(title || "").slice(0, 120),
+          body: String(body || "").slice(0, 500),
+          readAt: null,
+          payload,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    logger.warn("failed to persist request notifications", { error: String(err) });
+  }
+}
+
+// Appends a server-authored timeline event (submitted / lifecycle) + bumps the
+// parent request. Clients cannot write these kinds (firestore.rules).
+async function appendServerRequestEvent(requestId, ev, preview) {
+  try {
+    const evRef = db.collection(REQUESTS).doc(requestId).collection("events").doc();
+    const batch = db.batch();
+    batch.set(evRef, { ...ev, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    batch.update(db.collection(REQUESTS).doc(requestId), {
+      lastEventPreview: preview,
+      eventCount: admin.firestore.FieldValue.increment(1),
+      lastEventAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  } catch (e) {
+    logger.warn("failed to append server request event", { requestId, error: String(e) });
+  }
+}
+
+// Allocates the next human-friendly REQ-###### code via a counter transaction.
+async function nextRequestRefCode() {
+  const ref = db.collection(COUNTERS).doc("requests");
+  try {
+    const seq = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const current = snap.exists ? Number((snap.data() || {}).seq || 0) : 0;
+      const next = current + 1;
+      tx.set(ref, {
+        seq: next,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return next;
+    });
+    return { seq, refCode: `REQ-${String(seq).padStart(6, "0")}` };
+  } catch (e) {
+    logger.warn("failed to allocate request ref", { error: String(e) });
+    return { seq: null, refCode: null };
+  }
+}
+
+// A new request → assign REQ-######, write the opening `submitted` event, and
+// notify the routed approvers.
+exports.onRequestCreated = onDocumentCreated(`${REQUESTS}/{requestId}`, async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const data = snap.data() || {};
+  const requestId = event.params.requestId;
+
+  // 1) Ref code (idempotent — skip if a retriggered create already assigned one).
+  if (!data.refCode) {
+    const { seq, refCode } = await nextRequestRefCode();
+    if (refCode) {
+      try {
+        await db.collection(REQUESTS).doc(requestId).update({ refCode, seq });
+      } catch (e) {
+        logger.warn("failed to write request refCode", { requestId, error: String(e) });
+      }
+    }
+  }
+
+  // 2) Opening timeline event (from the requester's summary + opening media).
+  const summary = String(data.lastEventPreview || "").trim();
+  const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+  await appendServerRequestEvent(
+    requestId,
+    {
+      authorId: String(data.requesterId || ""),
+      authorName: String(data.requesterName || "Requester"),
+      actor: "requester",
+      kind: "submitted",
+      text: summary || null,
+      attachments,
+    },
+    requestEventPreview(summary, attachments),
+  );
+
+  // 3) Notify the routed approvers.
+  const requesterUid = String(data.requesterId || "");
+  const approvers = await resolveRequestApprovers(data, requesterUid);
+  await writeRequestNotifications(approvers, {
+    type: "requestSubmitted",
+    title: "New approval request",
+    body: summary ||
+      `${String(data.requesterName || "An employee")} asked for your approval`,
+    requestId,
+    senderUid: requesterUid,
+  });
+});
+
+// A request's status changed → append the lifecycle event + notify the affected
+// party. Ignores its own lastEvent*/refCode bumps (status unchanged → no re-fire).
+exports.onRequestUpdated = onDocumentUpdated(`${REQUESTS}/{requestId}`, async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const requestId = event.params.requestId;
+
+  const beforeStatus = String(before.status || "pending");
+  const afterStatus = String(after.status || "pending");
+  if (beforeStatus === afterStatus) return;
+
+  // approved / rejected = a decision; pending (from a decided state) = an
+  // admin REOPEN — the client cleared `decided*` and stamped `reopened*`.
+  const kinds = { approved: "approved", rejected: "rejected", pending: "reopened" };
+  const kind = kinds[afterStatus];
+  if (!kind) return;
+
+  const deciderName = String(after.decidedByName || "").trim();
+  const reopenerName = String(after.reopenedByName || "").trim();
+  const label = {
+    approved: deciderName ? `Approved by ${deciderName}` : "Approved",
+    rejected: deciderName ? `Rejected by ${deciderName}` : "Rejected",
+    pending: reopenerName ? `Reopened by ${reopenerName}` : "Reopened",
+  }[afterStatus];
+  const actorUid = afterStatus === "pending"
+    ? String(after.reopenedBy || "")
+    : String(after.decidedBy || "");
+
+  await appendServerRequestEvent(
+    requestId,
+    {
+      authorId: actorUid,
+      authorName: (afterStatus === "pending" ? reopenerName : deciderName) || "System",
+      actor: "system",
+      kind,
+      text: label,
+      attachments: [],
+    },
+    label,
+  );
+
+  const requesterUid = String(after.requesterId || "");
+  if (afterStatus === "pending") {
+    // Reopened → it needs a decision again: tell the branch approvers (minus
+    // the admin who reopened) and the requester.
+    const approvers = await resolveRequestApprovers(after, actorUid);
+    const body = reopenerName
+      ? `${reopenerName} reopened this request — it needs a decision again`
+      : "This request was reopened and needs a decision again";
+    await writeRequestNotifications(approvers, {
+      type: "requestSubmitted",
+      title: "Request reopened",
+      body,
+      requestId,
+      senderUid: actorUid,
+    });
+    if (requesterUid && requesterUid !== actorUid) {
+      await writeRequestNotifications([requesterUid], {
+        type: "requestSubmitted",
+        title: "Request reopened",
+        body: "Your request is being reviewed again",
+        requestId,
+        senderUid: actorUid,
+      });
+    }
+    return;
+  }
+
+  // Notify the requester of the decision.
+  if (requesterUid) {
+    const byStatus = {
+      approved: { type: "requestApproved", title: "Request Approved", body: "Your request was approved" },
+      rejected: { type: "requestRejected", title: "Request Rejected", body: "Your request was rejected" },
+    }[afterStatus];
+    await writeRequestNotifications([requesterUid], {
+      ...byStatus,
+      requestId,
+      senderUid: String(after.decidedBy || ""),
+    });
+  }
+});
+
+// A new comment/attachment event → bump the parent + notify the OTHER party.
+// submitted/lifecycle events are written by the functions above (skipped here).
+exports.onRequestEventCreated = onDocumentCreated(
+  `${REQUESTS}/{requestId}/events/{eventId}`,
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const ev = snap.data() || {};
+    const requestId = event.params.requestId;
+    const kind = String(ev.kind || "comment");
+    if (kind !== "comment" && kind !== "attachmentAdded") return;
+
+    const preview = requestEventPreview(ev.text, Array.isArray(ev.attachments) ? ev.attachments : []);
+    try {
+      await db.collection(REQUESTS).doc(requestId).update({
+        lastEventPreview: preview,
+        eventCount: admin.firestore.FieldValue.increment(1),
+        lastEventAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      logger.warn("failed to bump request on event", { requestId, error: String(e) });
+    }
+
+    const reqSnap = await db.collection(REQUESTS).doc(requestId).get();
+    const data = reqSnap.exists ? (reqSnap.data() || {}) : {};
+    const requesterUid = String(data.requesterId || "");
+    const authorId = String(ev.authorId || "");
+    const byRequester = authorId !== "" && authorId === requesterUid;
+    if (byRequester) {
+      const approvers = await resolveRequestApprovers(data, requesterUid);
+      await writeRequestNotifications(approvers, {
+        type: "requestCommented",
+        title: "New Request Comment",
+        body: preview || "New comment on a request",
+        requestId,
+        senderUid: authorId,
+      });
+    } else if (requesterUid && authorId !== requesterUid) {
+      await writeRequestNotifications([requesterUid], {
+        type: "requestCommented",
+        title: "New Request Comment",
+        body: preview || "New comment on your request",
+        requestId,
+        senderUid: authorId,
+      });
+    }
+  },
+);

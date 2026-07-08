@@ -1,23 +1,23 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:drop/core/enums/request_approval_policy.dart';
-import 'package:drop/core/enums/request_priority.dart';
 import 'package:drop/core/enums/request_status.dart';
 import 'package:drop/core/enums/request_type.dart';
 import 'package:drop/core/enums/user_role.dart';
-import 'package:drop/features/requests/domain/request_schema.dart';
 import 'package:drop/features/task/domain/entities/task_attachment.dart';
 
 part 'request_entity.freezed.dart';
 
-/// A single **operations request** — an in-the-moment approval an employee needs
+/// A single **operations request** — an in-the-moment approval someone needs
 /// during the work day (leave the store, use a staff discount, gift a customer,
-/// pull stock, report maintenance…). Stored at `requests/{id}`; the fully
-/// event-driven activity timeline + comments live in the append-only
+/// pull stock, report maintenance…). Deliberately simple: a request is just a
+/// **type + a short message** (+ optional attachments) that needs a yes/no.
+/// Stored at `requests/{id}`; the timeline (opening submission, the approve /
+/// reject decision, and comments) lives in the append-only
 /// `requests/{id}/events` subcollection.
 ///
 /// Unlike a Case there is **no privacy split** — [requesterId] rides the doc, so
-/// the owner's list is a plain `where('requesterId', ==)` query. The dynamic form
-/// values live in [details] (schema-driven, `Map<String, dynamic>`).
+/// the owner's list is a plain `where('requesterId', ==)` query. The free-text
+/// reason lives in [details] under the `message` key (kept as a small map so the
+/// persistence boundary and future needs stay flexible).
 @freezed
 class RequestEntity with _$RequestEntity {
   const RequestEntity._();
@@ -34,18 +34,12 @@ class RequestEntity with _$RequestEntity {
     /// Owning branch (the requester's branch). Scopes every read/query.
     String? branchId,
     required RequestType type,
-
-    /// Who may decide this request — denormalized from [type] so rules + the
-    /// Cloud Functions + the UI enforce the same gate.
-    @Default(RequestApprovalPolicy.managerOrAdmin)
-    RequestApprovalPolicy approvalPolicy,
     @Default(RequestStatus.pending) RequestStatus status,
-    @Default(RequestPriority.normal) RequestPriority priority,
     required String requesterId,
     String? requesterName,
     @Default(UserRole.employee) UserRole requesterRole,
 
-    /// Dynamic, schema-driven field values (keyed by [RequestFieldSpec.key]).
+    /// The captured values — currently just `{'message': <reason>}`.
     @Default(<String, dynamic>{}) Map<String, dynamic> details,
 
     /// Opening media the requester attached (consumed by `onRequestCreated` into
@@ -61,7 +55,10 @@ class RequestEntity with _$RequestEntity {
     String? decidedBy,
     String? decidedByName,
     DateTime? decidedAt,
-    DateTime? completedAt,
+
+    /// Soft delete (admin-only): the doc stays as a record, the inbox filters
+    /// it out. Never a hard Firestore delete.
+    DateTime? deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _RequestEntity;
@@ -69,10 +66,15 @@ class RequestEntity with _$RequestEntity {
   bool get isActive => status.isActive;
   bool get isTerminal => status.isTerminal;
   bool get isPending => status.isPending;
+  bool get isDeleted => deletedAt != null;
   bool get hasAttachments => attachments.isNotEmpty;
 
-  /// The one-line summary shown on cards / previews (schema-driven).
-  String get summary => RequestSchema.summaryFor(type, details);
+  /// The requester's short reason (the only captured field).
+  String get message => (details['message'] ?? '').toString().trim();
+
+  /// The one-line summary shown on cards / previews — the message, or the type
+  /// label when no message was written.
+  String get summary => message.isNotEmpty ? message : type.label;
 
   /// Timestamp used to order the inbox — latest event, falling back to create.
   DateTime? get lastActivityAt => lastEventAt ?? createdAt;
@@ -87,11 +89,6 @@ class RequestEntity with _$RequestEntity {
   /// once decided.
   Duration? get pendingFor => status.isPending && createdAt != null
       ? DateTime.now().difference(createdAt!)
-      : null;
-
-  /// Time from submission to decision (approved / rejected) — feeds metrics.
-  Duration? get timeToDecision => (createdAt != null && decidedAt != null)
-      ? decidedAt!.difference(createdAt!)
       : null;
 }
 
