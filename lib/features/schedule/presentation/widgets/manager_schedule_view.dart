@@ -22,7 +22,7 @@ import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
 import 'package:drop/features/schedule/domain/move_validation.dart';
-import 'package:drop/features/schedule/domain/schedule_health.dart';
+import 'package:drop/features/schedule/domain/health/schedule_health_analyzer.dart';
 import 'package:drop/features/schedule/domain/schedule_week.dart';
 import 'package:drop/features/schedule/domain/swap_policy.dart';
 import 'package:drop/features/schedule/presentation/cubit/schedule_cubit.dart';
@@ -513,7 +513,10 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       filter: _filter,
       previousSaturdayNight: prevNight,
     );
-    final health = computeScheduleHealth(
+    // The rule-based analyzer (Schedule V2 · Pillar 3) reduces the roster to
+    // one shared analysis and runs the coverage/workload/fairness/rest/conflict
+    // rules over it — computed once per build, alongside the insights.
+    final report = const ScheduleHealthAnalyzer().analyze(
       schedule,
       members,
       nameOf: shortName,
@@ -592,7 +595,7 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         const SizedBox(height: AppSpacing.sm),
         _weekSummary(insights),
         const SizedBox(height: AppSpacing.md),
-        ScheduleHealthCard(health: health),
+        ScheduleHealthCard(report: report),
         const SizedBox(height: AppSpacing.md),
         _gridHint(),
       ],
@@ -634,7 +637,7 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         ScheduleInspectorDrawer(
           schedule: schedule,
           members: members,
-          health: health,
+          report: report,
           insights: insights,
           selectedUid: _selectedUid,
           onSelect: (uid) => setState(() => _selectedUid = uid),

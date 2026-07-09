@@ -11,7 +11,7 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-09 (Schedule V2 — scope locked + Pillar 1a Focus Mode shipped)
+**Last updated:** 2026-07-09 (Schedule V2 — Pillar 3 Health Analyzer shipped)
 **Version:** 1.0.0+1 · **Branch:** `feature/schedule-optimization`
 
 ---
@@ -52,11 +52,30 @@ revisit trigger). ~⅓ of the brief already ships (`shift_hours`, `schedule_heal
   morning/night/weekend split, streak, days off, Sun→Sat glance, wellbeing
   flags). `domain/employee_week_stats.dart` = pure derivation. Tests:
   `schedule_inspector_drawer_test.dart` (4) + `employee_week_stats_test.dart` (3).
-- **▫︎ Next:** Pillar 3 — the **health engine** (owner asked for a rule-based
-  analyzer: modular workload/fairness/rest/coverage rules + score aggregation
-  over the existing `schedule_health.dart`, behaviour-preserving; **not started
-  yet** — the inspector drawer was an owner-directed detour). Pillar 4 (shift
-  templates) still gated behind its own mini-design + owner GO.
+- **✅ Pillar 3 — Health Analyzer (shipped):** Schedule Health is now a **modular
+  domain engine** and the single source of truth for schedule quality. New
+  `domain/health/` package: `ScheduleAnalysis` (one-pass shared signals —
+  `MemberWeek` + per-slot counts), five **independent** pure rules
+  (`CoverageRule` · `WorkloadRule` · `FairnessRule` · `RestRule` ·
+  `ConflictRule`, each a `ScheduleRule.evaluate(analysis)` — no switch/if-else
+  chains, no rule-to-rule coupling), and `ScheduleHealthAnalyzer` folding them
+  into a `ScheduleHealthReport` (`overallScore`/`overallSeverity`, the five
+  `ScheduleRuleResult`s, flattened `findings`/`suggestions`, `findingsFor(uid)`).
+  **Owner overrode the doc's earlier "don't build rule classes" stance** with an
+  explicit prescriptive brief (isolates + configurable policy engine stay OUT).
+  **100% backward compatible:** `schedule_health.dart` is now the facade —
+  `computeScheduleHealth()` delegates to the analyzer and projects the shared
+  analysis through the **frozen original formula** (byte-for-byte; the old
+  `schedule_health_test.dart` passes unchanged). Card enriched (report-driven —
+  overall score `/100` + clickable category breakdown + richer wording),
+  inspector threads the report through, grid untouched. Tests:
+  `schedule_health_analyzer_test.dart` (24) + frozen `schedule_health_test.dart`
+  (6); analyze clean; full suite **649 pass / 3 pre-existing fail**.
+- **▫︎ Next:** Pillar 4 (shift templates) — the only pillar that touches the data
+  model; still **gated behind its own mini-design + explicit owner GO**. Then
+  Pillar 5 (Final View polish) + Pillar 6 (motion/a11y). Grid cell-highlight
+  drill-through for the health breakdown was left out of Pillar 3 ("no layout
+  work") — a small future increment.
 
 **Focus Mode persistence** across a cold launch is a deferred TODO (needs
 `shared_preferences`; owner to decide) — in-session persistence works today.

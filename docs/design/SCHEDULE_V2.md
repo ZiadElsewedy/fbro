@@ -73,7 +73,7 @@ Pulled from standing owner rulings — these are non-negotiable framing, not asp
 
 | # | Item | Why out | Revisit trigger |
 |---|---|---|---|
-| 5/7 | 9-class isolated Rule-Engine + configurable policy engine | 4 finding kinds is not a "giant if-statement" problem. Abstraction cost > benefit. | Finding kinds grow past ~10 AND rules need per-branch config. |
+| 5/7 | 9-class **isolated** Rule-Engine + **configurable policy** engine | ⚠️ **Partially lifted (2026-07-09, owner-directed):** the bounded **5-rule analyzer** now ships in Pillar 3 (`domain/health/`). What stays ❌ is the *enterprise* part — background **isolates** and a **configurable per-branch policy** engine (rules stay hard-coded + advisory). | Rules need per-branch config, OR a profiler shows real jank needing isolates. |
 | 8 | Full metadata audit trail (createdBy/updatedBy/reason/previousEmployee/source) | Jira-grade traceability the owner explicitly rejected on Requests. | A real dispute/accountability need appears. |
 | 9 | Schedule history / snapshots / rollback / compare revisions | Versioning system for a handful of managers. | Managers actually ask to undo a *published* week. |
 | — | Versioning (v1/v2/v3), draft-vs-published, shift locking | Enterprise workflow engine. | Employees see wrong in-progress edits AND that causes real confusion. |
@@ -126,14 +126,23 @@ Each pillar states **Goal · Architecture · UX · Logic · Risk · Out-of-scope
 
 **Pillar 2 is complete.** Next: Pillar 3 (Health, Made Legible).
 
-### Pillar 3 — Health, Made Legible
-- **Goal:** turn the existing 0–100 score into a clickable breakdown that drills into the exact cells.
-- **Architecture:** keep `domain/schedule_health.dart`. Do **not** rebuild into 9 rule classes. Add derived per-category subscores (Coverage / Fairness / Rest / Conflicts / Workload) computed from the existing findings. Extend `widgets/schedule_health_card.dart` to render the breakdown; each category taps through to highlight affected cells by reusing the existing insight-highlight path (`schedule_insights.dart` + the grid's `activeInsight` dimming).
-- **UX:** Overall Health % + label (exists) → tap a category → grid lights the offending slots, dims the rest.
-- **Logic:** subscores are pure/derived. Memoize `computeScheduleHealth` per schedule identity so rebuilds don't recompute. Advice-never-gate stays.
-- **Risk:** **LOW.**
-- **Out-of-scope:** heatmaps, AI fixes, one-click auto-fix (❌ #13/#14).
-- **Done-when:** breakdown renders; each category drills to cells; no recompute on unrelated rebuilds.
+### Pillar 3 — Health Analyzer ✅ (shipped 2026-07-09)
+- **Goal:** make Schedule Health the **single source of truth for schedule quality** — a pure, modular domain engine that computes the read and exposes a structured report, with the card as a thin presentation layer over it.
+- **⚠️ Owner-directed scope change:** this pillar was originally scoped *"do **not** rebuild into rule classes — add derived subscores over the existing `computeScheduleHealth`."* The owner **overrode that** on 2026-07-09 with an explicit, prescriptive brief: build a **modular rule-based analyzer** (independent Coverage / Workload / Fairness / Rest / Conflict rules → aggregated report). So the ❌ #5/7 line below is **partially lifted** — the *bounded 5-rule analyzer is now IN*; what stays ❌ is the **enterprise** part (background isolates, a configurable per-branch *policy* engine, 9+ classes). This is a deliberate, recorded reversal.
+- **Architecture (as built):** new `domain/health/` package —
+  - `schedule_analysis.dart` — `ScheduleAnalysis.of(...)` reduces the roster to shared per-member + per-slot signals in **one pass** (`MemberWeek`); every rule reads these, none re-walks the roster.
+  - `schedule_rule.dart` — `ScheduleRule` (abstract, pure `evaluate(analysis)`), `ScheduleRuleResult`, `RuleFinding`, `ScheduleHealthSeverity` (none/low/medium/high), `ScheduleRuleCategory`.
+  - `rules/` — `CoverageRule`, `WorkloadRule`, `FairnessRule`, `RestRule`, `ConflictRule`, each ~one screen, fully independent (no switch/if-else chains, no rule-to-rule coupling).
+  - `schedule_health_report.dart` — `ScheduleHealthReport` (`overallScore`/`overallSeverity`, the five `ScheduleRuleResult`s, flattened `findings`/`suggestions`, `findingsFor(uid)`, the shared `analysis`).
+  - `schedule_health_analyzer.dart` — `ScheduleHealthAnalyzer` folds the rules over the analysis → report. Synchronous, **no async/isolates**. Adding a lens = one rule file + one line in `defaultRules` (OCP).
+- **Backward compatibility:** `domain/schedule_health.dart` is now the **facade** — `ScheduleHealth`/`HealthFinding`/`HealthFindingKind` preserved, and `computeScheduleHealth()` **delegates to the analyzer** then projects the report's shared analysis back through the original scoring formula, **byte-for-byte identical** (the pre-existing `schedule_health_test.dart` passes unchanged).
+- **UX (card only, no redesign):** `schedule_health_card.dart` now consumes the `ScheduleHealthReport` — overall score `/100`, severity dot, and a **clickable category breakdown** (tap a lens → filter its findings), with the richer rule wording. Monochrome kept (white → grey → amber dot). Inspector drawer threads the report through unchanged; grid cell-drill deferred (kept out of scope — "no layout work").
+- **Logic:** rules are pure/derived; the analysis is computed **once per build** (same cost as the old single call). Advice-never-gate stays — even a `high` finding never blocks an edit or publish.
+- **Risk:** **LOW–MED** (new domain package; presentation swap). Realised LOW — analyze clean, backward-compat proven, zero regressions.
+- **Out-of-scope (still ❌):** grid cell-highlight drilling, heatmaps, AI fixes, one-click auto-fix (#13/#14), isolates (#17), configurable policy engine (#5/7).
+- **Tests:** `schedule_health_analyzer_test.dart` (24 — each rule in isolation, aggregation, OCP custom-rule set, backward compat incl. the silent double-book penalty) + the frozen `schedule_health_test.dart` (6). Full suite **649 pass / 3 pre-existing fail**.
+
+**Pillar 3 is complete.** Next: Pillar 4 (Shift Templates) — still gated behind its own mini-design + owner GO.
 
 ### Pillar 4 — Shift Templates (the bounded 🟡)
 - **Goal:** named, reusable shift-hour templates (e.g. Morning 08:30→16:30, Weekday Night 15:00→23:00) with an explicit change scope. **Never silently overwrite historical schedules.**

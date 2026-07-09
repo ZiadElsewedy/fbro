@@ -4,7 +4,7 @@ import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
-import 'package:drop/features/schedule/domain/schedule_health.dart';
+import 'package:drop/features/schedule/domain/health/schedule_health_analyzer.dart';
 import 'package:drop/features/schedule/presentation/schedule_insights.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_inspector_drawer.dart';
@@ -38,7 +38,8 @@ void main() {
   });
   final members = [_user('u1', 'Ziad Elsewedy', position: 'Cashier')];
   final insights = computeScheduleInsights(schedule, members);
-  final health = computeScheduleHealth(schedule, members, nameOf: shortName);
+  final report =
+      const ScheduleHealthAnalyzer().analyze(schedule, members, nameOf: shortName);
 
   Future<void> pump(
     WidgetTester tester, {
@@ -53,7 +54,7 @@ void main() {
           child: ScheduleInspectorDrawer(
             schedule: schedule,
             members: members,
-            health: health,
+            report: report,
             insights: insights,
             selectedUid: selectedUid,
             onSelect: onSelect,

@@ -9,7 +9,7 @@ import 'package:drop/core/widgets/user_avatar.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/schedule/domain/employee_week_stats.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
-import 'package:drop/features/schedule/domain/schedule_health.dart';
+import 'package:drop/features/schedule/domain/health/schedule_health_analyzer.dart';
 import 'package:drop/features/schedule/presentation/schedule_insights.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_health_card.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
@@ -28,7 +28,7 @@ class ScheduleInspectorDrawer extends StatelessWidget {
     super.key,
     required this.schedule,
     required this.members,
-    required this.health,
+    required this.report,
     required this.insights,
     required this.selectedUid,
     required this.onSelect,
@@ -37,7 +37,7 @@ class ScheduleInspectorDrawer extends StatelessWidget {
 
   final WeeklyScheduleEntity schedule;
   final List<UserEntity> members;
-  final ScheduleHealth health;
+  final ScheduleHealthReport report;
   final ScheduleInsights insights;
 
   /// The employee whose detail is shown; null = the overview. Ignored if the
@@ -86,7 +86,7 @@ class ScheduleInspectorDrawer extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         _sectionLabel('Schedule health'),
         const SizedBox(height: AppSpacing.sm),
-        ScheduleHealthCard(health: health),
+        ScheduleHealthCard(report: report),
         if (roster.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.lg),
           _sectionLabel('Team · tap for detail'),
@@ -151,8 +151,7 @@ class ScheduleInspectorDrawer extends StatelessWidget {
   // ── Employee detail ────────────────────────────────────────────
   Widget _employee(UserEntity member) {
     final stats = computeEmployeeWeekStats(schedule, member.uid);
-    final warnings =
-        health.findings.where((f) => f.uid == member.uid).toList();
+    final warnings = report.findingsFor(member.uid);
     final position = member.position?.trim();
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, AppSpacing.md, 20, AppSpacing.xl),
@@ -281,7 +280,7 @@ class ScheduleInspectorDrawer extends StatelessWidget {
     );
   }
 
-  Widget _warning(HealthFinding finding) {
+  Widget _warning(RuleFinding finding) {
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: Row(
@@ -300,7 +299,7 @@ class ScheduleInspectorDrawer extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     )),
                 const SizedBox(height: 1),
-                Text(finding.recommendation, style: AppTypography.caption),
+                Text(finding.suggestion, style: AppTypography.caption),
               ],
             ),
           ),

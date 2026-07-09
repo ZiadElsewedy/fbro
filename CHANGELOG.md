@@ -12,6 +12,63 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added (2026-07-09 — Schedule V2, Pillar 3: Health Analyzer, `feature/schedule-optimization`)
+
+Third pillar of **Schedule V2** — Schedule Health rebuilt from a single function
+into a **modular, rule-based domain engine**, the single source of truth for
+schedule quality. **100% backward compatible** (the old public API + its test
+are untouched); the existing UI is enriched, not redesigned.
+
+> **⚠️ Owner-directed scope change (recorded):** the Schedule V2 contract
+> originally scoped this pillar as *"do **not** rebuild into rule classes — add
+> derived subscores over the existing engine."* The owner **overrode that** with
+> an explicit, prescriptive brief for a modular analyzer with independent rules.
+> The *bounded 5-rule analyzer is now IN*; the enterprise parts (background
+> **isolates**, a configurable per-branch **policy** engine) stay OUT. See
+> `docs/design/SCHEDULE_V2.md` §Pillar 3 + the annotated ❌ #5/7 row.
+
+- **Added — `domain/health/` package** (pure Dart, Flutter-free, unit-tested):
+  - `schedule_analysis.dart` — `ScheduleAnalysis.of(...)` reduces the roster to
+    shared per-member (`MemberWeek`) + per-slot signals in **one pass**; rules
+    read these, none re-walks the roster (single traversal, no duplicated calc).
+  - `schedule_rule.dart` — `ScheduleRule` (abstract, pure `evaluate(analysis)`) +
+    `ScheduleRuleResult` + `RuleFinding` + `ScheduleHealthSeverity`
+    (none/low/medium/high) + `ScheduleRuleCategory`.
+  - `rules/` — **five completely independent rules**: `CoverageRule` (gaps,
+    lone/overstaffed, all relative to the branch's own rhythm — **never a
+    quota**), `WorkloadRule` (weekly hours, shift volume, uneven spread),
+    `FairnessRule` (night/weekend/morning concentration), `RestRule` (short rest,
+    consecutive nights, long streak, morning↔night churn), `ConflictRule`
+    (double-booking, in-slot duplicate, on-leave placement). No switch/if-else
+    chains, no rule-to-rule coupling.
+  - `schedule_health_report.dart` — `ScheduleHealthReport`: `overallScore`,
+    `overallSeverity`, the five `ScheduleRuleResult`s, flattened + ranked
+    `findings`/`suggestions`, `findingsFor(uid)`, and the shared `analysis`.
+  - `schedule_health_analyzer.dart` — `ScheduleHealthAnalyzer` folds the rules
+    over the analysis → report. **Synchronous, no async/isolates.** Adding a lens
+    = one rule file + one `defaultRules` entry (Open/Closed).
+- **Refactored — `domain/schedule_health.dart` → the backward-compatible facade.**
+  `ScheduleHealth`/`HealthFinding`/`HealthFindingKind` preserved;
+  `computeScheduleHealth()` now **delegates to the analyzer** and projects the
+  report's shared analysis back through the **original scoring formula** —
+  **byte-for-byte identical** output. `scheduleHealthFromReport()` exposes that
+  projection.
+- **Changed — `schedule_health_card.dart` consumes the report** (not a redesign):
+  overall score `/100`, severity dot, and a **clickable category breakdown** (tap
+  a lens → filter its findings), with the richer rule wording. Strictly
+  monochrome (white → grey → amber). `manager_schedule_view.dart` computes the
+  report once per build via the analyzer (same cost as the old single call);
+  `schedule_inspector_drawer.dart` threads the report through (its per-employee
+  wellbeing flags now read `report.findingsFor(uid)`). Grid untouched — cell
+  drill-through deliberately deferred ("no layout work").
+- **Tests:** `test/schedule_health_analyzer_test.dart` (**24** — each rule in
+  isolation, analyzer aggregation, OCP custom-rule set, backward compatibility
+  incl. the silent double-book penalty) + the frozen
+  `test/schedule_health_test.dart` (6, **unchanged, still green**). `flutter
+  analyze` clean; full suite **649 pass / 3 pre-existing fail** (the 2
+  splash-centering + 1 stale `notification_grouping` tests, all in untouched
+  files). No schema/rules/functions/DI/route/dependency change.
+
 ### Added (2026-07-09 — Schedule V2, inspector drawer, `feature/schedule-optimization`)
 
 The right-hand rail (Pillar 1b) had a big empty area below its stats — turned it
