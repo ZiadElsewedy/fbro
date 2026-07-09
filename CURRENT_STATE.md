@@ -11,299 +11,59 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-09 (Admin Dashboard V2 — release-candidate hardening, ready to merge)
-**Version:** 1.0.0+1 · **Branch:** `core/optimization` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-08 (Community Hub / DROP Events — flagship event workspace)
+**Version:** 1.0.0+1 · **Branch:** `claude/community-hub-events-pzjvbp` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-08 (Requests closed out: analyzer clean + tests green)
+**Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-08 (Work Details design system + Create Work sheet UX)
+**Version:** 1.0.0+1 · **Branch:** `feature/work-management-system` (DROP — monochrome premium desktop UX)
 
 ---
 
-## 🚦 Admin Dashboard V2 — RELEASE CANDIDATE (ready to merge, 2026-07-09)
+## ✅ Community Hub / DROP Events — the flagship event workspace (2026-07-08)
 
-**Final RC audit of the Admin Dashboard V2 work (premium pass → hierarchy audit →
-polish pass) before merge to `main`.** No behaviour change in this audit — bug
-hunt + git hygiene only.
+A whole new flagship feature (`lib/features/community/`): the **Community Hub**
+manages every internal and external DROP event, and every event is **its own
+operational workspace**, not a calendar row. Built full-stack, clean-architecture,
+strictly monochrome-premium — reusing the existing design system end-to-end.
 
-- **Bug fixes:** (1) the Create Task start→due timeline can no longer overflow on a
-  narrow phone at large text scale (dropped the long "Due · next day" label —
-  overnight is the moon on the duration pill — and ellipsised the endpoints); (2)
-  the two forever-running animations (hero pulse dot, feed "all clear" badge) are
-  wrapped in `RepaintBoundary` so they repaint only their own layer.
-- **Bug hunt (clean):** every added `AnimationController` is disposed
-  (`_LivePulseDot`, `_AllClear`, `_SyncButton`, `Skeleton`); every forever-animation
-  is reduced-motion gated with a static fallback; async paths guard `mounted`; the
-  hero mood selector is a value-equal record so it rebuilds only when a count moves;
-  `PageStorageKey` scroll restoration + `push`-based drills preserved; a11y semantics
-  intact (`AttentionTile` announces "…, all clear" at zero).
-- **Git hygiene:** reverted a stray whitespace edit in an unrelated schedule file;
-  declined a blanket `dart format` (it churned pre-existing house-style code — the
-  branch is analyzer-clean already), keeping the diff minimal and focused. The V2
-  work spans **3 commits** on 17 files (12 lib + 2 test + 3 docs), no unrelated files.
-- **Verification:** `flutter analyze` clean (1 pre-existing info, untouched test);
-  `dart format` house-style consistent; full suite **634 pass / 3 pre-existing fail**
-  (2 splash-centering geometry + 1 stale `notification_grouping` category list — all
-  unrelated, untouched files). On-device visual QA (macOS/mobile) is owner-side.
-- **Verdict: safe to merge.** No known defects in scope; behaviour, business logic,
-  schema, rules and the living-border / monochrome identity are unchanged.
-
----
-
-## ✅ Admin Dashboard premium polish pass — alive & under control (2026-07-09)
-
-**Presentation-only craft pass. No architecture / information-architecture /
-business-logic / schema / rules change.** Owner brief: make the dashboard feel
-*alive, expensive and under control* even at zero tasks/requests/notifications —
-tasteful motion encouraged, but keep DROP's identity (no flatten).
-
-- **Contextual system mood** (`lib/features/admin/presentation/dashboard_mood.dart`,
-  pure + `dashboard_mood_test.dart`): the hero subtitle now reads the live
-  operational state — "2 tasks need your attention" / "5 reviews waiting" /
-  "Everything's running smoothly" / "Busy afternoon" / "Quiet morning" — escalating
-  calm → attention → busy. Beside it a **breathing pulse dot** signals "the system is
-  alive" (meaningful colour: light grey calm, warning when attention); reduced-motion
-  → static dot. The operational scope (`N branches · N employees · N running`) stays
-  as the quiet line beneath.
-- **Positive zero-states:** `AttentionTile` gained `clearedMessage` — at zero it shows
-  a check + a reassuring line ("No overdue tasks", "Everything reviewed", "Every task
-  has an owner", "Nothing sent back", "No pending swaps") instead of a switched-off
-  "0". Semantics announce "…, all clear".
-- **Animated empty state:** the activity feed's "All clear" is a softly breathing
-  check badge (calm heartbeat) with warmer copy; reduced-motion static.
-- **Visual depth:** `GlassContainer` rest shadow is now a **two-layer** shadow
-  (tight contact + soft ambient) so cards read a clear near/far layering — depth with
-  no added colour. Hover deepens both.
-- **Create Task:** a tangible **start → due timeline** visualises the scheduled window
-  (tabular endpoint times, a track with end nodes, the duration riding the middle, a
-  moon for overnight); the **picker tiles** warm on desktop hover; the feed's loading
-  state is premium **skeleton rows**, not a bare spinner.
-- **Verification:** `flutter analyze` clean (0 new); full suite **634 pass / 3
-  pre-existing fail** (2 splash-centering + 1 stale notification-category, untouched
-  files). New/updated tests: `dashboard_mood_test.dart` (8) + an `AttentionTile`
-  cleared-state test. On-device visual QA (macOS/mobile) is owner-side — the app
-  can't be signed/run in this environment.
-
----
-
-## ✅ Admin Dashboard V2 — COMPLETE (premium pass + hierarchy audit, 2026-07-09)
-
-**Presentation-only craft pass. No schema/rules/functions/cubit/route/save-path
-change.** Goal: make the Admin Dashboard + Create Task feel like expensive
-enterprise software (Apple-grade calm hierarchy + tactile micro-interactions)
-**without flattening** the DROP identity — glass surfaces, living border and rich
-metrics all preserved. **Owner has signed this off as the close of Admin Dashboard
-V2 — no further features / no scope expansion on this branch.**
-
-- **Close-out hierarchy audit.** Every text element on the dashboard + Create Task
-  was mapped to exactly one ladder rung so **no two adjacent texts share a grey**:
-  metric cells read **white value → light-grey label → medium-grey sublabel**
-  (`AttentionTile`, `StatStrip`, operations digest); relative timestamps, eyebrows
-  and helper/schedule notes → **medium grey**; branch names → **light grey**; field
-  placeholders, zero-state numbers and decorative meta → **dark grey**. The
-  role→rung mapping is recorded in the `DESIGN_SYSTEM_V2` ramp table (the canonical
-  reference for future modules).
-
-- **Visual language — 4-step text ramp.** Added `AppColors.textQuaternary`
-  (disabled/faint meta) so the neutral ladder is now four clearly-separated steps:
-  `textPrimary #FFFFFF` (titles) → `textSecondary #A7A7AF` (secondary) →
-  `textTertiary #6E6E77` (supporting) → `textQuaternary #48484E` (disabled). The
-  two mid-greys were nudged so **no two levels share a brightness** — the fix for
-  "too many texts share similar brightness / low-contrast gray-on-gray". Global
-  and value-only (a contrast improvement on every screen; no layout change).
-- **Motion.** `GlassContainer` gains a **desktop hover elevation** (−2px lift +
-  deeper shadow + warmed border; flat tiles get a soft hover shadow) — every
-  tappable card now "gently elevates on hover", reduced-motion honoured. Numbers
-  animate (`AttentionTile` count-up, `StatStrip` value cross-fade); the hero CTA
-  scales on press + lifts on hover; sections + activity rows stagger-fade in.
-- **Needs Attention (the heart).** `AttentionTile` is more dominant + actionable:
-  larger **display-weight** count, a quiet arrow-outward "go triage" affordance
-  when there's work, a taller min-height, and the full 4-level hierarchy (stays
-  calm/faint at zero). The single most-urgent tile still carries the living border;
-  everything else stays calm. a11y contract unchanged (`N label` semantics, ≥44px).
-- **Recent activity.** Rows enter with a staggered fade+rise via `LiveListItem`
-  (keyed reuse ⇒ only a genuinely new task animates in — natural live inserts, the
-  settled rows stay put); reduced-motion falls back to static. Time/meta demoted to
-  the faint level → a cleaner premium timeline, not a spreadsheet.
-- **Create Task — progressive workflow.** The sheet is re-sequenced into
-  **General → Steps → Assignment → Schedule → Review → Attachments**: priority +
-  repeats moved into their own **Review** group, the start/due window isolated in a
-  **Schedule** group, reference images moved to the end. Same fields + save paths;
-  clearer disclosure. Plus **bespoke monochrome date/time pickers**
-  (`DatePickerTheme`/`TimePickerTheme`) so start/due no longer look like stock
-  Material.
-- **Verification:** `flutter analyze` clean (0 new; 1 pre-existing info in an
-  untouched test). Full suite **625 pass / 3 pre-existing fail** (2 splash-centering
-  geometry + 1 stale `notification_grouping` category list — all unrelated, in
-  untouched files). Existing widget tests (`dashboard_primitives_test`,
-  `dynamic_work_form_test`) green against the enhanced primitives. On-device visual
-  QA (macOS/mobile) is owner-side — the app can't be signed/run in this environment.
-
----
-
-## ✅ Task Scheduling V2 — Smart Scheduling (2026-07-08)
-
-**Additive feature, no migration / no rules / no backend change.** A task now carries a
-real **start** and **due** time, pre-filled from its shift as a *smart default the
-manager can always override* — "shift times are suggestions, not restrictions".
-
-- **Data model (additive):** `TaskEntity.startsAt` + a `dueAt` getter aliasing the
-  existing `deadline` (still the physical due field, so all prior reads + old docs are
-  unchanged). `TaskModel` parses/serializes `startsAt` as a `Timestamp` in parallel to
-  `deadline`. Old docs → `startsAt == null`. `TaskCubit.createTask` gained a `startsAt`
-  param (optional; every other call site omits it).
-- **Derived phase (`domain/task_schedule.dart`, pure):** `TaskSchedulePhase`
-  (Scheduled · Active · Due-soon · Overdue · Done) computed from `startsAt`/`dueAt` +
-  the lifecycle — **not** a persisted status, no auto-status engine, `TaskStatus`/rules
-  untouched. Plus `shiftDefaultSchedule(date, shift)` (overnight-aware, via
-  `ShiftHours.standard`) and `dueSoonCount`.
-- **Schedule UI:** the create/edit form's Deadline field became a **Schedule** section
-  (`_ScheduleField`/`_ScheduleBanner`) — Start + Due **date & time**, pre-filled when a
-  shift is picked, with a banner "Suggested from Morning shift · 08:30 – 16:30 · Reset"
-  that flips to "Custom schedule · Reset to shift" the moment either value is edited.
-  Never locked.
-- **Dashboard/cards:** admin Today strip gains **Due soon** (`dueSoonCount`); the task
-  card shows a "Starts …" chip while upcoming, and Task Details shows the start→due
-  window (Overdue already reads `dueAt`).
-- **Refinement pass (2026-07-08):** (1) **smart default beyond shift assignment** —
-  `TaskCubit.resolveAssigneeShift` reads the branch roster and, for an individual/team
-  task, suggests the assignees' shift when unanimous, shows a **Morning/Night/Custom
-  chooser** when mixed, or stays manual when nobody's rostered (pure `assigneeShiftFit`);
-  (2) **validation** — a due-at/before-start is a blocking error, an outside-shift-hours
-  window is a **non-blocking** warning (user stays in control); (3) **overnight** fully
-  supported (absolute instants; start 23:00 → due 03:00 next day); (4) the banner keeps
-  the **original** shift after customization ("Custom schedule / Originally: Morning shift
-  · 08:30–16:30 / Reset to shift"); (5) **estimated duration** (`dueAt−startsAt`) shown in
-  the Schedule section; (6) Task Details shows Starts · Due · **phase** · **Completed** ·
-  **Est. duration**.
-- **Verification:** `flutter analyze` clean; build_runner regenerated the entity;
-  `task_schedule_test.dart` (16) + `task_model_schedule_test.dart` (2, incl. legacy-absent
-  → null). Full suite **625 pass / 3 pre-existing fail** (2 splash + 1 stale
-  notification-category test — untouched files). The Schedule banner/chooser are private
-  `part` widgets over the unit-tested pure logic (`shiftDefaultSchedule` / `assigneeShiftFit`
-  / duration / phase), so their pixels are left to on-device QA.
-- **Deferred (follow-up):** schedule-aware notifications (`reminder_rules.dart` + Cloud
-  Functions: starts-in-15m · due-in-30m · shift-ended-incomplete) and duration analytics
-  (expected `dueAt−startsAt` vs actual `completedAt−startsAt`).
-
----
-
-## ✅ DROP Design System V2 — Phase 1: Admin dashboard + reusable primitives (2026-07-08)
-
-**Presentation + design-system foundation. No schema/rules/functions/backend/business-logic
-change; every cubit call, route and save path is unchanged.** The Admin Home was
-re-ranked around **"what needs my attention right now?"** through *calm hierarchy* (not
-reduction) — keeping the premium DROP identity — and the building blocks were extracted as
-**reusable core primitives** every future module inherits. See
-[docs/design/DESIGN_SYSTEM_V2.md](docs/design/DESIGN_SYSTEM_V2.md).
-
-- **4 new core primitives** (`lib/core/widgets/`): `PageHero`, `AttentionTile`, `StatStrip`,
-  `ActivityCard` — each with a Semantics label, ≥44px targets, reduced-motion honouring, and
-  lazy/capped rendering for collections. Pure core (no core→feature coupling): the living
-  border is applied by the feature via `AttentionTile.radius`, not imported by the primitive.
-- **Admin Home re-assembly** (`admin_dashboard_screen.dart`, rewritten): Hero (one *Create
-  Task* CTA) → **Needs attention** dominant (Pending review · Overdue · Unassigned · Sent-back ·
-  Swaps; single most-urgent tile carries the living border) → **Today** strip → **Recent
-  activity** (`RecentActivityFeed`, **no home filters**) → **Operations digest** (requests ·
-  cases · schedule coverage) → Quick actions / Manage / Branch pulse. Preserved the scoped
-  `BlocSelector` rebuild architecture (live, no manual refresh), plus `PageStorageKey` +
-  reduced-motion entrance gating.
-- **Context-preserving navigation:** extracted the feed's preview sheet into shared
-  `showTaskPreviewSheet` / `openTaskDetails` (`task_preview_sheet.dart`); `task_feed_section.dart`
-  now delegates to them (behaviour-identical for admin **and** manager home). Needs-attention
-  drills push a reusable `FilteredTasksScreen` on the caller's navigator — Back returns to the
-  dashboard exactly where it was.
-- **Pure derivations** (`task_metrics.dart`): `overdueCount` / `reviewCount` /
-  `runningNowCount` / `unassignedCount` / `rejectedCount` / `approvalRatePct`, reusing the
-  canonical feed predicates.
-- **Verification:** `flutter analyze` clean (0 new). New tests `task_metrics_test.dart` (8) +
-  `dashboard_primitives_test.dart` (widget: hero CTA, attention count+tap+reduced-motion+a11y,
-  stat strip, activity card). Full suite **609 pass / 3 pre-existing fail** (2 splash-centering
-  + 1 stale `notification_grouping_test` expecting the old category list — all unrelated, in
-  untouched files). Manager Home, `LiveStatusBorder` motion/colours, and all backend untouched.
-- **Deferred (later V2 phases, owner-sequenced):** P2 Branches experience + Branch workspace ·
-  P3 Mobile UX · P4 Image cropper/media · P5 remaining polish. On-device visual QA is owner-side.
-
----
-
-## 📐 Performance Baseline (Phase 0.1, `core/optimization`, 2026-07-08)
-
-**Measurement only — no code changed.** New docs: `docs/performance/PERFORMANCE_BASELINE.md`
-(current-state metrics: startup, screens, resources, Firestore, architecture) +
-`docs/performance/PERFORMANCE_BASELINE_ACTIONS.md` (findings ranked Critical→Low,
-backlog only). Static metrics captured from source; runtime numbers (start ms,
-memory, CPU, FPS) marked `NOT CAPTURED` with a device-profiling capture protocol
-(nothing fabricated). **#1 finding:** unbounded Firestore reads — 0 cursor
-pagination anywhere, only 2 `.limit()` sites — the scaling blocker. Do **not**
-implement any action in this phase.
-
----
-
-## 🛡️ Production Readiness Audit (`core/optimization`, 2026-07-08)
-
-**Report-first reliability audit → `docs/PRODUCTION_READINESS_AUDIT.md`. Verdict:
-already well-hardened, zero critical/high defects.** No memory leaks (flagged
-controllers are param-owned / correct merge teardown); every cubit `.listen()`
-has `onError`→`.error` with `!_hasSnapshot` guard; Firebase/Timeout→honest
-`ServerException`; loading/error/empty + retry everywhere; offline persistence +
-`count()` fallback; 4 crash funnels + release breadcrumbs. **Only fix implemented
-(M1):** the 6 intentional best-effort `catch (_) {}` swallows (branch-name /
-directory / seen-dot) now log via `AppLog.warning` for crash-report breadcrumbs
-(control flow unchanged; analyzer clean; suite unchanged). Deferred: M2
-(`developer.log`→`AppLog` consistency, 35 sites). Don't re-add silent swallows.
-
----
-
-## ⚡ Sprint 2 — Render/Rebuild audit + const pass (`core/optimization`, 2026-07-08)
-
-**Rendering perf, pixel-perfect, zero behavior change.** Audit
-`docs/performance/SPRINT2_RENDER_AUDIT.md` (Steps 1–8). **Implemented Phase A —
-const pass:** `flutter_lints` doesn't enable `prefer_const_*`; found 174 missing
-consts, applied ~130 via `dart fix` across 56 files (behavior-identical; analyzer
-clean; suite unchanged; lint config reverted; no generated files touched).
-**Recommended/deferred (need live verify — blocked on signing):** `BlocSelector`
-for scalar chrome (notifications/cases/requests/statistics/profile), `child:`
-hoisting, ListView→`.builder` on paginated feeds, image cache. Home/Schedule
-rebuild-scoping = frozen, untouched. `buildWhen` is still 0 / `BlocSelector` only
-in admin_dashboard (the reference) — widening it is staged, not done blind.
-
----
-
-## 🗂️ Sprint 1 QW#3 — split `task_action_sheets.dart` (`core/optimization`, 2026-07-08)
-
-**Organizational extraction only — no behavior/UI/API change.** The 2,447-line
-`task_action_sheets.dart` (40 classes) is now a `task_action_sheets/` folder of
-**8 `part` files** by responsibility (task_form / branch_picker / checklist /
-assignee_picker / assign / review / shift_pickers / shared·form_primitives);
-main = 136 lines (imports + `part` directives + the 4 public `show*` fns +
-SheetHandle/SheetTitle). Used Dart `part`/`part of` (one library) so the ~33
-interdependent `_`-private widgets stay shared **without going public** — zero
-circular-import risk, external imports unchanged. Analyzer clean, suite unchanged.
-`SheetHandle` also exists in `schedule/sheet_chrome.dart` (cross-feature dup) —
-flagged for a later core/widgets promotion, not touched here.
-
----
-
-## 🔎 Sprint 1 QW#2 — Firestore Query Audit (`core/optimization`, 2026-07-08)
-
-**Audit only — no code changed.** `docs/performance/FIRESTORE_QUERY_AUDIT.md`
-inventories every client query (14 datasources) at real internal-ops scale.
-Verdict: healthy — point reads + bounded collections dominate; `notifications`
-(limit+index) and stats `count()` are exemplary; **no missing composite index**.
-Deferred work only: pagination on 6 admin/global streams (`watchAllTasks` first)
-+ `managerStats`→`count()`. Do not add limits/pagination in this sprint.
-
----
-
-## 🧹 Sprint 1 — single `AppDateFormatter` (`core/optimization`, 2026-07-08)
-
-**Code-quality consolidation, zero visual change.** `lib/core/utils/app_date_formatter.dart`
-is now the ONE place a `DateTime` becomes user-visible text (methods: `time`,
-`dayMonth`, `dayMonthYear`, `monthDayYear`, `dayMonthYearTime`, `weekdayDayMonth`,
-`numeric`, `relative`). Deleted 21 duplicated month arrays (+2 weekday arrays,
-+4 AM/PM blocks; net −192 lines) across 21 files; feature `*_format.dart`
-helpers now delegate to it.
-Analyzer clean; full suite green (only 3 pre-existing, date-unrelated failures).
-Intentionally left out: domain `notify_task_event` (avoids domain→core/utils
-coupling), 24h `ShiftHours.format`, machine `yyyy-MM-dd` keys, and `Duration`
-labels. **New date formatting must go through `AppDateFormatter` — do not
-re-introduce inline month arrays.**
+- **An event = one self-contained document with every section embedded.**
+  `EventEntity` (plain immutable, no codegen — the `BroadcastScheduleEntity`
+  pattern) carries identity **and** the workspace sections inline: timeline
+  milestones (by `EventPhase`), team assignments, tasks (reusing `TaskPriority`),
+  inventory, logistics, budget lines, announcements, and the after-event outcome.
+  So `events/{id}` streams the whole live workspace as one snapshot, and every
+  edit is one atomic `updateEvent` (the cubit's single write path:
+  `copyWith` → save).
+- **Intelligence, not CRUD.** `event_readiness.dart` (pure, unit-tested) computes
+  a 0–100 readiness score + ranked blockers/warnings/wins: missing owner, no date,
+  no team, **unowned tasks**, over-budget, overdue work, unconfirmed team, thin
+  prep near the date. Surfaced in a Readiness chapter.
+- **The flagship screen** (`event_workspace_screen.dart`): a **cinematic
+  collapsing hero** (artwork · status · live countdown · preparation bar) then the
+  content revealed as **chapters** (Overview → Readiness → Timeline → Team → Tasks
+  → Inventory → Logistics → Budget → Communication → After). It **evolves with the
+  event** — a live event floats a command center to the top; a completed one
+  becomes an elegant archive. Hub screen has a spotlight rail + archive; a focused
+  create flow opens the new workspace directly.
+- **Roles:** every role sees the hub (self-scoped: admin all branches · manager +
+  employee own branch); admin + manager create/edit (mirrors `firestore.rules`);
+  employees get the live, read-only story. New **Community** sidebar destination
+  for all roles.
+- **Cubits:** app-wide `CommunityHubCubit` (role-scoped realtime stream + create,
+  repo-direct) + per-event `EventWorkspaceCubit` (built on demand via
+  `AppDependencies.createEventWorkspaceCubit`). Enums `EventType`/`EventStatus`/
+  `EventPhase`. Routes `/community`, `/community/create`, `/event/:eventId`.
+  `firestore.rules` + `storage.rules` (`events/{id}/hero.<ext>`) added.
+- **Tests:** `event_status_test`, `event_readiness_test`, `event_ordering_test`,
+  `event_model_test`.
+- ⚠️ **Not yet run through `flutter analyze`/`flutter test`** — this session had
+  no Dart toolchain available (no `build_runner`/analyzer/test runner), so the
+  slice was written to compile by construction and reviewed by hand. It uses
+  **plain-immutable models + plain cubit states** specifically to avoid needing
+  codegen. Run `flutter analyze` + the four new tests before shipping.
+- **Deliberately client-only** (no Cloud Functions / counters) so the slice is
+  self-contained; server-side event notifications are a noted follow-up.
 
 ---
 
