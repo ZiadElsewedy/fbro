@@ -172,10 +172,12 @@ class _AllClearState extends State<_AllClear>
       child: Column(
         children: [
           if (_animating)
-            AnimatedBuilder(
-              animation: _c,
-              builder: (context, _) =>
-                  _badge(Curves.easeInOut.transform(_c.value)),
+            RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _c,
+                builder: (context, _) =>
+                    _badge(Curves.easeInOut.transform(_c.value)),
+              ),
             )
           else
             _badge(0),

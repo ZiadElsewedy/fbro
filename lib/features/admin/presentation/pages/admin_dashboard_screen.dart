@@ -915,30 +915,34 @@ class _LivePulseDotState extends State<_LivePulseDot>
   @override
   Widget build(BuildContext context) {
     if (!_animating) return _dot();
-    return SizedBox(
-      width: 18,
-      height: 18,
-      child: AnimatedBuilder(
-        animation: _c,
-        builder: (context, _) {
-          final t = Curves.easeOut.transform(_c.value);
-          final ringSize = _core * (1 + t * 1.1);
-          final ringAlpha = ((1 - t) * 80).round();
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(
-                width: ringSize,
-                height: ringSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.color.withAlpha(ringAlpha),
+    // Isolate the forever-running ring in its own layer so each frame repaints
+    // only this 18px box, never the hero around it.
+    return RepaintBoundary(
+      child: SizedBox(
+        width: 18,
+        height: 18,
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (context, _) {
+            final t = Curves.easeOut.transform(_c.value);
+            final ringSize = _core * (1 + t * 1.1);
+            final ringAlpha = ((1 - t) * 80).round();
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: ringSize,
+                  height: ringSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: widget.color.withAlpha(ringAlpha),
+                  ),
                 ),
-              ),
-              _dot(),
-            ],
-          );
-        },
+                _dot(),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

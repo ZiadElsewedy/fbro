@@ -383,15 +383,14 @@ class _ScheduleTimeline extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // Overnight is signalled by the moon on the duration pill, so the due
+          // endpoint stays a short "Due" — no long label that could force a
+          // RenderFlex overflow on a narrow phone at a large text scale.
           _endpoint(AppDateFormatter.time(start), 'Start'),
           const SizedBox(width: AppSpacing.sm),
           Expanded(child: _track()),
           const SizedBox(width: AppSpacing.sm),
-          _endpoint(
-            AppDateFormatter.time(due),
-            overnight ? 'Due · next day' : 'Due',
-            end: true,
-          ),
+          _endpoint(AppDateFormatter.time(due), 'Due', end: true),
         ],
       ),
     );
@@ -404,6 +403,8 @@ class _ScheduleTimeline extends StatelessWidget {
         children: [
           Text(
             time,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: AppTypography.labelLarge.copyWith(
               color: AppColors.textPrimary,
               fontWeight: FontWeight.w700,
@@ -413,6 +414,8 @@ class _ScheduleTimeline extends StatelessWidget {
           const SizedBox(height: 1),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: AppTypography.caption.copyWith(color: AppColors.textTertiary),
           ),
         ],

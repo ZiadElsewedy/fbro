@@ -11,8 +11,38 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-09 (Admin Dashboard premium polish pass — mood, zero-states, depth, schedule viz)
+**Last updated:** 2026-07-09 (Admin Dashboard V2 — release-candidate hardening, ready to merge)
 **Version:** 1.0.0+1 · **Branch:** `core/optimization` (DROP — monochrome premium desktop UX)
+
+---
+
+## 🚦 Admin Dashboard V2 — RELEASE CANDIDATE (ready to merge, 2026-07-09)
+
+**Final RC audit of the Admin Dashboard V2 work (premium pass → hierarchy audit →
+polish pass) before merge to `main`.** No behaviour change in this audit — bug
+hunt + git hygiene only.
+
+- **Bug fixes:** (1) the Create Task start→due timeline can no longer overflow on a
+  narrow phone at large text scale (dropped the long "Due · next day" label —
+  overnight is the moon on the duration pill — and ellipsised the endpoints); (2)
+  the two forever-running animations (hero pulse dot, feed "all clear" badge) are
+  wrapped in `RepaintBoundary` so they repaint only their own layer.
+- **Bug hunt (clean):** every added `AnimationController` is disposed
+  (`_LivePulseDot`, `_AllClear`, `_SyncButton`, `Skeleton`); every forever-animation
+  is reduced-motion gated with a static fallback; async paths guard `mounted`; the
+  hero mood selector is a value-equal record so it rebuilds only when a count moves;
+  `PageStorageKey` scroll restoration + `push`-based drills preserved; a11y semantics
+  intact (`AttentionTile` announces "…, all clear" at zero).
+- **Git hygiene:** reverted a stray whitespace edit in an unrelated schedule file;
+  declined a blanket `dart format` (it churned pre-existing house-style code — the
+  branch is analyzer-clean already), keeping the diff minimal and focused. The V2
+  work spans **3 commits** on 17 files (12 lib + 2 test + 3 docs), no unrelated files.
+- **Verification:** `flutter analyze` clean (1 pre-existing info, untouched test);
+  `dart format` house-style consistent; full suite **634 pass / 3 pre-existing fail**
+  (2 splash-centering geometry + 1 stale `notification_grouping` category list — all
+  unrelated, untouched files). On-device visual QA (macOS/mobile) is owner-side.
+- **Verdict: safe to merge.** No known defects in scope; behaviour, business logic,
+  schema, rules and the living-border / monochrome identity are unchanged.
 
 ---
 

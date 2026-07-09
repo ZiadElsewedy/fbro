@@ -46,6 +46,26 @@ change**. Full suite **634 pass / 3 pre-existing fail**, analyzer clean.
   their border + surface on desktop hover; the activity feed's loading state is now
   premium **skeleton rows** instead of a bare spinner.
 
+### Fixed (2026-07-09 — Release-candidate hardening, `core/optimization`)
+
+Final RC audit of the Admin Dashboard V2 branch before merge — bug hunt + git
+hygiene, no behaviour change.
+
+- **Fixed — overflow guard:** the Create Task start→due timeline dropped its long
+  "Due · next day" label (overnight is already the moon on the duration pill) and
+  ellipsises its endpoints, so it can't force a `RenderFlex` overflow on a narrow
+  phone at a large text scale.
+- **Fixed — repaint isolation:** the hero "system-alive" pulse dot and the feed's
+  breathing "all clear" badge are wrapped in `RepaintBoundary`, so their continuous
+  animation repaints only their own small layer, never the hero/feed around them.
+- **Git hygiene:** reverted a stray whitespace edit in an unrelated schedule file; a
+  blanket `dart format` was declined because the branch's recent files use a
+  consistent, analyzer-clean house style and formatting them churned pre-existing
+  code — the diff is kept minimal and focused on this feature.
+- **Verified:** `flutter analyze` clean (only 1 pre-existing info in an untouched
+  test); full suite **634 pass / 3 pre-existing fail** (2 splash-centering + 1 stale
+  notification-category, all in untouched files).
+
 ### Changed (2026-07-09 — Admin Dashboard premium pass, `core/optimization`)
 
 A **presentation-only** craft pass to make the Admin Dashboard + Create Task flow
