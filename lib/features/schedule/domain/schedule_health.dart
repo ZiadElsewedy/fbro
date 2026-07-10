@@ -1,17 +1,21 @@
-import 'package:drop/core/enums/schedule_day.dart';
-import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
+import 'package:drop/features/schedule/domain/health/schedule_health_analyzer.dart';
 
-/// Schedule Health (Schedule 5.0) — a pure, week-level wellbeing read of the
-/// roster. It looks at each person's **weekly pattern** (not individual
-/// shifts): grouped runs of the same shift with a day off before switching
-/// (M·M·M·off·N·N·N) keep sleep cycles stable; frequent morning ↔ night
-/// flips, night → next-morning turnarounds and 6–7-day runs wear people down.
+/// Schedule Health — the **backward-compatible facade** over the modular
+/// [ScheduleHealthAnalyzer] (Schedule V2 · Pillar 3). The rich, rule-based read
+/// lives in `domain/health/` ([ScheduleHealthReport] + the coverage / workload /
+/// fairness / rest / conflict rules); this file preserves the original public
+/// surface — the [ScheduleHealth] value type and [computeScheduleHealth] — so
+/// nothing that consumed the pre-analyzer engine has to change.
 ///
-/// This is **advice, never enforcement** — findings are recommendations for
-/// the manager's judgment and can never block an edit or a publish (the same
-/// facts-not-quotas ruling the insight strip follows).
+/// It reads a person's **weekly pattern** (not individual shifts): grouped runs
+/// of the same shift with a day off before switching (M·M·M·off·N·N·N) keep
+/// sleep cycles stable; frequent morning ↔ night flips, night → next-morning
+/// turnarounds and 6–7-day runs wear people down.
+///
+/// This is **advice, never enforcement** — findings are recommendations for the
+/// manager's judgment and can never block an edit or a publish.
 enum HealthFindingKind { shortRest, alternation, longStreak, unevenLoad }
 
 /// One recommendation surfaced by the Schedule Health card. Person-level
@@ -51,147 +55,103 @@ class ScheduleHealth {
           : 'Strained';
 }
 
-/// Analyzes the week in one pass over `members × 7 days` (trivially cheap for
-/// a branch team) — call it once per build alongside `computeScheduleInsights`.
+/// Computes the legacy [ScheduleHealth] for a week. **Preserved verbatim** for
+/// backward compatibility: it delegates to the [ScheduleHealthAnalyzer] and then
+/// projects the analyzer's shared facts back through the original scoring
+/// formula, so its score, findings and wording are byte-for-byte what they were
+/// before the analyzer existed.
+///
+/// New surfaces should consume the richer [ScheduleHealthReport] via
+/// `ScheduleHealthAnalyzer().analyze(...)`; this remains the compatibility path.
 ///
 /// [nameOf] renders a person's display name (the view passes its `shortName`
 /// helper so health text matches the grid chips). [previousSaturdayNight] —
-/// last week's Saturday-night crew — lets the Sunday-morning turnaround count
-/// as a short rest too.
+/// last week's Saturday-night crew — lets the Sunday-morning turnaround count as
+/// a short rest too.
 ScheduleHealth computeScheduleHealth(
   WeeklyScheduleEntity schedule,
   List<UserEntity> members, {
   String Function(UserEntity user)? nameOf,
   Set<String> previousSaturdayNight = const {},
 }) {
-  String name(UserEntity u) =>
-      nameOf?.call(u) ?? (u.displayName?.trim().isNotEmpty == true
-          ? u.displayName!.trim()
-          : u.email);
+  final report = const ScheduleHealthAnalyzer().analyze(
+    schedule,
+    members,
+    nameOf: nameOf,
+    previousSaturdayNight: previousSaturdayNight,
+  );
+  return scheduleHealthFromReport(report);
+}
 
+/// Projects a [ScheduleHealthReport] onto the legacy [ScheduleHealth] shape
+/// using the original scoring formula over the report's shared [ScheduleAnalysis]
+/// — the single place the pre-analyzer numbers are reproduced. Kept separate
+/// (not the report's own scoring) precisely so the modern rules stay free to use
+/// their own wording and weights without disturbing this frozen contract.
+ScheduleHealth scheduleHealthFromReport(ScheduleHealthReport report) {
+  final a = report.analysis;
   final findings = <HealthFinding>[];
   var score = 100;
-  final shiftCounts = <UserEntity, int>{};
 
-  for (final member in members) {
-    // The person's week as a day-by-day pattern. `null` = off;
-    // a double-booked day is excluded from pattern analysis (the roster
-    // conflict is already flagged red by the insight strip).
-    final week = <ScheduleShift?>[
-      for (final day in ScheduleDay.values)
-        switch (schedule.shiftsFor(member.uid, day)) {
-          [] => null,
-          [final only] => only,
-          _ => null, // both shifts — double-booking, handled elsewhere
-        },
-    ];
-    var workedDays = 0;
-    for (final day in ScheduleDay.values) {
-      if (schedule.shiftsFor(member.uid, day).isNotEmpty) workedDays++;
-    }
-    if (workedDays > 0) shiftCounts[member] = workedDays;
-
-    var shortRests = 0;
-    var alternations = 0;
-    // Last week's Saturday night → this Sunday morning (weekend nights end
-    // 00:30, mornings start 08:30 — the tightest turnaround there is).
-    if (previousSaturdayNight.contains(member.uid) &&
-        week.first == ScheduleShift.morning) {
-      shortRests++;
-    }
-    for (var d = 1; d < week.length; d++) {
-      final prev = week[d - 1];
-      final curr = week[d];
-      if (prev == null || curr == null || prev == curr) continue;
-      if (prev == ScheduleShift.night && curr == ScheduleShift.morning) {
-        // Night ends 23:00 (00:30 weekends), next morning starts 08:30 —
-        // only ~8–9.5h to commute, sleep and return.
-        shortRests++;
-      } else {
-        // Morning → night on adjacent days is a soft flip (24h apart) —
-        // fine once, a sleep-cycle churn when repeated.
-        alternations++;
-      }
-    }
-
-    if (shortRests > 0) {
-      score -= 10 * shortRests;
+  for (final m in a.members) {
+    if (m.shortRests > 0) {
+      score -= 10 * m.shortRests;
       findings.add(HealthFinding(
         kind: HealthFindingKind.shortRest,
-        uid: member.uid,
-        title: shortRests == 1
-            ? '${name(member)} opens the morning right after a night shift'
-            : '${name(member)} opens the morning right after a night shift '
-                '$shortRests×',
+        uid: m.uid,
+        title: m.shortRests == 1
+            ? '${m.name} opens the morning right after a night shift'
+            : '${m.name} opens the morning right after a night shift '
+                '${m.shortRests}×',
         recommendation:
             'Leave a day off (or keep them on nights) between a night shift '
             'and their next morning.',
       ));
     }
-    if (shortRests + alternations >= 2) {
+    if (m.shortRests + m.alternations >= 2) {
       score -= 6;
       findings.add(HealthFinding(
         kind: HealthFindingKind.alternation,
-        uid: member.uid,
-        title: '${name(member)} flips between morning and night '
-            '${shortRests + alternations}× this week',
+        uid: m.uid,
+        title: '${m.name} flips between morning and night '
+            '${m.shortRests + m.alternations}× this week',
         recommendation:
             'Group their morning shifts together, then their night shifts — '
             'a day off between the two runs keeps their sleep steady.',
       ));
     }
-
-    // Longest run of consecutive worked days (any shift, doubles included).
-    var run = 0;
-    var longestRun = 0;
-    for (final day in ScheduleDay.values) {
-      if (schedule.shiftsFor(member.uid, day).isNotEmpty) {
-        run++;
-        if (run > longestRun) longestRun = run;
-      } else {
-        run = 0;
-      }
-    }
-    if (longestRun >= 6) {
-      // A full 7-day week with no day off is a bigger deal than a 6-day run —
-      // on its own it should already read "Fair", not "Healthy".
-      score -= longestRun >= 7 ? 16 : 8;
+    if (m.longestRun >= 6) {
+      score -= m.longestRun >= 7 ? 16 : 8;
       findings.add(HealthFinding(
         kind: HealthFindingKind.longStreak,
-        uid: member.uid,
-        title: '${name(member)} works $longestRun days in a row',
+        uid: m.uid,
+        title: '${m.name} works ${m.longestRun} days in a row',
         recommendation: 'Add a day off mid-week to break the run.',
       ));
     }
-
-    // Double-booked days quietly weigh on the score (the insight strip
-    // already names them, so no duplicate finding here).
-    for (final day in ScheduleDay.values) {
-      if (schedule.shiftsFor(member.uid, day).length > 1) score -= 8;
-    }
+    // Double-booked days quietly weigh on the score (the insight strip already
+    // names them, so no duplicate finding here).
+    score -= 8 * m.doubleBookedDays;
   }
 
   // Team-level: a big spread between the heaviest and lightest scheduled
   // person. A fact for judgment (part-timers exist), so caution not fault.
-  if (shiftCounts.length >= 2) {
-    UserEntity? heaviest;
-    UserEntity? lightest;
-    for (final entry in shiftCounts.entries) {
-      if (heaviest == null || entry.value > shiftCounts[heaviest]!) {
-        heaviest = entry.key;
-      }
-      if (lightest == null || entry.value < shiftCounts[lightest]!) {
-        lightest = entry.key;
-      }
+  final working = a.workingMembers;
+  if (working.length >= 2) {
+    var heaviest = working.first;
+    var lightest = working.first;
+    for (final m in working) {
+      if (m.workedDays > heaviest.workedDays) heaviest = m;
+      if (m.workedDays < lightest.workedDays) lightest = m;
     }
-    final spread = shiftCounts[heaviest]! - shiftCounts[lightest]!;
+    final spread = heaviest.workedDays - lightest.workedDays;
     if (spread >= 4) {
       score -= 5;
       findings.add(HealthFinding(
         kind: HealthFindingKind.unevenLoad,
-        title: 'Workload is uneven: ${name(heaviest!)} '
-            '${shiftCounts[heaviest]} days · ${name(lightest!)} '
-            '${shiftCounts[lightest]}',
+        title: 'Workload is uneven: ${heaviest.name} '
+            '${heaviest.workedDays} days · ${lightest.name} '
+            '${lightest.workedDays}',
         recommendation:
             'If both are full-time, shift a day or two toward the lighter '
             'side of the roster.',

@@ -23,7 +23,7 @@ import 'package:drop/features/notifications/presentation/cubit/notification_stat
 /// difference between a real macOS productivity app and a stack of pushed mobile
 /// screens. On mobile/tablet the shell is a no-op pass-through: those widths keep
 /// the original per-screen app bars + bottom navigation untouched.
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.location, required this.child});
 
   /// Current router location (from `GoRouterState.matchedLocation`).
@@ -31,64 +31,7 @@ class AppShell extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    // Mobile / tablet: unchanged. Also bail out if we somehow render without a
-    // session (the router's redirect guards normally prevent this).
-    final user = context.currentUser;
-    if (!context.isDesktop || user == null) return child;
-
-    final role = user.role;
-    final sections = sectionsForRole(role);
-    final destinations = [for (final s in sections) ...s.items];
-    // ⌘1…⌘9 jump straight to the Nth sidebar destination and ⌘K opens the
-    // command palette — the baseline keyboard navigation a native macOS
-    // productivity app is expected to have. CallbackShortcuts fires whenever
-    // focus is anywhere in the subtree; meta combos never insert text, so
-    // they're safe while typing.
-    return CallbackShortcuts(
-      bindings: {
-        for (var i = 0; i < destinations.length && i < _digitKeys.length; i++)
-          SingleActivator(_digitKeys[i], meta: true): () {
-            final route = destinations[i].route;
-            if (route != location) context.go(route);
-          },
-        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
-            showCommandPalette(context, user: user, sections: sections),
-      },
-      child: FocusScope(
-        autofocus: true,
-        child: Scaffold(
-          backgroundColor: AppColors.darkBg,
-          body: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppSidebar(
-                sections: sections,
-                location: location,
-                onSelect: (route) {
-                  if (route != location) context.go(route);
-                },
-                footer: _SidebarUserFooter(
-                  user: user,
-                  role: role,
-                  onTap: () => context.go(RouteNames.profile),
-                ),
-              ),
-              // The child is go_router's shell Navigator — ONE widget with a
-              // GlobalKey. It must never be wrapped in anything that mounts
-              // it twice (AnimatedSwitcher, cross-fades, keyed swaps): that
-              // duplicates the GlobalKey mid-transition, corrupts the element
-              // tree, and froze all navigation on macOS. The desktop fade
-              // between destinations already exists at the PAGE level (every
-              // shell route's CustomTransitionPage fades on ≥1024pt), so no
-              // shell-level animation is needed.
-              Expanded(child: child),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  State<AppShell> createState() => _AppShellState();
 
   static const _digitKeys = [
     LogicalKeyboardKey.digit1,
@@ -250,6 +193,113 @@ class AppShell extends StatelessWidget {
   }
 }
 
+class _AppShellState extends State<AppShell> {
+  /// Distraction-free mode: the persistent nav sidebar collapses so the active
+  /// screen (schedule, tasks…) runs full-width — Notion/Linear focus mode.
+  /// Collapsing the shell sidebar is app-wide by nature, so this applies to
+  /// every desktop screen, toggled with ⌘\ or the sidebar's collapse control.
+  /// Held in State: the shell is mounted once by the router's [ShellRoute], so
+  /// the choice survives every route change within a session. (It resets on a
+  /// cold launch — cross-restart memory needs a local-prefs store the app does
+  /// not have yet.)
+  bool _focusMode = false;
+
+  void _toggleFocus() => setState(() => _focusMode = !_focusMode);
+
+  @override
+  Widget build(BuildContext context) {
+    final location = widget.location;
+    // Mobile / tablet: unchanged. Also bail out if we somehow render without a
+    // session (the router's redirect guards normally prevent this).
+    final user = context.currentUser;
+    if (!context.isDesktop || user == null) return widget.child;
+
+    final role = user.role;
+    final sections = AppShell.sectionsForRole(role);
+    final destinations = [for (final s in sections) ...s.items];
+    // Honour the OS "reduce motion" switch for the collapse animation.
+    final animate = !MediaQuery.of(context).disableAnimations;
+
+    // ⌘1…⌘9 jump straight to the Nth sidebar destination, ⌘K opens the command
+    // palette, and ⌘\ toggles focus mode — the baseline keyboard navigation a
+    // native macOS productivity app is expected to have. CallbackShortcuts
+    // fires whenever focus is anywhere in the subtree; meta combos never insert
+    // text, so they're safe while typing.
+    return CallbackShortcuts(
+      bindings: {
+        for (var i = 0;
+            i < destinations.length && i < AppShell._digitKeys.length;
+            i++)
+          SingleActivator(AppShell._digitKeys[i], meta: true): () {
+            final route = destinations[i].route;
+            if (route != location) context.go(route);
+          },
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
+            showCommandPalette(context, user: user, sections: sections),
+        const SingleActivator(LogicalKeyboardKey.backslash, meta: true):
+            _toggleFocus,
+      },
+      child: FocusScope(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: AppColors.darkBg,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Collapsible sidebar: its width eases to 0 in focus mode
+                    // while the sidebar keeps its natural width internally, so
+                    // its contents never reflow mid-collapse.
+                    _CollapsibleSidebar(
+                      collapsed: _focusMode,
+                      animate: animate,
+                      child: AppSidebar(
+                        sections: sections,
+                        location: location,
+                        onCollapse: _toggleFocus,
+                        onSelect: (route) {
+                          if (route != location) context.go(route);
+                        },
+                        footer: _SidebarUserFooter(
+                          user: user,
+                          role: role,
+                          onTap: () => context.go(RouteNames.profile),
+                        ),
+                      ),
+                    ),
+                    // The child is go_router's shell Navigator — ONE widget with
+                    // a GlobalKey. It must never be wrapped in anything that
+                    // mounts it twice (AnimatedSwitcher, cross-fades, keyed
+                    // swaps): that duplicates the GlobalKey mid-transition,
+                    // corrupts the element tree, and froze all navigation on
+                    // macOS. Its position in this Row is stable across focus
+                    // toggles, so the element is never remounted. The desktop
+                    // fade between destinations already lives at the PAGE level.
+                    Expanded(child: widget.child),
+                  ],
+                ),
+              ),
+              // When the sidebar is hidden, a quiet handle brings it back (⌘\
+              // also works). It fades with focus mode rather than popping.
+              Positioned(
+                top: 14,
+                left: 12,
+                child: _FocusRestoreHandle(
+                  visible: _focusMode,
+                  animate: animate,
+                  onExpand: _toggleFocus,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Pinned sidebar footer: unread-aware avatar + name + role, tappable → profile.
 class _SidebarUserFooter extends StatefulWidget {
   const _SidebarUserFooter({
@@ -350,6 +400,108 @@ class _FooterBell extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Wraps the [AppSidebar] so its width can ease to 0 for focus mode. The child
+/// keeps its natural [Breakpoints.sidebarWidth] internally ([OverflowBox]) and
+/// is clipped as the outer box shrinks, so nothing inside reflows while
+/// collapsing. [IgnorePointer] kills phantom hits once it is hidden.
+class _CollapsibleSidebar extends StatelessWidget {
+  const _CollapsibleSidebar({
+    required this.collapsed,
+    required this.animate,
+    required this.child,
+  });
+
+  final bool collapsed;
+  final bool animate;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: animate ? const Duration(milliseconds: 240) : Duration.zero,
+      curve: Curves.easeInOutCubic,
+      width: collapsed ? 0 : Breakpoints.sidebarWidth,
+      child: IgnorePointer(
+        ignoring: collapsed,
+        child: ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.centerLeft,
+            minWidth: Breakpoints.sidebarWidth,
+            maxWidth: Breakpoints.sidebarWidth,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The floating "show sidebar" control shown over the top-left of the content
+/// while focus mode is on. Fades with [visible] instead of popping in/out.
+class _FocusRestoreHandle extends StatefulWidget {
+  const _FocusRestoreHandle({
+    required this.visible,
+    required this.animate,
+    required this.onExpand,
+  });
+
+  final bool visible;
+  final bool animate;
+  final VoidCallback onExpand;
+
+  @override
+  State<_FocusRestoreHandle> createState() => _FocusRestoreHandleState();
+}
+
+class _FocusRestoreHandleState extends State<_FocusRestoreHandle> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      duration:
+          widget.animate ? const Duration(milliseconds: 200) : Duration.zero,
+      opacity: widget.visible ? 1 : 0,
+      child: IgnorePointer(
+        ignoring: !widget.visible,
+        child: Semantics(
+          button: true,
+          label: 'Show sidebar',
+          child: Tooltip(
+            message: 'Show sidebar   ⌘\\',
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onEnter: (_) => setState(() => _hovered = true),
+              onExit: (_) => setState(() => _hovered = false),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onExpand,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _hovered
+                        ? const Color(0xFF232327)
+                        : AppColors.darkSurface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.darkBorder),
+                  ),
+                  child: const Icon(
+                    Icons.menu_rounded,
+                    size: 20,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
