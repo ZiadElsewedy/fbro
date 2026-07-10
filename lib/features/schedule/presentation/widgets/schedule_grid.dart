@@ -405,6 +405,16 @@ class ScheduleGrid extends StatelessWidget {
       onChipSwapWith: onChipSwapWith == null
           ? null
           : (uid) => onChipSwapWith!(day, shift, uid),
+      // Keyboard move reuses the exact drag path: the chip resolves the target
+      // slot from its arrow key, we hand it to onMoveChip → the same
+      // validation + Firestore write drag-to-move uses.
+      onChipKeyboardMove: onMoveChip == null
+          ? null
+          : (uid, toDay, toShift) => onMoveChip!(
+                ChipDragData(uid: uid, day: day, shift: shift),
+                toDay,
+                toShift,
+              ),
     );
   }
 

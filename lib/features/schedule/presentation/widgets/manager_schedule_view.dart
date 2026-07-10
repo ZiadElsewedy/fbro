@@ -12,7 +12,6 @@ import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/branch_avatar.dart';
 import 'package:drop/core/widgets/drop_empty_state.dart';
 import 'package:drop/core/widgets/drop_loading_state.dart';
-import 'package:drop/core/widgets/drop_logo.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
@@ -22,7 +21,7 @@ import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
 import 'package:drop/features/schedule/domain/move_validation.dart';
-import 'package:drop/features/schedule/domain/schedule_health.dart';
+import 'package:drop/features/schedule/domain/health/schedule_health_analyzer.dart';
 import 'package:drop/features/schedule/domain/schedule_week.dart';
 import 'package:drop/features/schedule/domain/swap_policy.dart';
 import 'package:drop/features/schedule/presentation/cubit/schedule_cubit.dart';
@@ -37,8 +36,9 @@ import 'package:drop/features/schedule/presentation/widgets/broken_assignment_ba
 import 'package:drop/features/schedule/presentation/widgets/chip_action_sheet.dart';
 import 'package:drop/features/schedule/presentation/widgets/day_details_sheet.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_grid.dart';
-import 'package:drop/features/schedule/presentation/widgets/schedule_health_card.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
+import 'package:drop/features/schedule/presentation/widgets/schedule_overview_surface.dart';
+import 'package:drop/features/schedule/presentation/widgets/schedule_inspector_drawer.dart';
 import 'package:drop/features/schedule/presentation/widgets/shift_details_sheet.dart';
 import 'package:drop/features/schedule/presentation/widgets/swap_alert_card.dart'
     show showSwapQueueSheet;
@@ -69,6 +69,26 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
   /// The insight chip the user toggled on — its slots stay lit, the rest of
   /// the grid dims. Cleared when the shift filter changes.
   ScheduleInsightKind? _activeInsight;
+
+  /// The employee selected in the desktop inspector drawer (null = overview).
+  /// Falls back to overview automatically if the roster no longer contains them.
+  String? _selectedUid;
+
+  /// True while the rail's resize splitter is being dragged — suppresses the
+  /// open/close width animation so the drag tracks the cursor 1:1.
+  bool _draggingRail = false;
+
+  /// The inspector rail's collapsed/expanded state resolves to null (not yet
+  /// set) → the width-aware default: hidden on the narrower desktop tier, open
+  /// on ultrawide. On smaller desktop widths the grid should own the screen.
+  bool _inspectorOpen(BuildContext context) =>
+      _InspectorPrefs.open ?? context.isUltrawide;
+
+  /// The rail collapse/expand transition, honouring reduced-motion.
+  Duration _railMotion(BuildContext context) =>
+      (MediaQuery.maybeOf(context)?.disableAnimations ?? false)
+          ? Duration.zero
+          : const Duration(milliseconds: 220);
 
   /// Drives the undo bar's auto-dismiss explicitly instead of relying on
   /// [SnackBar]'s built-in `duration` — that timer pauses while the bar is
@@ -191,7 +211,69 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
           SizedBox(width: 280, child: _shiftFilter()),
           const SizedBox(width: AppSpacing.md),
           _finalViewButton(branchId, schedule, members),
+          const SizedBox(width: AppSpacing.sm),
+          _inspectorToggleButton(context),
         ],
+      ),
+    );
+  }
+
+  /// Toolbar control for the contextual inspector rail — the manager opens it
+  /// only when they want the week totals / team detail, so the grid keeps the
+  /// screen the rest of the time.
+  Widget _inspectorToggleButton(BuildContext context) {
+    final open = _inspectorOpen(context);
+    return Tooltip(
+      message: open ? 'Hide inspector' : 'Show inspector',
+      child: InkWell(
+        onTap: () => setState(() => _InspectorPrefs.open = !open),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: open ? AppColors.primarySurface : AppColors.darkSurface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: open ? AppColors.accentBorder : AppColors.darkBorder,
+            ),
+          ),
+          child: Icon(
+            open
+                ? Icons.view_sidebar_rounded
+                : Icons.view_sidebar_outlined,
+            size: 18,
+            color: open ? AppColors.textPrimary : AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Draggable divider between the grid and the rail — resizes the rail in
+  /// place (the width is remembered for the session).
+  Widget _railSplitter() {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: (_) => setState(() => _draggingRail = true),
+        onHorizontalDragUpdate: (d) => setState(() {
+          _InspectorPrefs.width = (_InspectorPrefs.width - d.delta.dx)
+              .clamp(_InspectorPrefs.minWidth, _InspectorPrefs.maxWidth);
+        }),
+        onHorizontalDragEnd: (_) => setState(() => _draggingRail = false),
+        onHorizontalDragCancel: () => setState(() => _draggingRail = false),
+        child: const SizedBox(
+          width: 10,
+          child: Center(
+            child: SizedBox(
+              width: 1,
+              height: double.infinity,
+              child: ColoredBox(color: Color(0x14FFFFFF)),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -508,7 +590,10 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       filter: _filter,
       previousSaturdayNight: prevNight,
     );
-    final health = computeScheduleHealth(
+    // The rule-based analyzer (Schedule V2 · Pillar 3) reduces the roster to
+    // one shared analysis and runs the coverage/workload/fairness/rest/conflict
+    // rules over it — computed once per build, alongside the insights.
+    final report = const ScheduleHealthAnalyzer().analyze(
       schedule,
       members,
       nameOf: shortName,
@@ -563,7 +648,9 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       ),
     );
 
-    return ListView(
+    // Touch widths keep the single stacked column — grid, then week summary and
+    // health beneath it; detail opens as bottom sheets on tap.
+    final stacked = ListView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.pagePadding,
         AppSpacing.md,
@@ -585,9 +672,78 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         const SizedBox(height: AppSpacing.sm),
         _weekSummary(insights),
         const SizedBox(height: AppSpacing.md),
-        ScheduleHealthCard(health: health),
-        const SizedBox(height: AppSpacing.md),
-        _gridHint(),
+        // The overview surface holds the global health + suggestions + legend.
+        ScheduleOverviewSurface(report: report, insights: insights),
+      ],
+    );
+    if (!context.isDesktop) return stacked;
+
+    // Mac / iPad-landscape (≥1024): the grid is the hero. The GLOBAL schedule
+    // health / insights / legend live in a calm review band BELOW the grid, and
+    // the team inspector is a CONTEXTUAL rail — collapsible, resizable, and
+    // hidden by default on the narrower desktop tier so the grid owns the
+    // screen. Opening it is a deliberate "give me more context" gesture. Pure
+    // recomposition — every edit/save path is unchanged.
+    final railOpen = _inspectorOpen(context);
+    final railWidth = _InspectorPrefs.width;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.pagePadding,
+              AppSpacing.lg,
+              AppSpacing.pagePadding,
+              AppSpacing.xxl,
+            ),
+            children: [
+              _insightStrip(insights, activeInsight),
+              const SizedBox(height: AppSpacing.lg),
+              if (orphanCount > 0) ...[
+                BrokenAssignmentBanner(
+                  count: orphanCount,
+                  onReview: () => showResolveBrokenSheet(context),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              SizedBox(height: grid.height, child: grid),
+              const SizedBox(height: AppSpacing.xl),
+              // The calm review band fills the space under the grid.
+              ScheduleOverviewSurface(report: report, insights: insights),
+            ],
+          ),
+        ),
+        // The resize splitter only exists while the rail is open.
+        if (railOpen) _railSplitter(),
+        // The rail collapses to zero width (grid reclaims it) without ever
+        // re-laying the drawer's content out at a cramped width — the OverflowBox
+        // pins the child to its full width and the ClipRect reveals it.
+        ClipRect(
+          child: AnimatedContainer(
+            duration: _draggingRail ? Duration.zero : _railMotion(context),
+            curve: Curves.easeOutCubic,
+            width: railOpen ? railWidth : 0,
+            child: OverflowBox(
+              alignment: Alignment.centerLeft,
+              minWidth: railWidth,
+              maxWidth: railWidth,
+              child: SizedBox(
+                width: railWidth,
+                child: ScheduleInspectorDrawer(
+                  schedule: schedule,
+                  members: members,
+                  report: report,
+                  insights: insights,
+                  selectedUid: _selectedUid,
+                  onSelect: (uid) => setState(() => _selectedUid = uid),
+                  onCollapse: () =>
+                      setState(() => _InspectorPrefs.open = false),
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -890,34 +1046,6 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
 
   /// One-line affordance hint under the grid — drag / switch / right-click /
   /// tap are invisible until named. Signed off with a quiet DROP mark.
-  Widget _gridHint() {
-    final hint = context.isDesktop
-        ? 'Drag people between shifts · drop a person on another to switch '
-              'them · right-click for actions · click a day for notes & leave'
-        : 'Tap a shift to manage · long-press a person for actions · '
-              'tap a day for notes & leave';
-    return Row(
-      children: [
-        const Icon(
-          Icons.touch_app_outlined,
-          size: 14,
-          color: AppColors.textTertiary,
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            hint,
-            style: AppTypography.caption,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        const SizedBox(width: 12),
-        const DropLogo(height: 13, color: AppColors.textTertiary),
-      ],
-    );
-  }
-
   // ── Insight strip ──────────────────────────────────────────────
   /// Fact chips derived from the roster (open · one-person · double-booked)
   /// plus the pending-swap queue. Clicking a fact chip highlights its slots in
@@ -1128,4 +1256,21 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       ),
     );
   }
+}
+
+/// Session-scoped memory for the contextual inspector rail (open state + width).
+///
+/// The rail "remembers last state" across navigation within a session — the
+/// same in-session persistence model Focus Mode uses (there is no local-prefs
+/// store yet; it resets on a cold launch). [open] starts null so the first
+/// render can fall back to the width-aware default (hidden on the narrower
+/// desktop tier, open on ultrawide) until the manager makes an explicit choice.
+class _InspectorPrefs {
+  _InspectorPrefs._();
+
+  static bool? open;
+  static double width = 320;
+
+  static const double minWidth = 280;
+  static const double maxWidth = 460;
 }
