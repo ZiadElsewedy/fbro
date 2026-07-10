@@ -11,270 +11,59 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-10 (Schedule Builder UX polish — calm/grid-first, presentation-only · Pillar 5 rules deploy still pending)
-**Version:** 1.0.0+1 · **Branch:** `feature/schedule-optimization`
+**Last updated:** 2026-07-08 (Community Hub / DROP Events — flagship event workspace)
+**Version:** 1.0.0+1 · **Branch:** `claude/community-hub-events-pzjvbp` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-08 (Requests closed out: analyzer clean + tests green)
+**Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-08 (Work Details design system + Create Work sheet UX)
+**Version:** 1.0.0+1 · **Branch:** `feature/work-management-system` (DROP — monochrome premium desktop UX)
 
 ---
 
-## 🚧 Schedule V2 — scope locked, building pillar by pillar (2026-07-09)
+## ✅ Community Hub / DROP Events — the flagship event workspace (2026-07-08)
 
-A 20-point "premium scheduling system" brief was **triaged against DROP's lean
-philosophy** and locked into **7 pillars** — contract: `docs/design/SCHEDULE_V2.md`
-(IN = adaptive Mac/iPad shell + focus mode, richer assignment chip, clickable
-health breakdown, bounded shift templates, final-view polish, motion/a11y;
-OUT/Reserve = audit trail, versioning/history/rollback, offline write-merge,
-Excel keyboard grid, AI suggestions, isolates, export sprawl — each with a
-revisit trigger). ~⅓ of the brief already ships (`shift_hours`, `schedule_health`,
-`schedule_final_view` PNG export, the drag/swap chip), so most pillars *extend*.
+A whole new flagship feature (`lib/features/community/`): the **Community Hub**
+manages every internal and external DROP event, and every event is **its own
+operational workspace**, not a calendar row. Built full-stack, clean-architecture,
+strictly monochrome-premium — reusing the existing design system end-to-end.
 
-- **✅ Pillar 1a — Focus Mode (shipped):** the desktop nav sidebar collapses so
-  the active screen runs full-width (Notion/Linear focus mode). **⌘\\** or the
-  sidebar's collapse control toggles it; a floating handle restores it. App-wide,
-  in-session persistence (survives navigation, resets on cold launch — no
-  local-prefs store exists yet). `app_shell.dart` is now stateful; only the
-  sidebar width animates so the GlobalKey shell child is never remounted (test
-  `focus_mode_test.dart`, 3 pass).
-- **✅ Pillar 1b — Adaptive inspector (shipped):** on desktop / iPad-landscape
-  (≥1024) `manager_schedule_view.dart` puts the **grid as hero** on the left and
-  docks **week totals + Schedule Health** into a right-hand **inspector rail**
-  (was scrolled-past below the grid). Touch widths keep the stacked column +
-  bottom sheets. Presentation-only recomposition; every edit/save path unchanged.
-- **✅ Pillar 2 — Assignment Craft (shipped):** `assignment_chip.dart` enriched —
-  bigger avatar + inline **`position`** + desktop name/position tooltip, roomier
-  drag target, hover/focus lift. **Cross-day drag** confirmed + test-locked.
-  **Keyboard move** on desktop (Tab-focus a chip, arrows move the person) via the
-  same `onMoveChip`→`MoveValidation` seam. Scale-in on placement (keyed by uid,
-  reduce-motion aware). Touch unchanged. Tests:
-  `assignment_chip_interactions_test.dart` (6); schedule/shell regression 60 pass.
-- **✅ Inspector drawer (shipped):** the right rail became a real drawer —
-  `schedule_inspector_drawer.dart` (extracted, stateless): overview + team roster
-  → tap a person → their week detail (hours from resolved `ShiftHours`,
-  morning/night/weekend split, streak, days off, Sun→Sat glance, wellbeing
-  flags). `domain/employee_week_stats.dart` = pure derivation. Tests:
-  `schedule_inspector_drawer_test.dart` (4) + `employee_week_stats_test.dart` (3).
-- **✅ Pillar 3 — Health Analyzer (shipped):** Schedule Health is now a **modular
-  domain engine** and the single source of truth for schedule quality. New
-  `domain/health/` package: `ScheduleAnalysis` (one-pass shared signals —
-  `MemberWeek` + per-slot counts), five **independent** pure rules
-  (`CoverageRule` · `WorkloadRule` · `FairnessRule` · `RestRule` ·
-  `ConflictRule`, each a `ScheduleRule.evaluate(analysis)` — no switch/if-else
-  chains, no rule-to-rule coupling), and `ScheduleHealthAnalyzer` folding them
-  into a `ScheduleHealthReport` (`overallScore`/`overallSeverity`, the five
-  `ScheduleRuleResult`s, flattened `findings`/`suggestions`, `findingsFor(uid)`).
-  **Owner overrode the doc's earlier "don't build rule classes" stance** with an
-  explicit prescriptive brief (isolates + configurable policy engine stay OUT).
-  **100% backward compatible:** `schedule_health.dart` is now the facade —
-  `computeScheduleHealth()` delegates to the analyzer and projects the shared
-  analysis through the **frozen original formula** (byte-for-byte; the old
-  `schedule_health_test.dart` passes unchanged). Card enriched (report-driven —
-  overall score `/100` + clickable category breakdown + richer wording),
-  inspector threads the report through, grid untouched. Tests:
-  `schedule_health_analyzer_test.dart` (24) + frozen `schedule_health_test.dart`
-  (6); analyze clean; full suite **649 pass / 3 pre-existing fail**.
-- **✅ Schedule screen layout rebalance (shipped, presentation-only):** owner
-  directive — grid must be the hero, rail too heavy, black space under the grid.
-  The **global Schedule Health moved OUT of the right rail** into a new
-  **below-grid overview surface** (`schedule_overview_surface.dart`): three
-  compact Apple/Linear cards across the width — **Health** (prominent score +
-  category breakdown + top findings as one-liners, fix revealed only on tap),
-  **Insights** (open/single/double-booked/short-rest/leave facts + totals), and
-  **Legend** (shift hours · leave types · drag hints). The inspector rail is now
-  just **Weekly summary + Team + contextual detail**, **narrower (340→300)** with
-  a **softer divider**. The old `schedule_health_card.dart` was **removed**
-  (superseded); `_gridHint` folded into the Legend. Tests:
-  `schedule_overview_surface_test.dart` (4); full suite **653 pass / 3
-  pre-existing fail**. **Refined further by the 2026-07-10 UX polish below.**
-- **✅ Schedule Builder UX polish (shipped, presentation-only, 2026-07-10):**
-  owner directive — the screen tried to show grid + week stats + health +
-  insights + legend + team inspector at once; make it **calm and grid-first**,
-  everything secondary behind interaction. **No data model / business logic /
-  Firestore / Cubit / analyzer / save-path change** (every edit/drag/swap path
-  is byte-identical). (1) The right **inspector rail is now a contextual
-  workspace** — **collapsible + resizable** (toolbar `view_sidebar` toggle +
-  draggable splitter, 280–460px), **remembers its open state + width for the
-  session** (`_InspectorPrefs`, matching Focus Mode's in-session model — no
-  local-prefs store yet), **hidden by default on the 1024–1600 desktop tier**
-  and **open by default on ultrawide**; when collapsed the **grid reclaims the
-  width automatically** (`ClipRect`+`OverflowBox`+`AnimatedContainer`,
-  reduced-motion honoured). The drawer fills its given width (fixed `width`
-  removed) and gained an optional in-rail collapse header. (2) The **below-grid
-  band was lightened** — the three bordered cards became **one borderless,
-  typography-led band** parted by hairlines: **Health** reduced weight (score
-  36→32, ≤3 findings), **Insights** trimmed to a few attention-fact lines,
-  **Legend near-invisible — collapsed by default**, expanding on tap. (3) **More
-  breathing room** around the grid (opened vertical rhythm). Tests:
-  `schedule_overview_surface_test.dart` updated for the collapsed legend (+1
-  legend test); `flutter analyze` clean; full suite **682 pass / 3 pre-existing
-  fail**. **Frozen pending owner on-device review.**
-- **✅ Pillar 4 — Final View Redesign (shipped, presentation-only):** the Final
-  View was rebuilt from scratch into a premium **printable, read-only,
-  export-ready** schedule. New `widgets/final_schedule_sheet.dart`
-  (`FinalScheduleSheet`, a dedicated surface — not the editor with a mode): one
-  **employee per row** × **day per column** (Sun→Sat + dates), single scannable
-  **token per cell** (`M`·`N`·`M/N`·`OFF`·`LEAVE`·`VAC`), a document header
-  (DROP · branch · Week of · Generated · Manager), a **day-notes row** (only when
-  notes exist), and a legend. Fixed-width (1600) **landscape document**, natural
-  height (≈ A4-landscape typically), `FittedBox`-scaled to any screen. The old
-  grid-reuse export canvas + fact-pills were **removed** (no drag/health/analytics
-  in the published view). **Kept:** the launch signature `showScheduleFinalView`,
-  the **PNG export** (`RepaintBoundary`→`toImage`→Downloads), the toolbar, and the
-  stable filename. Reuses existing models only — no new scheduling logic. Tests:
-  `schedule_final_view_test.dart` rewritten (7 — rendering, large roster, empty
-  notes, export layout, page + responsiveness, filename). analyze clean; full
-  suite **657 pass / 3 pre-existing fail**. **Final View is FROZEN pending owner
-  review.**
-- **✅ Pillar 5 — Shift Templates & configurable shift system (shipped):** the
-  **first data-model extension** — hardcoded Morning/Night hours become
-  **reusable per-branch templates**. Design-reviewed + owner-approved first. New
-  collection **`shift_templates/{id}`** (per-branch, `{branch}__{role}`; 3 standing
-  roles Morning/Weekday-night/Weekend-night + reserved `custom`; seeded lazily to
-  match `ShiftHours.standard`). The week doc gains an additive **`shiftPlan`
-  snapshot** captured at creation; `WeeklyScheduleEntity.hoursFor` now resolves
-  **override → snapshot → standard** (legacy weeks = null snapshot = **unchanged**).
-  **History-safe by construction** (each week frozen by its own snapshot). The
-  **3-way edit scope** (`ScheduleCubit.applyShiftHours`): This week (per-slot
-  override) · Future (template only) · Global (template + restamp current/future
-  weeks). UI: template-manager sheet + "Apply changes to…" scope dialog, reached
-  from the day sheet. Modular layers: enums + `domain/shift_plan|shift_template`,
-  data model/datasource/repo, `ShiftTemplateCubit`, extended `ScheduleCubit`/
-  `ScheduleRepository`, DI. Frozen surfaces untouched. Tests: **24 new** (domain
-  resolution/legacy/overnight/validation · model round-trip/migration · cubit
-  3-way scope + snapshot · scope dialog); analyze clean; full suite **681 pass / 3
-  pre-existing fail**. **⚠️ `firestore.rules` DEPLOY needed** (new
-  `shift_templates` block) before managers can use templates. **Frozen pending
-  owner review.**
-- **▫︎ Next:** await owner review. Still deferred: **Metadata/History** (parked in
-  Reserve — owner previously chose "keep parked"), **Motion & Accessibility**
-  sweep, and the health-breakdown grid cell-highlight drill-through. Custom named
-  shift templates are **data-model-ready but UI-light** (future). **Do not start
-  any of these — or any new sub-feature — without an explicit owner GO** (standing
-  rule: keep each pillar self-contained, freeze before the next).
-
-**Focus Mode persistence** across a cold launch is a deferred TODO (needs
-`shared_preferences`; owner to decide) — in-session persistence works today.
-
----
-
-## ✅ DROP Design System V2 — Phase 1: Admin dashboard + reusable primitives (2026-07-08)
-
-**Presentation + design-system foundation. No schema/rules/functions/backend/business-logic
-change; every cubit call, route and save path is unchanged.** The Admin Home was
-re-ranked around **"what needs my attention right now?"** through *calm hierarchy* (not
-reduction) — keeping the premium DROP identity — and the building blocks were extracted as
-**reusable core primitives** every future module inherits. See
-[docs/design/DESIGN_SYSTEM_V2.md](docs/design/DESIGN_SYSTEM_V2.md).
-
-- **4 new core primitives** (`lib/core/widgets/`): `PageHero`, `AttentionTile`, `StatStrip`,
-  `ActivityCard` — each with a Semantics label, ≥44px targets, reduced-motion honouring, and
-  lazy/capped rendering for collections. Pure core (no core→feature coupling): the living
-  border is applied by the feature via `AttentionTile.radius`, not imported by the primitive.
-- **Admin Home re-assembly** (`admin_dashboard_screen.dart`, rewritten): Hero (one *Create
-  Task* CTA) → **Needs attention** dominant (Pending review · Overdue · Unassigned · Sent-back ·
-  Swaps; single most-urgent tile carries the living border) → **Today** strip → **Recent
-  activity** (`RecentActivityFeed`, **no home filters**) → **Operations digest** (requests ·
-  cases · schedule coverage) → Quick actions / Manage / Branch pulse. Preserved the scoped
-  `BlocSelector` rebuild architecture (live, no manual refresh), plus `PageStorageKey` +
-  reduced-motion entrance gating.
-- **Context-preserving navigation:** extracted the feed's preview sheet into shared
-  `showTaskPreviewSheet` / `openTaskDetails` (`task_preview_sheet.dart`); `task_feed_section.dart`
-  now delegates to them (behaviour-identical for admin **and** manager home). Needs-attention
-  drills push a reusable `FilteredTasksScreen` on the caller's navigator — Back returns to the
-  dashboard exactly where it was.
-- **Pure derivations** (`task_metrics.dart`): `overdueCount` / `reviewCount` /
-  `runningNowCount` / `unassignedCount` / `rejectedCount` / `approvalRatePct`, reusing the
-  canonical feed predicates.
-- **Verification:** `flutter analyze` clean (0 new). New tests `task_metrics_test.dart` (8) +
-  `dashboard_primitives_test.dart` (widget: hero CTA, attention count+tap+reduced-motion+a11y,
-  stat strip, activity card). Full suite **609 pass / 3 pre-existing fail** (2 splash-centering
-  + 1 stale `notification_grouping_test` expecting the old category list — all unrelated, in
-  untouched files). Manager Home, `LiveStatusBorder` motion/colours, and all backend untouched.
-- **Deferred (later V2 phases, owner-sequenced):** P2 Branches experience + Branch workspace ·
-  P3 Mobile UX · P4 Image cropper/media · P5 remaining polish. On-device visual QA is owner-side.
-
----
-
-## 📐 Performance Baseline (Phase 0.1, `core/optimization`, 2026-07-08)
-
-**Measurement only — no code changed.** New docs: `docs/performance/PERFORMANCE_BASELINE.md`
-(current-state metrics: startup, screens, resources, Firestore, architecture) +
-`docs/performance/PERFORMANCE_BASELINE_ACTIONS.md` (findings ranked Critical→Low,
-backlog only). Static metrics captured from source; runtime numbers (start ms,
-memory, CPU, FPS) marked `NOT CAPTURED` with a device-profiling capture protocol
-(nothing fabricated). **#1 finding:** unbounded Firestore reads — 0 cursor
-pagination anywhere, only 2 `.limit()` sites — the scaling blocker. Do **not**
-implement any action in this phase.
-
----
-
-## 🛡️ Production Readiness Audit (`core/optimization`, 2026-07-08)
-
-**Report-first reliability audit → `docs/PRODUCTION_READINESS_AUDIT.md`. Verdict:
-already well-hardened, zero critical/high defects.** No memory leaks (flagged
-controllers are param-owned / correct merge teardown); every cubit `.listen()`
-has `onError`→`.error` with `!_hasSnapshot` guard; Firebase/Timeout→honest
-`ServerException`; loading/error/empty + retry everywhere; offline persistence +
-`count()` fallback; 4 crash funnels + release breadcrumbs. **Only fix implemented
-(M1):** the 6 intentional best-effort `catch (_) {}` swallows (branch-name /
-directory / seen-dot) now log via `AppLog.warning` for crash-report breadcrumbs
-(control flow unchanged; analyzer clean; suite unchanged). Deferred: M2
-(`developer.log`→`AppLog` consistency, 35 sites). Don't re-add silent swallows.
-
----
-
-## ⚡ Sprint 2 — Render/Rebuild audit + const pass (`core/optimization`, 2026-07-08)
-
-**Rendering perf, pixel-perfect, zero behavior change.** Audit
-`docs/performance/SPRINT2_RENDER_AUDIT.md` (Steps 1–8). **Implemented Phase A —
-const pass:** `flutter_lints` doesn't enable `prefer_const_*`; found 174 missing
-consts, applied ~130 via `dart fix` across 56 files (behavior-identical; analyzer
-clean; suite unchanged; lint config reverted; no generated files touched).
-**Recommended/deferred (need live verify — blocked on signing):** `BlocSelector`
-for scalar chrome (notifications/cases/requests/statistics/profile), `child:`
-hoisting, ListView→`.builder` on paginated feeds, image cache. Home/Schedule
-rebuild-scoping = frozen, untouched. `buildWhen` is still 0 / `BlocSelector` only
-in admin_dashboard (the reference) — widening it is staged, not done blind.
-
----
-
-## 🗂️ Sprint 1 QW#3 — split `task_action_sheets.dart` (`core/optimization`, 2026-07-08)
-
-**Organizational extraction only — no behavior/UI/API change.** The 2,447-line
-`task_action_sheets.dart` (40 classes) is now a `task_action_sheets/` folder of
-**8 `part` files** by responsibility (task_form / branch_picker / checklist /
-assignee_picker / assign / review / shift_pickers / shared·form_primitives);
-main = 136 lines (imports + `part` directives + the 4 public `show*` fns +
-SheetHandle/SheetTitle). Used Dart `part`/`part of` (one library) so the ~33
-interdependent `_`-private widgets stay shared **without going public** — zero
-circular-import risk, external imports unchanged. Analyzer clean, suite unchanged.
-`SheetHandle` also exists in `schedule/sheet_chrome.dart` (cross-feature dup) —
-flagged for a later core/widgets promotion, not touched here.
-
----
-
-## 🔎 Sprint 1 QW#2 — Firestore Query Audit (`core/optimization`, 2026-07-08)
-
-**Audit only — no code changed.** `docs/performance/FIRESTORE_QUERY_AUDIT.md`
-inventories every client query (14 datasources) at real internal-ops scale.
-Verdict: healthy — point reads + bounded collections dominate; `notifications`
-(limit+index) and stats `count()` are exemplary; **no missing composite index**.
-Deferred work only: pagination on 6 admin/global streams (`watchAllTasks` first)
-+ `managerStats`→`count()`. Do not add limits/pagination in this sprint.
-
----
-
-## 🧹 Sprint 1 — single `AppDateFormatter` (`core/optimization`, 2026-07-08)
-
-**Code-quality consolidation, zero visual change.** `lib/core/utils/app_date_formatter.dart`
-is now the ONE place a `DateTime` becomes user-visible text (methods: `time`,
-`dayMonth`, `dayMonthYear`, `monthDayYear`, `dayMonthYearTime`, `weekdayDayMonth`,
-`numeric`, `relative`). Deleted 21 duplicated month arrays (+2 weekday arrays,
-+4 AM/PM blocks; net −192 lines) across 21 files; feature `*_format.dart`
-helpers now delegate to it.
-Analyzer clean; full suite green (only 3 pre-existing, date-unrelated failures).
-Intentionally left out: domain `notify_task_event` (avoids domain→core/utils
-coupling), 24h `ShiftHours.format`, machine `yyyy-MM-dd` keys, and `Duration`
-labels. **New date formatting must go through `AppDateFormatter` — do not
-re-introduce inline month arrays.**
+- **An event = one self-contained document with every section embedded.**
+  `EventEntity` (plain immutable, no codegen — the `BroadcastScheduleEntity`
+  pattern) carries identity **and** the workspace sections inline: timeline
+  milestones (by `EventPhase`), team assignments, tasks (reusing `TaskPriority`),
+  inventory, logistics, budget lines, announcements, and the after-event outcome.
+  So `events/{id}` streams the whole live workspace as one snapshot, and every
+  edit is one atomic `updateEvent` (the cubit's single write path:
+  `copyWith` → save).
+- **Intelligence, not CRUD.** `event_readiness.dart` (pure, unit-tested) computes
+  a 0–100 readiness score + ranked blockers/warnings/wins: missing owner, no date,
+  no team, **unowned tasks**, over-budget, overdue work, unconfirmed team, thin
+  prep near the date. Surfaced in a Readiness chapter.
+- **The flagship screen** (`event_workspace_screen.dart`): a **cinematic
+  collapsing hero** (artwork · status · live countdown · preparation bar) then the
+  content revealed as **chapters** (Overview → Readiness → Timeline → Team → Tasks
+  → Inventory → Logistics → Budget → Communication → After). It **evolves with the
+  event** — a live event floats a command center to the top; a completed one
+  becomes an elegant archive. Hub screen has a spotlight rail + archive; a focused
+  create flow opens the new workspace directly.
+- **Roles:** every role sees the hub (self-scoped: admin all branches · manager +
+  employee own branch); admin + manager create/edit (mirrors `firestore.rules`);
+  employees get the live, read-only story. New **Community** sidebar destination
+  for all roles.
+- **Cubits:** app-wide `CommunityHubCubit` (role-scoped realtime stream + create,
+  repo-direct) + per-event `EventWorkspaceCubit` (built on demand via
+  `AppDependencies.createEventWorkspaceCubit`). Enums `EventType`/`EventStatus`/
+  `EventPhase`. Routes `/community`, `/community/create`, `/event/:eventId`.
+  `firestore.rules` + `storage.rules` (`events/{id}/hero.<ext>`) added.
+- **Tests:** `event_status_test`, `event_readiness_test`, `event_ordering_test`,
+  `event_model_test`.
+- ⚠️ **Not yet run through `flutter analyze`/`flutter test`** — this session had
+  no Dart toolchain available (no `build_runner`/analyzer/test runner), so the
+  slice was written to compile by construction and reviewed by hand. It uses
+  **plain-immutable models + plain cubit states** specifically to avoid needing
+  codegen. Run `flutter analyze` + the four new tests before shipping.
+- **Deliberately client-only** (no Cloud Functions / counters) so the slice is
+  self-contained; server-side event notifications are a noted follow-up.
 
 ---
 

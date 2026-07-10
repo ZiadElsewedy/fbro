@@ -77,6 +77,13 @@ class TaskCard extends StatelessWidget {
     final chips = <Widget>[
       if ((branchName ?? '').isNotEmpty)
         _BranchChip(name: branchName!, logoUrl: branchLogoUrl),
+      // Scheduling V2 — a future start reads as "Scheduled"; once it's underway
+      // the start is implied, so only show it while still upcoming.
+      if (task.startsAt != null && task.startsAt!.isAfter(DateTime.now()))
+        _MetaChip(
+          icon: Icons.schedule_outlined,
+          label: 'Starts ${AppDateFormatter.dayMonth(task.startsAt!)}',
+        ),
       if (task.deadline != null)
         _MetaChip(
           icon: overdue ? Icons.event_busy_outlined : Icons.event_outlined,
