@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:drop/core/enums/attachment_type.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/core/media/media_upload_service.dart';
 import 'package:drop/core/errors/exceptions.dart';
 import 'package:drop/core/errors/failures.dart';
 import 'package:drop/features/task/data/datasources/task_remote_datasource.dart';
 import 'package:drop/features/task/data/models/recurring_task_template_model.dart';
 import 'package:drop/features/task/data/models/task_model.dart';
 import 'package:drop/features/task/data/models/task_template_model.dart';
+import 'package:drop/features/task/domain/entities/activity_entry.dart';
 import 'package:drop/features/task/domain/entities/recurring_task_template_entity.dart';
 import 'package:drop/features/task/domain/entities/task_attachment.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
@@ -125,6 +127,27 @@ class TaskRepositoryImpl implements TaskRepository {
   }
 
   @override
+  Future<void> transitionTask({
+    required String taskId,
+    required Set<String> expectedFrom,
+    required Map<String, Object?> patch,
+    required List<ActivityEntry> appendLog,
+  }) async {
+    try {
+      await _remote.transitionTask(
+        taskId: taskId,
+        expectedFrom: expectedFrom,
+        patch: patch,
+        appendLog: appendLog,
+      );
+    } on ConflictException catch (e) {
+      throw ConflictFailure(e.message);
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
   Future<void> deleteTask(String taskId) async {
     try {
       await _remote.deleteTask(taskId);
@@ -158,6 +181,7 @@ class TaskRepositoryImpl implements TaskRepository {
     required String uploadedBy,
     String? uploadedByName,
     int? durationMs,
+    UploadCanceller? canceller,
     void Function(int transferred, int total)? onProgress,
   }) async {
     try {
@@ -168,11 +192,14 @@ class TaskRepositoryImpl implements TaskRepository {
         uploadedBy: uploadedBy,
         uploadedByName: uploadedByName,
         durationMs: durationMs,
+        canceller: canceller,
         onProgress: onProgress,
       );
     } on ServerException catch (e) {
       throw ServerFailure(e.message);
     }
+    // UploadCancelledException is intentionally NOT caught here — it isn't a
+    // failure; it propagates to the cubit which restores the UI quietly.
   }
 
   // ─── Task templates ────────────────────────────────────────────

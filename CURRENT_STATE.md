@@ -11,12 +11,101 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
+**Last updated:** 2026-07-11 (Media upload FINAL hardening — cancellation · retry · analytics · orphan GC)
+**Version:** 1.0.0+1 · **Branch:** `feature/media-upload-v2` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-10 (Notifications V2 — pilot reliability + crash-safe deep links)
+**Version:** 1.0.0+1 · **Branch:** `feature/notifications-v2` (DROP — monochrome premium desktop UX)
 **Last updated:** 2026-07-08 (Community Hub / DROP Events — flagship event workspace)
 **Version:** 1.0.0+1 · **Branch:** `claude/community-hub-events-pzjvbp` (DROP — monochrome premium desktop UX)
 **Last updated:** 2026-07-08 (Requests closed out: analyzer clean + tests green)
 **Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
 **Last updated:** 2026-07-08 (Work Details design system + Create Work sheet UX)
 **Version:** 1.0.0+1 · **Branch:** `feature/work-management-system` (DROP — monochrome premium desktop UX)
+
+---
+
+## ✅ Media upload hardening — shared service · image editor · video compression (2026-07-11)
+
+Focused high-ROI pass on the media pipeline (`feature/media-upload-v2`). The pipeline
+was already mature (shared picker · state-driven progress overlay · immutable
+create-only Storage · gallery + fullscreen viewer) — this **hardens + enriches** it,
+no rewrite.
+
+- **One upload seam.** NEW `core/media/media_upload_service.dart` — the triplicated
+  task/case/request Storage-upload block now lives here once (all three delegate),
+  plus a long `Cache-Control` on every object. `PickedAttachment` moved to
+  `core/media`; new `core/utils/concurrent.dart` `mapPooled` caps submission uploads
+  at 3-in-flight with a smooth fixed-denominator progress bar.
+- **Image editor (mobile).** NEW `core/media/media_processing.dart` `editImage`
+  (`image_cropper`: crop/rotate/flip/aspect, monochrome) runs after a camera capture
+  and via a tap-to-edit affordance on each image thumbnail; edited bytes replace the
+  original. Gated on `supportsImageEditing` (desktop/web upload unedited).
+  AndroidManifest declares the uCrop activity.
+- **Video compression (mobile).** `compressVideo` (`video_compress`) transcodes before
+  upload behind a cancellable progress dialog; fails safe to the original. Gated on
+  `supportsVideoCompression`.
+- **Perf/cost fixes.** Killed the fullscreen video per-tick rebuild storm; `cacheWidth`
+  caps on fullscreen + thumbnail decode; `storage.rules` gained a binding `validMedia()`
+  size/type ceiling on the create paths; event-hero pick strips EXIF via `imageQuality`.
+- **Deps:** `image_cropper`, `video_compress` (mobile-gated). **Tests:** new
+  `concurrent_test.dart`; analyzer clean; suite unchanged (2 pre-existing splash
+  failures only).
+- **Final hardening pass (2026-07-11, last before merge):**
+  - **Upload cancellation** — `UploadCanceller`/`UploadCancelledException`
+    (`core/media`), threaded task use case→repo→datasource→service like
+    `onProgress`; overlay **Cancel** button → `TaskCubit.cancelSubmission()`;
+    aborts every active `UploadTask`, restores UI quietly, keeps media, hidden
+    during `finalizing` (so the doc write finishes). Crash-safe/idempotent.
+  - **Retry** — `_uploadedCache` (file path → result, per task) re-uploads only
+    what didn't already succeed (a Firestore-fail retry re-uploads nothing);
+    cleared on success/task change.
+  - **Analytics** — 4 new `AuditEventType`s (`media.upload_started/completed/
+    failed/cancelled`) via the existing `EventTrackingService` seam; metadata =
+    counts · bytes · `durationMs` · `compressionRatio` (from new
+    `PickedAttachment.originalBytes`).
+  - **Orphan GC** — opt-in 3rd sweep in `taskHousekeeping` (Admin SDK bypasses the
+    create-only rules); reconciles a task's `attachments/` vs referenced URLs,
+    deletes unreferenced past-grace objects; OFF unless
+    `config/taskRetention.gcOrphanAttachments`, `gcGraceHours`=48, skips a task on
+    any unparseable URL. **Needs functions deploy + the config flag.**
+  - Tests: `upload_canceller_test`. **Constraints kept:** no offline queue /
+    pause-resume / background uploads / reordering.
+- **Still deferred (P2):** reorder/replace · a11y Semantics + 44px targets ·
+  pause-video-on-swipe · `cached_network_image` disk cache · gallery-video duration
+  cap. **Owner deploy:** `storage.rules` + `functions` (orphan GC).
+
+---
+
+## ✅ Notifications V2 — pilot reliability + crash-safe deep links (2026-07-10)
+
+Pilot-hardening pass (`feature/notifications-v2`). The in-app Notification Center
+was already mature (grouping · read/unread · mark-all · archive · pagination) and
+is **unchanged** except where a bug fix required it. This pass unified deep-link
+routing and closed real reliability bugs. Full technical doc:
+`docs/design/NOTIFICATIONS_V2.md`.
+
+- **One deep-link resolver, both tap surfaces.** New pure, role-aware
+  `resolveNotificationRoute` (`lib/features/notifications/domain/notification_deep_link.dart`)
+  backs BOTH the in-app inbox tile and the FCM push handler, so every notification
+  opens the same destination however it's tapped (foreground · background ·
+  cold-start · in-app). `null` = guarded no-op → caller falls back to the inbox;
+  **navigation never crashes** on a stale/unknown/unauthorized notification.
+- **Bugs fixed:** **B1** — the FCM `data` block (functions `onNotificationCreated`)
+  omitted `requestId`/`swapId`, breaking request/swap push deep-links (**needs a
+  functions deploy**); **B2/B4** — the push tap handler routed only `task_details`,
+  now uses the shared resolver; **B3** — broadcast deep-link dead-ended on
+  "Broadcast unavailable" (added `BroadcastRepository.getBroadcast` + a one-shot
+  self-resolve in the detail screen); **B5** — the foreground snackbar is now
+  actionable ("View" deep-links via the resolver).
+- **Android:** `AndroidManifest.xml` declares `POST_NOTIFICATIONS` (Android 13+
+  runtime permission — without it, pushes are silently dropped) + `INTERNET`.
+- **Tests:** new `notification_deep_link_test.dart` + `notification_cubit_test.dart`;
+  updated the tap-flow probe for the B3 fix; corrected a stale category-pills
+  assertion. `flutter analyze` clean on touched files; full suite **747 pass, 2
+  fail** (the 2 are the pre-existing desktop splash-framing tests — unrelated).
+- ⚠️ **Deferred (needs your machine):** deploy Cloud Functions for B1; **iOS push
+  is still unconfigured** (no entitlements / `aps-environment` / background mode) —
+  needs Xcode signing + an APNs key. See §6 of the design doc.
 
 ---
 
