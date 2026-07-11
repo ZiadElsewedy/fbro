@@ -1,0 +1,118 @@
+import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:drop/core/enums/attendance_source.dart';
+import 'package:drop/core/enums/attendance_status.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/features/attendance/domain/attendance_break.dart';
+import 'package:drop/features/attendance/domain/attendance_id.dart';
+import 'package:drop/features/attendance/domain/attendance_location.dart';
+
+part 'attendance_entity.freezed.dart';
+
+/// One employee's attendance for **one shift on one day** — the record behind a
+/// clock-in/out. Stored at `attendance/{uid}_{yyyyMMdd}_{shift}` (a deterministic
+/// id — see [attendanceDocId] — which is what makes clock-in idempotent and
+/// offline-safe). The append-only audit trail lives in the `events` subcollection
+/// (`AttendanceEvent`).
+///
+/// The five minute totals ([workedMinutes] … [breakMinutes]) are a **snapshot**
+/// written at clock-out / auto-close by `AttendanceCalculator` (the single source
+/// of that math), so reports and the admin dashboard aggregate plain numbers
+/// without re-deriving per document. While a session is in progress the live
+/// timer recomputes them from the calculator against `now` instead of reading the
+/// stale snapshot.
+///
+/// Lateness / early-leave / overtime are **derived** ([isLate] / [hasEarlyLeave]
+/// / [hasOvertime]) from those minute fields — they are deliberately not extra
+/// statuses (see [AttendanceStatus]).
+@freezed
+class AttendanceEntity with _$AttendanceEntity {
+  const AttendanceEntity._();
+
+  const factory AttendanceEntity({
+    /// Deterministic id `{uid}_{yyyyMMdd}_{shift}` (see [attendanceDocId]).
+    required String id,
+    required String userId,
+
+    /// Denormalized for list/board rows (avoids a user fetch per row).
+    String? userName,
+    String? branchId,
+
+    /// Which rostered slot this record is for.
+    required ScheduleShift shift,
+
+    /// The calendar day of the shift (local midnight). Pairs with [dayKey].
+    required DateTime date,
+
+    /// The scheduled start / end **instants**, snapshotted at clock-in from the
+    /// resolved `ShiftHours` so history stays stable even if the roster is later
+    /// edited. Null for an unscheduled clock-in.
+    DateTime? scheduledStart,
+    DateTime? scheduledEnd,
+    DateTime? clockIn,
+    DateTime? clockOut,
+
+    /// Breaks taken this shift (small single-writer array; see [AttendanceBreak]).
+    @Default(<AttendanceBreak>[]) List<AttendanceBreak> breaks,
+    @Default(AttendanceStatus.inProgress) AttendanceStatus status,
+
+    // ── Snapshot totals (written at clock-out / auto-close) ──
+    @Default(0) int workedMinutes,
+    @Default(0) int lateMinutes,
+    @Default(0) int earlyLeaveMinutes,
+    @Default(0) int overtimeMinutes,
+    @Default(0) int breakMinutes,
+
+    /// Optional captured location (only when the branch opts into a geofence
+    /// policy; default off). Extension point.
+    AttendanceLocation? location,
+
+    /// Optional clock-in selfie (Storage URL). Extension point for future face
+    /// verification — stored, never analysed here.
+    String? photoUrl,
+    String? deviceId,
+    String? notes,
+    @Default(AttendanceSource.clock) AttendanceSource source,
+
+    // ── Resolution (who closed out a pendingReview record, via a correction or
+    //    a manager edit). NOT an "approval" of the record — approve/reject is a
+    //    property of the Attendance Correction Request, never of attendance
+    //    itself. These are denormalized stamps for the card + audit.
+    String? resolvedBy,
+    String? resolvedByName,
+    DateTime? resolvedAt,
+
+    /// Additive version tag so the shape can evolve without a migration.
+    @Default(1) int schemaVersion,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+
+    /// Soft delete (admin) — the record stays as history, lists filter it out.
+    DateTime? deletedAt,
+  }) = _AttendanceEntity;
+
+  /// The `yyyyMMdd` day key (also persisted, for the branch/day query).
+  String get dayKey => attendanceDayKey(date);
+
+  bool get isDeleted => deletedAt != null;
+  bool get hasClockedIn => clockIn != null;
+  bool get hasClockedOut => clockOut != null;
+
+  /// A live, running session (clocked in, not out).
+  bool get isOpen => hasClockedIn && !hasClockedOut;
+
+  /// The currently-open break, or null when none is running.
+  AttendanceBreak? get currentBreak => openBreak(breaks);
+  bool get isOnBreak => currentBreak != null;
+
+  // ── Derived facts (from the snapshot minute fields) ──
+  bool get isLate => lateMinutes > 0;
+  bool get hasEarlyLeave => earlyLeaveMinutes > 0;
+  bool get hasOvertime => overtimeMinutes > 0;
+
+  bool get isPresent => status.isPresent;
+  bool get needsReview => status.needsReview;
+
+  /// True when this record was created without a rostered shift (the scheduled
+  /// window is unknown) — surfaces an "unscheduled" hint.
+  bool get isUnscheduled => scheduledStart == null;
+}

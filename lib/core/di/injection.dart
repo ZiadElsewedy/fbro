@@ -90,6 +90,14 @@ import 'package:drop/features/requests/domain/usecases/create_request.dart';
 import 'package:drop/features/requests/domain/usecases/upload_request_attachment.dart';
 import 'package:drop/features/requests/presentation/cubit/request_detail_cubit.dart';
 import 'package:drop/features/requests/presentation/cubit/requests_list_cubit.dart';
+import 'package:drop/features/attendance/data/datasources/attendance_remote_datasource.dart';
+import 'package:drop/features/attendance/data/repositories/attendance_repository_impl.dart';
+import 'package:drop/features/attendance/domain/repositories/attendance_repository.dart';
+import 'package:drop/features/attendance/domain/usecases/clock_in.dart';
+import 'package:drop/features/attendance/domain/usecases/clock_out.dart';
+import 'package:drop/features/attendance/domain/usecases/end_break.dart';
+import 'package:drop/features/attendance/domain/usecases/start_break.dart';
+import 'package:drop/features/attendance/presentation/cubit/attendance_cubit.dart';
 import 'package:drop/features/community/data/datasources/event_remote_datasource.dart';
 import 'package:drop/features/community/data/repositories/event_repository_impl.dart';
 import 'package:drop/features/community/domain/repositories/event_repository.dart';
@@ -182,6 +190,9 @@ class AppDependencies {
         user: user,
         requestId: requestId,
       );
+
+  /// Attendance (clock in/out) — the employee-facing cubit (singleton, app-wide).
+  static late final AttendanceCubit attendanceCubit;
 
   /// Community Hub / DROP Events — the hub list cubit (singleton, app-wide).
   static late final CommunityHubCubit communityHubCubit;
@@ -333,6 +344,28 @@ class AppDependencies {
       branchRepository: branchRepository,
       createRequest: CreateRequest(requestRepository),
       uploadAttachment: _uploadRequestAttachment,
+    );
+
+    // ─── Attendance (clock in/out) ──────────────────────────────────────
+    // The employee-facing cubit reuses the existing schedule seam to resolve
+    // today's shift + scheduled window (no attendance re-derivation), drives its
+    // whole surface from one realtime history stream, and gates every clock
+    // action through the pure validation engine. Clock actions write the record
+    // + its append-only audit event atomically. Notifications + auto-close come
+    // later (client NotifyAttendanceEvent + scheduled Cloud Functions).
+    final AttendanceRepository attendanceRepository = AttendanceRepositoryImpl(
+      AttendanceRemoteDataSourceImpl(
+        FirebaseFirestore.instance,
+        FirebaseStorage.instance,
+      ),
+    );
+    attendanceCubit = AttendanceCubit(
+      repository: attendanceRepository,
+      scheduleRepository: scheduleRepository,
+      clockIn: ClockIn(attendanceRepository),
+      clockOut: ClockOut(attendanceRepository),
+      startBreak: StartBreak(attendanceRepository),
+      endBreak: EndBreak(attendanceRepository),
     );
 
     // ─── Community Hub / DROP Events ────────────────────────────────────

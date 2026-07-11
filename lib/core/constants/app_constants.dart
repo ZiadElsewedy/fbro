@@ -28,6 +28,12 @@ class AppConstants {
   /// lives in Storage at `events/{id}/hero.<ext>`.
   static const String eventsCollection = 'events';
 
+  /// Attendance records (clock in/out). One document per (user, day, shift) at a
+  /// deterministic id `{uid}_{yyyyMMdd}_{shift}` (see `attendanceDocId`); the
+  /// append-only audit trail lives in `attendance/{id}/events`, and an optional
+  /// clock-in selfie in Storage at `attendance/{id}/selfie/{id}.<ext>`.
+  static const String attendanceCollection = 'attendance';
+
   // ─── Communications Center — Phase 2 ──────────────────────────
   static const String broadcastTemplatesCollection = 'broadcastTemplates';
   static const String broadcastSchedulesCollection = 'broadcastSchedules';

@@ -1,6 +1,3 @@
-import 'package:drop/core/enums/event_phase.dart';
-import 'package:drop/core/enums/task_priority.dart';
-
 /// The embedded **workspace sections** of an [EventEntity]. Each event is its own
 /// operational workspace, and these value objects are the chapters that live
 /// inside the single `events/{id}` document (timeline, team, tasks, inventory,
@@ -11,6 +8,9 @@ import 'package:drop/core/enums/task_priority.dart';
 /// for `BroadcastScheduleEntity`. They honour the domain-layer contract: pure
 /// Dart, no Flutter/Firebase imports. Serialization lives in `EventModel`.
 library;
+
+import 'package:drop/core/enums/event_phase.dart';
+import 'package:drop/core/enums/task_priority.dart';
 
 /// A planning **milestone** on the event timeline, grouped by [phase]. Toggling
 /// it done is what makes the timeline visibly advance.
