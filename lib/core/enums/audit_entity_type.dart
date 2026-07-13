@@ -16,6 +16,11 @@ enum AuditEntityType {
   user,
   profile,
 
+  /// A recurring-task automation (`recurringTaskTemplates/{id}`) — the
+  /// [entityId] is the template id. Used by the Cloud Function's automation
+  /// audit events (`automation.*`, `task.auto_generated`).
+  automation,
+
   /// A login / logout session event — there is no single document, so [entityId]
   /// carries the acting user's uid.
   session,
@@ -34,6 +39,7 @@ enum AuditEntityType {
         AuditEntityType.event => 'Event',
         AuditEntityType.user => 'User',
         AuditEntityType.profile => 'Profile',
+        AuditEntityType.automation => 'Automation',
         AuditEntityType.session => 'Session',
         AuditEntityType.other => 'Other',
       };

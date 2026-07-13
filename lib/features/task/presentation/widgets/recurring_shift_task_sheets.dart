@@ -6,6 +6,7 @@ import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/utils/app_date_formatter.dart';
 import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/features/auth/presentation/widgets/app_button.dart';
 import 'package:drop/features/auth/presentation/widgets/app_text_field.dart';
@@ -103,7 +104,7 @@ class _ManageRecurringShiftTasksState
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SheetTitle('Recurring Shift Tasks'),
+        const SheetTitle('Automation Center'),
         if (_busy) const LinearProgressIndicator(minHeight: 2),
         FutureBuilder<List<RecurringTaskTemplateEntity>>(
           future: _future,
@@ -139,11 +140,19 @@ class _ManageRecurringShiftTasksState
                             ? AppColors.primary
                             : AppColors.textTertiary),
                     title: Text(t.title, style: AppTypography.label),
-                    subtitle: Text(
-                      '${t.shift.label} · ${t.repeat.label}'
-                      '${t.repeat == TemplateRepeatMode.weekly ? ' · ${_weekdayLabel(t.weekday)}' : ''}'
-                      '${t.active ? '' : ' · paused'}',
-                      style: AppTypography.caption,
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${t.shift.label} · ${t.repeat.label}'
+                          '${t.repeat == TemplateRepeatMode.weekly ? ' · ${_weekdayLabel(t.weekday)}' : ''}'
+                          '${t.active ? '' : ' · paused'}',
+                          style: AppTypography.caption,
+                        ),
+                        const SizedBox(height: 2),
+                        _AutomationHealthLine(t),
+                      ],
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -189,6 +198,56 @@ class _ManageRecurringShiftTasksState
   ];
   static String _weekdayLabel(int weekday) =>
       _weekdayLabels[(weekday - 1).clamp(0, 6)];
+}
+
+/// One-line automation health for a routine (Automation Center) — the
+/// Cloud-Function-owned rollups (`lastRunAt` / `nextRunAt` / `lastStatus` /
+/// `failureCount`) rendered so a manager sees a routine's health without reading
+/// logs. Monochrome; red only when a run is failing (the warning state).
+class _AutomationHealthLine extends StatelessWidget {
+  const _AutomationHealthLine(this.t);
+  final RecurringTaskTemplateEntity t;
+
+  @override
+  Widget build(BuildContext context) {
+    final IconData icon;
+    final Color color;
+    final String text;
+    if (t.failureCount > 0) {
+      icon = Icons.error_outline_rounded;
+      color = AppColors.error;
+      final last =
+          t.lastRunAt == null ? '' : ' · last ${AppDateFormatter.relative(t.lastRunAt!)}';
+      text = '${t.failureCount} failed run${t.failureCount == 1 ? '' : 's'}$last';
+    } else if (t.lastRunAt == null) {
+      icon = Icons.hourglass_empty_rounded;
+      color = AppColors.textTertiary;
+      text = t.nextRunAt == null
+          ? 'Never run'
+          : 'Never run · next ${AppDateFormatter.dayMonth(t.nextRunAt!)}';
+    } else {
+      icon = Icons.check_circle_outline_rounded;
+      color = AppColors.textSecondary;
+      final next = t.nextRunAt == null
+          ? ''
+          : ' · next ${AppDateFormatter.dayMonth(t.nextRunAt!)}';
+      text = 'Ran ${AppDateFormatter.relative(t.lastRunAt!)}$next';
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            text,
+            style: AppTypography.caption.copyWith(color: color),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Form to create a new recurring shift-task template. Pops `true` once saved

@@ -1281,6 +1281,7 @@ class TaskCubit extends Cubit<TaskState> {
         repeat: repeat,
         weekday: weekday,
         createdBy: _user?.uid,
+        updatedBy: _user?.uid,
       ),
     );
     unawaited(_materializeTodayInstance(created));
@@ -1290,7 +1291,8 @@ class TaskCubit extends Cubit<TaskState> {
     RecurringTaskTemplateEntity template,
     bool active,
   ) =>
-      _repository.updateRecurringTemplate(template.copyWith(active: active));
+      _repository.updateRecurringTemplate(
+          template.copyWith(active: active, updatedBy: _user?.uid));
 
   Future<void> deleteRecurringTemplate(String templateId) =>
       _repository.deleteRecurringTemplate(templateId);
@@ -1382,35 +1384,46 @@ class TaskCubit extends Cubit<TaskState> {
   /// Creates the next instance of a recurring task immediately after [source]
   /// is approved. Resets checklist items to uncompleted; inherits everything
   /// else (title, description, type, priority, branchId, assignees, recurrence).
+  ///
+  /// **Idempotent by construction.** Each task spawns at most one successor, so
+  /// the successor's document id is the deterministic `rec_{source.id}` — a
+  /// reopen→re-approve of the same task, a retried spawn, or two racing writers
+  /// all target that one id, and the atomic [TaskRepository.createTaskWithId]
+  /// makes a duplicate a silent no-op (returns null). This replaced a random
+  /// auto-id that double-spawned on reopen→re-approve. The successor keys off
+  /// the (stable, unique) current task id rather than the next deadline, so it's
+  /// safe even when [source] has no deadline. Best-effort: the approval itself
+  /// already committed.
   Future<void> _spawnNextRecurrence(TaskEntity source) async {
     final recurrence = source.recurrence!;
     final nextDeadline =
         recurrence.nextOccurrence(source.deadline ?? DateTime.now());
-    final freshChecklist = [
-      for (final item in source.checklist)
-        ChecklistItem(
-          id: item.id,
-          title: item.title,
-          isRequired: item.isRequired,
-          completed: false,
-          completedAt: null,
-        ),
-    ];
     try {
-      await _createTask(TaskEntity(
-        id: '',
+      await _repository.createTaskWithId(TaskEntity(
+        id: 'rec_${source.id}',
         title: source.title,
         description: source.description,
         type: source.type,
         priority: source.priority,
         branchId: source.branchId,
         assigneeIds: source.assigneeIds,
-        checklist: freshChecklist,
+        checklist: [
+          for (final item in source.checklist)
+            ChecklistItem(
+              id: item.id,
+              title: item.title,
+              isRequired: item.isRequired,
+              completed: false,
+              completedAt: null,
+            ),
+        ],
         recurrence: recurrence,
         assignmentType: source.assignmentType,
         shift: source.shift,
         createdBy: source.createdBy,
         deadline: nextDeadline,
+        recurrenceRootId: source.recurrenceRootId ?? source.id,
+        occurrenceKey: _dateKey(nextDeadline),
         activityLog: [
           ActivityEntry(
             status: TaskStatus.pending.value,

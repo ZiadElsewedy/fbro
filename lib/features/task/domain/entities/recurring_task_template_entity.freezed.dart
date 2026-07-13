@@ -37,8 +37,31 @@ mixin _$RecurringTaskTemplateEntity {
   /// untouched either way.
   bool get active => throw _privateConstructorUsedError;
   String? get createdBy => throw _privateConstructorUsedError;
+
+  /// uid of whoever last edited this routine (client-written on update).
+  String? get updatedBy => throw _privateConstructorUsedError;
   DateTime? get createdAt => throw _privateConstructorUsedError;
-  DateTime? get updatedAt => throw _privateConstructorUsedError;
+  DateTime? get updatedAt =>
+      throw _privateConstructorUsedError; // ─── Automation health (Automation Center) ──────────────────────────
+  // Cloud-Function-owned rollups, written by `generateShiftTaskInstances` via
+  // the Admin SDK and **read-only** to the client (never in `toMap`, like a
+  // task's `version`). They let the Automation Center show a routine's health
+  // without reading Cloud Logging — see docs/design/AUTOMATION_ENGINE.md.
+  /// Last time the generator attempted this routine.
+  DateTime? get lastRunAt => throw _privateConstructorUsedError;
+
+  /// Next scheduled generation (computed by the function; advisory).
+  DateTime? get nextRunAt => throw _privateConstructorUsedError;
+
+  /// Outcome of the last run: `completed` / `skipped` / `failed`
+  /// (null = never run).
+  String? get lastStatus => throw _privateConstructorUsedError;
+
+  /// The task id the last successful run generated.
+  String? get lastGeneratedTaskId => throw _privateConstructorUsedError;
+
+  /// Consecutive generation failures; reset to 0 on a successful run.
+  int get failureCount => throw _privateConstructorUsedError;
 
   /// Create a copy of RecurringTaskTemplateEntity
   /// with the given fields replaced by the non-null parameter values.
@@ -70,8 +93,14 @@ abstract class $RecurringTaskTemplateEntityCopyWith<$Res> {
     int weekday,
     bool active,
     String? createdBy,
+    String? updatedBy,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? lastRunAt,
+    DateTime? nextRunAt,
+    String? lastStatus,
+    String? lastGeneratedTaskId,
+    int failureCount,
   });
 }
 
@@ -104,8 +133,14 @@ class _$RecurringTaskTemplateEntityCopyWithImpl<
     Object? weekday = null,
     Object? active = null,
     Object? createdBy = freezed,
+    Object? updatedBy = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
+    Object? lastRunAt = freezed,
+    Object? nextRunAt = freezed,
+    Object? lastStatus = freezed,
+    Object? lastGeneratedTaskId = freezed,
+    Object? failureCount = null,
   }) {
     return _then(
       _value.copyWith(
@@ -153,6 +188,10 @@ class _$RecurringTaskTemplateEntityCopyWithImpl<
                 ? _value.createdBy
                 : createdBy // ignore: cast_nullable_to_non_nullable
                       as String?,
+            updatedBy: freezed == updatedBy
+                ? _value.updatedBy
+                : updatedBy // ignore: cast_nullable_to_non_nullable
+                      as String?,
             createdAt: freezed == createdAt
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
@@ -161,6 +200,26 @@ class _$RecurringTaskTemplateEntityCopyWithImpl<
                 ? _value.updatedAt
                 : updatedAt // ignore: cast_nullable_to_non_nullable
                       as DateTime?,
+            lastRunAt: freezed == lastRunAt
+                ? _value.lastRunAt
+                : lastRunAt // ignore: cast_nullable_to_non_nullable
+                      as DateTime?,
+            nextRunAt: freezed == nextRunAt
+                ? _value.nextRunAt
+                : nextRunAt // ignore: cast_nullable_to_non_nullable
+                      as DateTime?,
+            lastStatus: freezed == lastStatus
+                ? _value.lastStatus
+                : lastStatus // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            lastGeneratedTaskId: freezed == lastGeneratedTaskId
+                ? _value.lastGeneratedTaskId
+                : lastGeneratedTaskId // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            failureCount: null == failureCount
+                ? _value.failureCount
+                : failureCount // ignore: cast_nullable_to_non_nullable
+                      as int,
           )
           as $Val,
     );
@@ -188,8 +247,14 @@ abstract class _$$RecurringTaskTemplateEntityImplCopyWith<$Res>
     int weekday,
     bool active,
     String? createdBy,
+    String? updatedBy,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? lastRunAt,
+    DateTime? nextRunAt,
+    String? lastStatus,
+    String? lastGeneratedTaskId,
+    int failureCount,
   });
 }
 
@@ -222,8 +287,14 @@ class __$$RecurringTaskTemplateEntityImplCopyWithImpl<$Res>
     Object? weekday = null,
     Object? active = null,
     Object? createdBy = freezed,
+    Object? updatedBy = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
+    Object? lastRunAt = freezed,
+    Object? nextRunAt = freezed,
+    Object? lastStatus = freezed,
+    Object? lastGeneratedTaskId = freezed,
+    Object? failureCount = null,
   }) {
     return _then(
       _$RecurringTaskTemplateEntityImpl(
@@ -271,6 +342,10 @@ class __$$RecurringTaskTemplateEntityImplCopyWithImpl<$Res>
             ? _value.createdBy
             : createdBy // ignore: cast_nullable_to_non_nullable
                   as String?,
+        updatedBy: freezed == updatedBy
+            ? _value.updatedBy
+            : updatedBy // ignore: cast_nullable_to_non_nullable
+                  as String?,
         createdAt: freezed == createdAt
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
@@ -279,6 +354,26 @@ class __$$RecurringTaskTemplateEntityImplCopyWithImpl<$Res>
             ? _value.updatedAt
             : updatedAt // ignore: cast_nullable_to_non_nullable
                   as DateTime?,
+        lastRunAt: freezed == lastRunAt
+            ? _value.lastRunAt
+            : lastRunAt // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
+        nextRunAt: freezed == nextRunAt
+            ? _value.nextRunAt
+            : nextRunAt // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
+        lastStatus: freezed == lastStatus
+            ? _value.lastStatus
+            : lastStatus // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        lastGeneratedTaskId: freezed == lastGeneratedTaskId
+            ? _value.lastGeneratedTaskId
+            : lastGeneratedTaskId // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        failureCount: null == failureCount
+            ? _value.failureCount
+            : failureCount // ignore: cast_nullable_to_non_nullable
+                  as int,
       ),
     );
   }
@@ -300,8 +395,14 @@ class _$RecurringTaskTemplateEntityImpl extends _RecurringTaskTemplateEntity {
     this.weekday = 1,
     this.active = true,
     this.createdBy,
+    this.updatedBy,
     this.createdAt,
     this.updatedAt,
+    this.lastRunAt,
+    this.nextRunAt,
+    this.lastStatus,
+    this.lastGeneratedTaskId,
+    this.failureCount = 0,
   }) : _checklistItems = checklistItems,
        super._();
 
@@ -346,14 +447,44 @@ class _$RecurringTaskTemplateEntityImpl extends _RecurringTaskTemplateEntity {
   final bool active;
   @override
   final String? createdBy;
+
+  /// uid of whoever last edited this routine (client-written on update).
+  @override
+  final String? updatedBy;
   @override
   final DateTime? createdAt;
   @override
   final DateTime? updatedAt;
+  // ─── Automation health (Automation Center) ──────────────────────────
+  // Cloud-Function-owned rollups, written by `generateShiftTaskInstances` via
+  // the Admin SDK and **read-only** to the client (never in `toMap`, like a
+  // task's `version`). They let the Automation Center show a routine's health
+  // without reading Cloud Logging — see docs/design/AUTOMATION_ENGINE.md.
+  /// Last time the generator attempted this routine.
+  @override
+  final DateTime? lastRunAt;
+
+  /// Next scheduled generation (computed by the function; advisory).
+  @override
+  final DateTime? nextRunAt;
+
+  /// Outcome of the last run: `completed` / `skipped` / `failed`
+  /// (null = never run).
+  @override
+  final String? lastStatus;
+
+  /// The task id the last successful run generated.
+  @override
+  final String? lastGeneratedTaskId;
+
+  /// Consecutive generation failures; reset to 0 on a successful run.
+  @override
+  @JsonKey()
+  final int failureCount;
 
   @override
   String toString() {
-    return 'RecurringTaskTemplateEntity(id: $id, title: $title, description: $description, priority: $priority, checklistItems: $checklistItems, branchId: $branchId, shift: $shift, repeat: $repeat, weekday: $weekday, active: $active, createdBy: $createdBy, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'RecurringTaskTemplateEntity(id: $id, title: $title, description: $description, priority: $priority, checklistItems: $checklistItems, branchId: $branchId, shift: $shift, repeat: $repeat, weekday: $weekday, active: $active, createdBy: $createdBy, updatedBy: $updatedBy, createdAt: $createdAt, updatedAt: $updatedAt, lastRunAt: $lastRunAt, nextRunAt: $nextRunAt, lastStatus: $lastStatus, lastGeneratedTaskId: $lastGeneratedTaskId, failureCount: $failureCount)';
   }
 
   @override
@@ -379,14 +510,26 @@ class _$RecurringTaskTemplateEntityImpl extends _RecurringTaskTemplateEntity {
             (identical(other.active, active) || other.active == active) &&
             (identical(other.createdBy, createdBy) ||
                 other.createdBy == createdBy) &&
+            (identical(other.updatedBy, updatedBy) ||
+                other.updatedBy == updatedBy) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
             (identical(other.updatedAt, updatedAt) ||
-                other.updatedAt == updatedAt));
+                other.updatedAt == updatedAt) &&
+            (identical(other.lastRunAt, lastRunAt) ||
+                other.lastRunAt == lastRunAt) &&
+            (identical(other.nextRunAt, nextRunAt) ||
+                other.nextRunAt == nextRunAt) &&
+            (identical(other.lastStatus, lastStatus) ||
+                other.lastStatus == lastStatus) &&
+            (identical(other.lastGeneratedTaskId, lastGeneratedTaskId) ||
+                other.lastGeneratedTaskId == lastGeneratedTaskId) &&
+            (identical(other.failureCount, failureCount) ||
+                other.failureCount == failureCount));
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     runtimeType,
     id,
     title,
@@ -399,9 +542,15 @@ class _$RecurringTaskTemplateEntityImpl extends _RecurringTaskTemplateEntity {
     weekday,
     active,
     createdBy,
+    updatedBy,
     createdAt,
     updatedAt,
-  );
+    lastRunAt,
+    nextRunAt,
+    lastStatus,
+    lastGeneratedTaskId,
+    failureCount,
+  ]);
 
   /// Create a copy of RecurringTaskTemplateEntity
   /// with the given fields replaced by the non-null parameter values.
@@ -429,8 +578,14 @@ abstract class _RecurringTaskTemplateEntity
     final int weekday,
     final bool active,
     final String? createdBy,
+    final String? updatedBy,
     final DateTime? createdAt,
     final DateTime? updatedAt,
+    final DateTime? lastRunAt,
+    final DateTime? nextRunAt,
+    final String? lastStatus,
+    final String? lastGeneratedTaskId,
+    final int failureCount,
   }) = _$RecurringTaskTemplateEntityImpl;
   const _RecurringTaskTemplateEntity._() : super._();
 
@@ -464,10 +619,38 @@ abstract class _RecurringTaskTemplateEntity
   bool get active;
   @override
   String? get createdBy;
+
+  /// uid of whoever last edited this routine (client-written on update).
+  @override
+  String? get updatedBy;
   @override
   DateTime? get createdAt;
   @override
-  DateTime? get updatedAt;
+  DateTime? get updatedAt; // ─── Automation health (Automation Center) ──────────────────────────
+  // Cloud-Function-owned rollups, written by `generateShiftTaskInstances` via
+  // the Admin SDK and **read-only** to the client (never in `toMap`, like a
+  // task's `version`). They let the Automation Center show a routine's health
+  // without reading Cloud Logging — see docs/design/AUTOMATION_ENGINE.md.
+  /// Last time the generator attempted this routine.
+  @override
+  DateTime? get lastRunAt;
+
+  /// Next scheduled generation (computed by the function; advisory).
+  @override
+  DateTime? get nextRunAt;
+
+  /// Outcome of the last run: `completed` / `skipped` / `failed`
+  /// (null = never run).
+  @override
+  String? get lastStatus;
+
+  /// The task id the last successful run generated.
+  @override
+  String? get lastGeneratedTaskId;
+
+  /// Consecutive generation failures; reset to 0 on a successful run.
+  @override
+  int get failureCount;
 
   /// Create a copy of RecurringTaskTemplateEntity
   /// with the given fields replaced by the non-null parameter values.

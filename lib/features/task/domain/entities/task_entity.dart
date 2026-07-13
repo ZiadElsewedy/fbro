@@ -87,6 +87,19 @@ class TaskEntity with _$TaskEntity {
     /// generated it (`generateShiftTaskInstances` Cloud Function). Null for
     /// one-off tasks and for every task predating recurring shift templates.
     String? sourceTemplateId,
+    /// Stable lineage id for a **per-task recurrence** chain (Path B). Set on
+    /// every auto-spawned successor to the id of the chain's *root* task (the
+    /// first, manually-created one), so an admin can group / query a whole
+    /// recurring lineage. Null on a one-off task and on the root itself until it
+    /// spawns. Additive — no migration. See `TaskCubit._spawnNextRecurrence`.
+    String? recurrenceRootId,
+    /// The occurrence this auto-spawned task is *for* — the successor's due-date
+    /// key (`yyyy-MM-dd`), stored for display/debugging in the Automation Center.
+    /// Distinct from the **document id**, which is the deterministic idempotency
+    /// key `rec_{sourceTaskId}` (each task spawns at most one successor, so the
+    /// successor keys off the current task id and never off a possibly-null
+    /// deadline). Null for non-recurring tasks. Additive — no migration.
+    String? occurrenceKey,
     /// When the task is scheduled to **start** (Task Scheduling V2). Pre-filled
     /// from the assigned shift's hours as a *smart default* the manager can
     /// override; null on tasks predating scheduling (unknown start). Additive —

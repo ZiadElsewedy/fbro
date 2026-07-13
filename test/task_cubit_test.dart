@@ -5,6 +5,7 @@ import 'package:drop/core/enums/audit_event_type.dart';
 import 'package:drop/core/enums/notification_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/core/enums/recurrence_frequency.dart';
 import 'package:drop/core/enums/task_assignment_type.dart';
 import 'package:drop/core/enums/task_status.dart';
 import 'package:drop/core/enums/user_role.dart';
@@ -22,6 +23,8 @@ import 'package:drop/features/notifications/domain/usecases/notify_task_event.da
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
 import 'package:drop/features/schedule/domain/repositories/schedule_repository.dart';
 import 'package:drop/features/task/domain/entities/activity_entry.dart';
+import 'package:drop/features/task/domain/entities/checklist_item.dart';
+import 'package:drop/features/task/domain/entities/recurrence_config.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
 import 'package:drop/features/task/domain/repositories/task_repository.dart';
 import 'package:drop/features/task/domain/usecases/assign_task.dart';
@@ -247,6 +250,78 @@ void main() {
         .firstWhere((c) => c.type == NotificationType.taskApproved);
     expect(approved.recipients, ['shiftEmp']);
   });
+
+  // ── Recurrence spawn is deterministic + idempotent (P0 duplicate fix) ──
+  group('recurring approval spawns a deterministic, idempotent successor', () {
+    TaskEntity recurring({required String id, String? rootId}) => TaskEntity(
+          id: id,
+          title: 'Restock cooler',
+          status: TaskStatus.waitingReview,
+          branchId: 'branch1',
+          assigneeIds: const ['emp1'],
+          deadline: DateTime(2026, 1, 10),
+          recurrence:
+              const RecurrenceConfig(frequency: RecurrenceFrequency.daily),
+          recurrenceRootId: rootId,
+          createdBy: 'mgr1',
+          checklist: const [
+            ChecklistItem(id: 'c1', title: 'Count stock', completed: true),
+          ],
+          activityLog: [
+            ActivityEntry(
+                status: 'pending', actorId: 'mgr1', at: DateTime(2026, 1, 1)),
+          ],
+        );
+
+    test('successor id is rec_{sourceId}, root = source, checklist reset',
+        () async {
+      final h = _build();
+      await h.cubit.load(manager);
+      await pumpEventQueue();
+
+      await h.cubit.approveTask(recurring(id: 't1'));
+      await pumpEventQueue();
+
+      expect(h.repo.createdWithId, hasLength(1));
+      final spawned = h.repo.createdWithId.single;
+      expect(spawned.id, 'rec_t1');
+      expect(spawned.recurrenceRootId, 't1'); // root defaults to the source id
+      expect(spawned.status, TaskStatus.pending);
+      expect(spawned.checklist.single.completed, isFalse); // reset for the redo
+    });
+
+    test('reopen→re-approve targets the SAME id (no random double-spawn)',
+        () async {
+      final h = _build();
+      await h.cubit.load(manager);
+      await pumpEventQueue();
+
+      // First approve creates rec_t1. On the reopen→re-approve replay the id now
+      // exists, so the atomic createTaskWithId returns null — one task, not two.
+      await h.cubit.approveTask(recurring(id: 't1'));
+      await pumpEventQueue();
+      h.repo.createWithIdExists = true;
+      await h.cubit.approveTask(recurring(id: 't1'));
+      await pumpEventQueue();
+
+      // Both attempts used the identical deterministic id (the old bug used a
+      // fresh random id each time → two successors).
+      expect(h.repo.createdWithId.map((t) => t.id), ['rec_t1', 'rec_t1']);
+    });
+
+    test('a child keeps the lineage root while keying off its own id', () async {
+      final h = _build();
+      await h.cubit.load(manager);
+      await pumpEventQueue();
+
+      await h.cubit.approveTask(recurring(id: 'rec_t1', rootId: 't1'));
+      await pumpEventQueue();
+
+      final spawned = h.repo.createdWithId.single;
+      expect(spawned.id, 'rec_rec_t1'); // keyed on the current task id
+      expect(spawned.recurrenceRootId, 't1'); // lineage preserved down the chain
+    });
+  });
 }
 
 // ─── Fakes (hand-written, matching the repo's test convention) ───────────────
@@ -310,7 +385,17 @@ class _RecordingTaskRepository implements TaskRepository {
   final controller = StreamController<List<TaskEntity>>.broadcast();
   final transitions = <_TransitionCall>[];
   final deleted = <String>[];
+  final createdWithId = <TaskEntity>[];
+  // When true, simulate the deterministic id already existing → the atomic
+  // createTaskWithId returns null (a benign no-op) instead of a second task.
+  bool createWithIdExists = false;
   Object? failTransitionWith;
+
+  @override
+  Future<TaskEntity?> createTaskWithId(TaskEntity task) async {
+    createdWithId.add(task);
+    return createWithIdExists ? null : task;
+  }
 
   @override
   Stream<List<TaskEntity>> watchAllTasks() => controller.stream;
