@@ -23,8 +23,14 @@ class RecurringTaskTemplateModel {
   final int weekday;
   final bool active;
   final String? createdBy;
+  final String? updatedBy;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final DateTime? lastRunAt;
+  final DateTime? nextRunAt;
+  final String? lastStatus;
+  final String? lastGeneratedTaskId;
+  final int failureCount;
 
   const RecurringTaskTemplateModel({
     required this.id,
@@ -38,8 +44,14 @@ class RecurringTaskTemplateModel {
     this.weekday = 1,
     this.active = true,
     this.createdBy,
+    this.updatedBy,
     this.createdAt,
     this.updatedAt,
+    this.lastRunAt,
+    this.nextRunAt,
+    this.lastStatus,
+    this.lastGeneratedTaskId,
+    this.failureCount = 0,
   });
 
   factory RecurringTaskTemplateModel.fromMap(Map<String, dynamic> map,
@@ -56,8 +68,14 @@ class RecurringTaskTemplateModel {
         weekday: (map['weekday'] as num?)?.toInt() ?? 1,
         active: map['active'] as bool? ?? true,
         createdBy: map['createdBy'] as String?,
+        updatedBy: map['updatedBy'] as String?,
         createdAt: map.date('createdAt'),
         updatedAt: map.date('updatedAt'),
+        lastRunAt: map.date('lastRunAt'),
+        nextRunAt: map.date('nextRunAt'),
+        lastStatus: map['lastStatus'] as String?,
+        lastGeneratedTaskId: map['lastGeneratedTaskId'] as String?,
+        failureCount: (map['failureCount'] as num?)?.toInt() ?? 0,
       );
 
   factory RecurringTaskTemplateModel.fromEntity(
@@ -74,8 +92,14 @@ class RecurringTaskTemplateModel {
         weekday: e.weekday,
         active: e.active,
         createdBy: e.createdBy,
+        updatedBy: e.updatedBy,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
+        lastRunAt: e.lastRunAt,
+        nextRunAt: e.nextRunAt,
+        lastStatus: e.lastStatus,
+        lastGeneratedTaskId: e.lastGeneratedTaskId,
+        failureCount: e.failureCount,
       );
 
   /// Persisted fields. `createdAt`/`updatedAt` are written by the datasource as
@@ -92,6 +116,11 @@ class RecurringTaskTemplateModel {
         'weekday': weekday,
         'active': active,
         'createdBy': createdBy,
+        // Client-written. The automation-health rollups (lastRunAt / nextRunAt /
+        // lastStatus / lastGeneratedTaskId / failureCount) are Cloud-Function-owned
+        // and deliberately omitted so a client save can never regress them (the
+        // update path merges, so omission preserves the server's values).
+        'updatedBy': updatedBy,
       };
 
   /// Returns a copy with the Firestore-generated [id] applied (used on create).
@@ -107,8 +136,14 @@ class RecurringTaskTemplateModel {
         weekday: weekday,
         active: active,
         createdBy: createdBy,
+        updatedBy: updatedBy,
         createdAt: createdAt,
         updatedAt: updatedAt,
+        lastRunAt: lastRunAt,
+        nextRunAt: nextRunAt,
+        lastStatus: lastStatus,
+        lastGeneratedTaskId: lastGeneratedTaskId,
+        failureCount: failureCount,
       );
 
   RecurringTaskTemplateEntity toEntity() => RecurringTaskTemplateEntity(
@@ -123,7 +158,13 @@ class RecurringTaskTemplateModel {
         weekday: weekday,
         active: active,
         createdBy: createdBy,
+        updatedBy: updatedBy,
         createdAt: createdAt,
         updatedAt: updatedAt,
+        lastRunAt: lastRunAt,
+        nextRunAt: nextRunAt,
+        lastStatus: lastStatus,
+        lastGeneratedTaskId: lastGeneratedTaskId,
+        failureCount: failureCount,
       );
 }

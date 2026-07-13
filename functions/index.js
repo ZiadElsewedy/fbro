@@ -49,6 +49,12 @@ const BRANCHES = "branches";
 const WEEKLY_SCHEDULES = "weekly_schedules";
 const SHIFT_SWAPS = "shift_swaps";
 const RECURRING_TASK_TEMPLATES = "recurringTaskTemplates";
+// Operational run telemetry for the recurring-task automation engine (duration,
+// execution id, per-run outcome) — the Automation Center's data source. Distinct
+// from `audit_logs` (business facts). See docs/design/AUTOMATION_ENGINE.md.
+const AUTOMATION_RUNS = "automationRuns";
+// The immutable business audit trail (matches `AuditLogModel` in the app).
+const AUDIT_LOGS = "audit_logs";
 const CONFIG = "config";
 const CASES = "cases";
 const REQUESTS = "requests";
@@ -1333,7 +1339,7 @@ function reminderDueKind(deadline, now, lastKind, count, cfg) {
  * Config lives in `reminderConfig/global` (defaults applied when absent). Quiet
  * hours are evaluated in UTC (the function's timezone).
  */
-exports.runTaskReminders = onSchedule("every 30 minutes", async () => {
+exports.runTaskReminders = onSchedule({ schedule: "every 30 minutes", maxInstances: 1, retryCount: 0, timeoutSeconds: 300 }, async () => {
   const now = new Date();
 
   // Config (defaults when the doc is absent).
@@ -1465,149 +1471,322 @@ function weekStartKey(d) {
   return isoDate(sunday);
 }
 
+// True when a Firestore write failed because the document already exists — the
+// signal that `ref.create()` lost the idempotency race (a concurrent run / retry
+// already generated this instance). gRPC code 6 = ALREADY_EXISTS.
+function isAlreadyExists(err) {
+  return !!err && (err.code === 6 || err.code === "already-exists" ||
+    /already exists/i.test(String(err && err.message)));
+}
+
+// Resolves the employees who should be NOTIFIED of a generated shift task:
+// rostered on (dayName, shift) MINUS anyone on leave that day MINUS deactivated
+// accounts. An empty result is valid (nobody eligible) — the task is still
+// created; it just notifies no one and the run records `noEligibleEmployees`.
+async function eligibleRecipients(scheduleData, dayName, shift) {
+  const rostered = swapAssignedUids(scheduleData.assignments || {}, dayName, shift);
+  if (!rostered.length) return [];
+  const onLeave = new Set(Object.keys((scheduleData.leave || {})[dayName] || {}));
+  const candidates = rostered.filter((uid) => !onLeave.has(uid));
+  if (!candidates.length) return [];
+  const snaps = await Promise.all(
+    candidates.map((uid) => db.collection(USERS).doc(uid).get()),
+  );
+  return snaps
+    .filter((s) => s.exists && (s.data() || {}).isActive !== false)
+    .map((s) => s.id);
+}
+
+// Advisory next-run timestamp for a template's rollup (the Automation Center
+// shows it). Daily → tomorrow; weekly → the next date matching the ISO weekday.
+function computeNextRun(repeat, weekday, now) {
+  const d = new Date(now.getTime());
+  if (repeat === "weekly") {
+    for (let i = 0; i < 7; i++) {
+      d.setUTCDate(d.getUTCDate() + 1);
+      if (isoWeekday(d) === Number(weekday)) break;
+    }
+  } else {
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return admin.firestore.Timestamp.fromDate(d);
+}
+
+// Writes ONE business audit event to `audit_logs` as the "system" actor,
+// matching the app's `AuditLogModel` shape so automation events render in the
+// audit feed. Best-effort (audit is observability, never blocks the run).
+async function writeAutomationAudit(eventType, entityType, entityId, branchId, metadata) {
+  try {
+    await db.collection(AUDIT_LOGS).add({
+      eventType,
+      entityType,
+      entityId,
+      actorId: "system",
+      actorName: "Automation",
+      actorRole: "admin",
+      branchId: branchId || null,
+      metadata: metadata || {},
+      schemaVersion: 1,
+      isDeleted: false,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    logger.warn("automation audit write failed", { eventType, entityId, error: String(e) });
+  }
+}
+
 /**
  * Daily instance generation for recurring shift-task templates (Shift
  * Assignment feature). Scans active `recurringTaskTemplates` and, for each one
- * due today (daily, or weekly matching today's ISO weekday), creates *one*
- * real `tasks/{id}` document at a **deterministic id**
- * (`rt_{templateId}_{yyyy-MM-dd}`, UTC) — the existence check against that id
- * is the entire duplicate-prevention guarantee (no separate ledger needed),
- * so overlapping/duplicate runs are always safe. Mirrors `runTaskReminders`'s
- * style (small collection scan, per-item try/catch, summary log). Notifies
- * today's rostered employees by writing straight to `notifications` (reuses
- * the existing `onNotificationCreated` trigger — no new push logic) and
- * `swapAssignedUids` (already defined above for `approveSwap`) to read the
- * roster off the same `weekly_schedules` doc shape.
+ * due today (daily, or weekly matching today's ISO weekday), creates *one* real
+ * `tasks/{id}` document at a **deterministic id** (`rt_{templateId}_{yyyy-MM-dd}`,
+ * UTC). Duplicate prevention is an **atomic `ref.create()`** (throws
+ * ALREADY_EXISTS → skip), so overlapping runs / scheduler retries can never
+ * double-create or double-notify; `maxInstances:1` additionally prevents
+ * overlap. Roster notifications go only to ELIGIBLE employees (rostered, not on
+ * leave, active) with **deterministic notification ids**. Every attempt records
+ * operational telemetry to `automationRuns/{templateId}_{dateKey}` (deterministic
+ * id → idempotent history), rolls its outcome up onto the template
+ * (lastRunAt/nextRunAt/lastStatus/lastGeneratedTaskId/failureCount for the
+ * Automation Center), and emits business audit events to `audit_logs`. See
+ * docs/design/AUTOMATION_ENGINE.md.
  */
-exports.generateShiftTaskInstances = onSchedule("every 24 hours", async () => {
-  const now = new Date();
-  const todayKey = isoDate(now);
-  const todayDow = isoWeekday(now);
-  const dayName = scheduleDayName(now);
+exports.generateShiftTaskInstances = onSchedule(
+  { schedule: "every 24 hours", maxInstances: 1, retryCount: 0, timeoutSeconds: 300 },
+  async () => {
+    const now = new Date();
+    const todayKey = isoDate(now);
+    const todayDow = isoWeekday(now);
+    const dayName = scheduleDayName(now);
+    const executionId = require("crypto").randomUUID();
 
-  const snap = await db
-    .collection(RECURRING_TASK_TEMPLATES)
-    .where("active", "==", true)
-    .get();
+    const snap = await db
+      .collection(RECURRING_TASK_TEMPLATES)
+      .where("active", "==", true)
+      .get();
 
-  let created = 0;
-  for (const doc of snap.docs) {
-    const t = doc.data() || {};
-    const repeat = t.repeat || "daily";
-    // "once" is defensive only — the client never persists a template row
-    // with repeat:"once" (a single shift task is created directly instead).
-    if (repeat === "once") continue;
-    if (repeat === "weekly" && Number(t.weekday) !== todayDow) continue;
+    let created = 0;
+    for (const doc of snap.docs) {
+      const t = doc.data() || {};
+      const repeat = t.repeat || "daily";
+      // "once" is defensive only — the client never persists a template row
+      // with repeat:"once" (a single shift task is created directly instead).
+      if (repeat === "once") continue;
+      if (repeat === "weekly" && Number(t.weekday) !== todayDow) continue;
 
-    const branchId = String(t.branchId || "");
-    if (!branchId) continue;
-    const shift = t.shift === "night" ? "night" : "morning";
-    const instanceId = `rt_${doc.id}_${todayKey}`;
-    const ref = db.collection(TASKS).doc(instanceId);
+      const branchId = String(t.branchId || "");
+      if (!branchId) continue;
+      const shift = t.shift === "night" ? "night" : "morning";
+      const instanceId = `rt_${doc.id}_${todayKey}`;
+      const runId = `${doc.id}_${todayKey}`;
+      const ref = db.collection(TASKS).doc(instanceId);
+      const startedMs = Date.now();
 
-    try {
-      if ((await ref.get()).exists) continue; // already generated today
+      // Per-template outcome — always recorded to `automationRuns` and rolled up
+      // onto the template, whatever happens.
+      let status = "completed"; // completed | skipped | failed
+      let outcome = "created"; // created | alreadyExists | noEligibleEmployees | error
+      let generatedTaskId = null;
+      let recipientCount = 0;
+      let failureReason = null;
 
-      const checklist = Array.isArray(t.checklistItems)
-        ? t.checklistItems.map((c) => ({
-            id: String((c && c.id) || ""),
-            title: String((c && c.title) || ""),
-            isRequired: !c || c.isRequired !== false,
-            completed: false,
-            completedAt: null,
-          }))
-        : [];
-
-      await ref.set({
-        id: instanceId,
-        title: t.title || "",
-        description: t.description || null,
-        type: "daily",
-        status: "pending",
-        priority: t.priority || "normal",
-        branchId,
-        assigneeIds: [],
-        assignedEmployeeId: null,
-        checklist,
-        referenceAttachments: [],
-        createdBy: t.createdBy || null,
-        assignedShiftId: null,
-        shift,
-        assignmentType: "shift",
-        instanceDate: admin.firestore.Timestamp.fromDate(
-          new Date(`${todayKey}T00:00:00.000Z`),
-        ),
-        sourceTemplateId: doc.id,
-        deadline: null,
-        notes: null,
-        proofImageUrl: null,
-        startedAt: null,
-        submittedAt: null,
-        approvedBy: null,
-        approvedAt: null,
-        rejectedBy: null,
-        rejectedAt: null,
-        reviewNotes: null,
-        revisionNumber: 0,
-        requiresRework: false,
-        rejectionReason: null,
-        recurrence: null,
-        activityLog: [
-          {
-            status: "pending",
-            actorId: "system",
-            actorName: null,
-            at: admin.firestore.Timestamp.fromDate(now),
-            note: "Auto-generated (recurring shift task)",
-            attachments: [],
-          },
-        ],
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      created++;
-
-      // Notify today's rostered employees on this shift (best-effort).
       try {
-        const scheduleId = `${branchId}_${weekStartKey(now)}`;
-        const schedSnap = await db.collection(WEEKLY_SCHEDULES).doc(scheduleId).get();
-        const uids = schedSnap.exists
-          ? swapAssignedUids(schedSnap.data().assignments || {}, dayName, shift)
+        const checklist = Array.isArray(t.checklistItems)
+          ? t.checklistItems.map((c) => ({
+              id: String((c && c.id) || ""),
+              title: String((c && c.title) || ""),
+              isRequired: !c || c.isRequired !== false,
+              completed: false,
+              completedAt: null,
+            }))
           : [];
-        if (uids.length) {
-          const batch = db.batch();
-          for (const uid of uids) {
-            const nref = db.collection(NOTIFICATIONS).doc();
-            batch.set(nref, {
-              id: nref.id,
-              recipientUid: uid,
-              senderUid: "system",
-              type: "taskAssigned",
-              title: "New Task Assigned",
-              body: t.title || "A new shift task was assigned",
-              readAt: null,
-              payload: { taskId: instanceId, route: "task_details" },
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+
+        // Atomic create — the ENTIRE duplicate guarantee. `create()` rejects with
+        // ALREADY_EXISTS if the deterministic id is already present (an overlapping
+        // run / retry / the client materializer beat us), so we never double-create
+        // and never double-notify.
+        try {
+          await ref.create({
+            id: instanceId,
+            title: t.title || "",
+            description: t.description || null,
+            type: "daily",
+            status: "pending",
+            priority: t.priority || "normal",
+            branchId,
+            assigneeIds: [],
+            assignedEmployeeId: null,
+            checklist,
+            referenceAttachments: [],
+            createdBy: t.createdBy || null,
+            assignedShiftId: null,
+            shift,
+            assignmentType: "shift",
+            instanceDate: admin.firestore.Timestamp.fromDate(
+              new Date(`${todayKey}T00:00:00.000Z`),
+            ),
+            sourceTemplateId: doc.id,
+            deadline: null,
+            notes: null,
+            proofImageUrl: null,
+            startedAt: null,
+            submittedAt: null,
+            approvedBy: null,
+            approvedAt: null,
+            rejectedBy: null,
+            rejectedAt: null,
+            reviewNotes: null,
+            revisionNumber: 0,
+            requiresRework: false,
+            rejectionReason: null,
+            recurrence: null,
+            activityLog: [
+              {
+                status: "pending",
+                actorId: "system",
+                actorName: null,
+                at: admin.firestore.Timestamp.fromDate(now),
+                note: "Auto-generated (recurring shift task)",
+                attachments: [],
+              },
+            ],
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          generatedTaskId = instanceId;
+          created++;
+        } catch (createErr) {
+          if (isAlreadyExists(createErr)) {
+            status = "skipped";
+            outcome = "alreadyExists";
+          } else {
+            throw createErr;
+          }
+        }
+
+        // Notify eligible rostered employees — ONLY when we actually created the
+        // instance this run (so a skipped duplicate never re-notifies).
+        if (outcome === "created") {
+          try {
+            const scheduleId = `${branchId}_${weekStartKey(now)}`;
+            const schedSnap = await db.collection(WEEKLY_SCHEDULES).doc(scheduleId).get();
+            const recipients = schedSnap.exists
+              ? await eligibleRecipients(schedSnap.data(), dayName, shift)
+              : [];
+            recipientCount = recipients.length;
+            if (recipients.length) {
+              const batch = db.batch();
+              for (const uid of recipients) {
+                // Deterministic id → even a re-entry can't create a second notice.
+                const nref = db
+                  .collection(NOTIFICATIONS)
+                  .doc(`autoassign_${instanceId}_${uid}`);
+                batch.set(nref, {
+                  id: nref.id,
+                  recipientUid: uid,
+                  senderUid: "system",
+                  type: "taskAssigned",
+                  title: "New Task Assigned",
+                  body: t.title || "A new shift task was assigned",
+                  readAt: null,
+                  payload: { taskId: instanceId, route: "task_details" },
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+              }
+              await batch.commit();
+            } else {
+              outcome = "noEligibleEmployees";
+            }
+          } catch (notifyErr) {
+            // A notify failure does NOT fail the run — the task exists regardless.
+            logger.warn("shift task notify failed", {
+              taskId: instanceId,
+              error: String(notifyErr),
             });
           }
-          await batch.commit();
         }
-      } catch (notifyErr) {
-        logger.warn("shift task notify failed", {
-          taskId: instanceId,
-          error: String(notifyErr),
+      } catch (err) {
+        status = "failed";
+        outcome = "error";
+        failureReason = String((err && err.message) || err);
+        logger.warn("shift task instance generation failed", {
+          templateId: doc.id,
+          error: failureReason,
         });
       }
-    } catch (err) {
-      logger.warn("shift task instance generation failed", {
-        templateId: doc.id,
-        error: String(err),
-      });
-    }
-  }
 
-  logger.info("shift task instances generated", { templates: snap.size, created });
-});
+      // ── Run telemetry (deterministic id → idempotent history) ──
+      const finishedMs = Date.now();
+      try {
+        await db.collection(AUTOMATION_RUNS).doc(runId).set(
+          {
+            templateId: doc.id,
+            branchId,
+            dateKey: todayKey,
+            executionId,
+            startedAt: admin.firestore.Timestamp.fromDate(new Date(startedMs)),
+            finishedAt: admin.firestore.Timestamp.fromDate(new Date(finishedMs)),
+            durationMs: finishedMs - startedMs,
+            status,
+            outcome,
+            generatedTaskId,
+            recipientCount,
+            failureReason,
+          },
+          { merge: true },
+        );
+      } catch (runErr) {
+        logger.warn("automation run write failed", { runId, error: String(runErr) });
+      }
+
+      // ── Template rollup (Automation Center health) ──
+      try {
+        const rollup = {
+          lastRunAt: admin.firestore.FieldValue.serverTimestamp(),
+          nextRunAt: computeNextRun(repeat, t.weekday, now),
+          lastStatus: status,
+        };
+        if (status === "failed") {
+          rollup.failureCount = admin.firestore.FieldValue.increment(1);
+        } else {
+          rollup.failureCount = 0;
+          if (generatedTaskId) rollup.lastGeneratedTaskId = generatedTaskId;
+        }
+        await doc.ref.set(rollup, { merge: true });
+      } catch (rollupErr) {
+        logger.warn("automation rollup write failed", {
+          templateId: doc.id,
+          error: String(rollupErr),
+        });
+      }
+
+      // ── Business audit events (best-effort, reuse the audit trail) ──
+      if (outcome === "created" || outcome === "noEligibleEmployees") {
+        await writeAutomationAudit("task.auto_generated", "task", instanceId, branchId, {
+          templateId: doc.id,
+          title: t.title || "",
+          shift,
+        });
+        if (recipientCount > 0) {
+          await writeAutomationAudit("automation.assigned", "automation", doc.id, branchId, {
+            taskId: instanceId,
+            recipientCount,
+          });
+        }
+      } else if (status === "failed") {
+        await writeAutomationAudit("automation.failed", "automation", doc.id, branchId, {
+          reason: failureReason,
+        });
+      }
+    }
+
+    logger.info("shift task instances generated", {
+      templates: snap.size,
+      created,
+      executionId,
+    });
+  },
+);
 
 /**
  * Task retention sweep (Home Dashboard redesign, P3). Runs daily:
@@ -1705,6 +1884,7 @@ exports.taskHousekeeping = onSchedule("every 24 hours", async () => {
     deleteAfterDays: null,
     gcOrphanAttachments: false,
     gcGraceHours: 48,
+    automationRunRetentionDays: 90,
   };
   try {
     const cSnap = await db.collection(CONFIG).doc("taskRetention").get();
@@ -1721,6 +1901,9 @@ exports.taskHousekeeping = onSchedule("every 24 hours", async () => {
         gcOrphanAttachments: c.gcOrphanAttachments === true,
         gcGraceHours: Number.isFinite(c.gcGraceHours) && c.gcGraceHours > 0
           ? c.gcGraceHours : 48,
+        automationRunRetentionDays:
+          Number.isFinite(c.automationRunRetentionDays) && c.automationRunRetentionDays > 0
+            ? c.automationRunRetentionDays : 90,
       };
     }
   } catch (_) {
@@ -1848,7 +2031,39 @@ exports.taskHousekeeping = onSchedule("every 24 hours", async () => {
     }
   }
 
-  logger.info("task housekeeping done", { archived, coldTiered, deleted, orphansDeleted });
+  // Automation run-history retention — `automationRuns` gains one doc per template
+  // per day, so prune runs older than `automationRunRetentionDays` (default 90) to
+  // keep it bounded. Single-field inequality on `startedAt` (auto-indexed); bounded
+  // by RUN_CAP like the sweeps above. Idempotent (already-deleted docs just aren't
+  // re-found).
+  let automationRunsDeleted = 0;
+  try {
+    let scanned = 0;
+    while (scanned < RUN_CAP) {
+      const snap = await db
+        .collection(AUTOMATION_RUNS)
+        .where("startedAt", "<=", cutoff(cfg.automationRunRetentionDays))
+        .limit(BATCH_LIMIT)
+        .get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      for (const doc of snap.docs) batch.delete(doc.ref);
+      await batch.commit();
+      automationRunsDeleted += snap.size;
+      scanned += snap.size;
+      if (snap.size < BATCH_LIMIT) break;
+    }
+  } catch (err) {
+    logger.warn("automation run prune failed", { error: String(err) });
+  }
+
+  logger.info("task housekeeping done", {
+    archived,
+    coldTiered,
+    deleted,
+    orphansDeleted,
+    automationRunsDeleted,
+  });
 });
 
 /**

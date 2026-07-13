@@ -208,13 +208,22 @@ class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
   Future<TaskModel?> createTaskWithId(TaskModel task) async {
     try {
       final docRef = _tasks.doc(task.id);
-      if ((await docRef.get()).exists) return null;
-      await docRef.set({
-        ...task.toMap(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+      // Atomic create-if-absent: the existence check and the write are one
+      // transaction, so two concurrent callers (a reopen→re-approve replay, a
+      // retried spawn, the Cloud Function racing the client materializer) all
+      // converge on a single document instead of racing the old read-then-set.
+      // Returns null when the deterministic id already exists (a benign no-op).
+      final created = await _firestore.runTransaction<bool>((txn) async {
+        final snap = await txn.get(docRef);
+        if (snap.exists) return false;
+        txn.set(docRef, {
+          ...task.toMap(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return true;
       });
-      return task;
+      return created ? task : null;
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to create task.');
     }

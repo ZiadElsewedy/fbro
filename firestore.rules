@@ -260,6 +260,17 @@ service cloud.firestore {
         || (isManager() && resource.data.get('branchId', '') == selfBranch());
     }
 
+    // ── Automation run history (Automated Task Engine) ─────────────
+    // Operational telemetry written ONLY by the `generateShiftTaskInstances`
+    // Cloud Function (the Admin SDK bypasses these rules). Admins read every
+    // run; a manager reads runs for their own branch. No client ever writes —
+    // the history must stay tamper-proof, so it powers debugging honestly.
+    match /automationRuns/{runId} {
+      allow read: if isAdmin()
+        || (isManager() && resource.data.get('branchId', '') == selfBranch());
+      allow write: if false;
+    }
+
     // ── Branches (Phase 5) ─────────────────────────────────────────
     // Any signed-in user may READ branches (names are shown in pickers and on
     // cards across roles). Only an admin may create/edit. "Delete" is a soft
