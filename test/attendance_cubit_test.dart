@@ -2,40 +2,57 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drop/core/enums/attendance_correction_kind.dart';
 import 'package:drop/core/enums/attendance_status.dart';
+import 'package:drop/core/enums/request_status.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/enums/user_role.dart';
 import 'package:drop/features/attendance/domain/attendance_break.dart';
 import 'package:drop/features/attendance/domain/attendance_calculator.dart';
+import 'package:drop/features/attendance/domain/attendance_feed.dart';
+import 'package:drop/features/attendance/domain/attendance_gps.dart';
+import 'package:drop/features/attendance/domain/attendance_location.dart';
+import 'package:drop/features/attendance/domain/attendance_location_service.dart';
+import 'package:drop/features/attendance/domain/attendance_resolution.dart';
+import 'package:drop/features/attendance/domain/attendance_service.dart';
 import 'package:drop/features/attendance/domain/attendance_validation.dart';
+import 'package:drop/features/attendance/domain/entities/attendance_correction.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_event.dart';
 import 'package:drop/features/attendance/domain/repositories/attendance_repository.dart';
 import 'package:drop/features/attendance/domain/usecases/clock_in.dart';
 import 'package:drop/features/attendance/domain/usecases/clock_out.dart';
-import 'package:drop/features/attendance/domain/usecases/end_break.dart';
-import 'package:drop/features/attendance/domain/usecases/start_break.dart';
+import 'package:drop/features/attendance/domain/usecases/request_correction.dart';
 import 'package:drop/features/attendance/presentation/cubit/attendance_cubit.dart';
 import 'package:drop/features/attendance/presentation/cubit/attendance_state.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/branch/domain/branch_geofence.dart';
+import 'package:drop/features/branch/domain/entities/branch_entity.dart';
+import 'package:drop/features/branch/domain/repositories/branch_repository.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
 import 'package:drop/features/schedule/domain/repositories/schedule_repository.dart';
 import 'package:drop/features/schedule/domain/schedule_week.dart';
 
-/// In-memory attendance repository — pushes the history stream + captures writes.
+/// In-memory attendance repository — pushes the history feed + captures writes.
 class _FakeAttendanceRepository implements AttendanceRepository {
-  final _history = StreamController<List<AttendanceEntity>>.broadcast();
+  final _history = StreamController<AttendanceFeed>.broadcast();
 
   final List<AttendanceEntity> clockedIn = [];
   final List<({String id, AttendanceStatus status, AttendanceTotals totals})>
       clockedOut = [];
-  final List<List<AttendanceBreak>> breakWrites = [];
+  final List<AttendanceCorrectionEntity> corrections = [];
 
-  void pushHistory(List<AttendanceEntity> h) => _history.add(h);
+  void pushHistory(List<AttendanceEntity> h,
+          {bool offline = false, bool pending = false}) =>
+      _history.add(AttendanceFeed(
+        records: h,
+        isOffline: offline,
+        hasPendingWrites: pending,
+      ));
 
   @override
-  Stream<List<AttendanceEntity>> watchUserHistory(String uid, {int limit = 30}) =>
+  Stream<AttendanceFeed> watchUserHistory(String uid, {int limit = 30}) =>
       _history.stream;
 
   @override
@@ -45,13 +62,10 @@ class _FakeAttendanceRepository implements AttendanceRepository {
   Future<void> clockOut(String id,
       {required DateTime clockOut,
       required AttendanceStatus status,
-      required AttendanceTotals totals}) async {
+      required AttendanceTotals totals,
+      AttendanceVerification? verification}) async {
     clockedOut.add((id: id, status: status, totals: totals));
   }
-
-  @override
-  Future<void> updateBreaks(String id, List<AttendanceBreak> breaks) async =>
-      breakWrites.add(breaks);
 
   @override
   Future<String> uploadSelfie(
@@ -59,6 +73,10 @@ class _FakeAttendanceRepository implements AttendanceRepository {
           required File file,
           required String uploadedBy}) async =>
       'https://selfie';
+
+  @override
+  Future<void> requestCorrection(AttendanceCorrectionEntity correction) async =>
+      corrections.add(correction);
 
   // Unused by these tests.
   @override
@@ -75,6 +93,27 @@ class _FakeAttendanceRepository implements AttendanceRepository {
   Stream<List<AttendanceEvent>> watchEvents(String id) => const Stream.empty();
   @override
   Future<void> softDelete(String id) async {}
+  @override
+  Future<AttendanceCorrectionEntity?> getCorrection(String id) async => null;
+  @override
+  Future<void> decideCorrection(String id,
+      {required RequestStatus status,
+      required String decidedBy,
+      String? decidedByName,
+      String? decisionNote,
+      AttendanceResolution? resolution}) async {}
+  @override
+  Stream<List<AttendanceCorrectionEntity>> watchUserCorrections(String uid,
+          {int limit = 30}) =>
+      const Stream.empty();
+  @override
+  Stream<List<AttendanceCorrectionEntity>> watchBranchPendingCorrections(
+          String branchId) =>
+      const Stream.empty();
+  @override
+  Stream<List<AttendanceCorrectionEntity>> watchRecordCorrections(
+          String attendanceId) =>
+      const Stream.empty();
 }
 
 /// Minimal schedule repository fake — only [getSchedule] matters here.
@@ -90,6 +129,50 @@ class _FakeScheduleRepository implements ScheduleRepository {
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError(invocation.memberName.toString());
 }
+
+/// Branch repository fake — returns branch `b1` with (optionally) a geofence.
+class _FakeBranchRepository implements BranchRepository {
+  final BranchGeofence? geofence;
+  _FakeBranchRepository(this.geofence);
+
+  @override
+  Future<List<BranchEntity>> getBranches({
+    bool includeDeleted = false,
+    bool forceRefresh = false,
+  }) async =>
+      [BranchEntity(id: 'b1', name: 'Branch 1', geofence: geofence)];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(invocation.memberName.toString());
+}
+
+/// Location service fake — returns a scripted [LocationResult].
+class _FakeLocationService implements AttendanceLocationService {
+  LocationResult result;
+  _FakeLocationService(this.result);
+
+  @override
+  Future<LocationResult> currentLocation() async => result;
+}
+
+/// The branch geofence used by the clock tests (30.0, 31.0 · 150 m · 50 m).
+const _geofence = BranchGeofence(
+  latitude: 30.0,
+  longitude: 31.0,
+  radiusMeters: 150,
+  minAccuracyMeters: 50,
+);
+
+/// A GPS reading [approxMeters] north of the branch with [accuracy] m accuracy
+/// (0.001° latitude ≈ 111 m).
+LocationResult _fixNear(double approxMeters, {double accuracy = 8}) =>
+    LocationResult.success(AttendanceLocation(
+      latitude: 30.0 + (approxMeters / 111000.0),
+      longitude: 31.0,
+      accuracyMeters: accuracy,
+      capturedAt: DateTime(2026, 7, 13, 9),
+    ));
 
 void main() {
   final user = UserEntity(
@@ -119,16 +202,24 @@ void main() {
 
   late _FakeAttendanceRepository repo;
 
-  AttendanceCubit build({DateTime? at, bool noSchedule = false}) {
+  AttendanceCubit build({
+    DateTime? at,
+    bool noSchedule = false,
+    BranchGeofence? geofence = _geofence,
+    LocationResult? location,
+  }) {
     repo = _FakeAttendanceRepository();
     return AttendanceCubit(
       repository: repo,
       scheduleRepository:
           _FakeScheduleRepository(noSchedule ? null : rosterAllMornings()),
+      branchRepository: _FakeBranchRepository(geofence),
+      service: const AttendanceService(),
+      locationService:
+          _FakeLocationService(location ?? _fixNear(20)), // ~20 m: at the branch
       clockIn: ClockIn(repo),
       clockOut: ClockOut(repo),
-      startBreak: StartBreak(repo),
-      endBreak: EndBreak(repo),
+      requestCorrection: RequestCorrection(repo),
       now: () => at ?? now,
     );
   }
@@ -166,8 +257,8 @@ void main() {
     await cubit.close();
   });
 
-  test('clockIn inside the window writes an in-progress record', () async {
-    final cubit = build();
+  test('clockIn at the branch writes a verified in-progress record', () async {
+    final cubit = build(); // default: geofence + a ~20 m fix
     await cubit.load(user);
     repo.pushHistory([]);
     await pump();
@@ -177,21 +268,20 @@ void main() {
     final rec = repo.clockedIn.single;
     expect(rec.id, 'u1_20260713_morning');
     expect(rec.status, AttendanceStatus.inProgress);
-    expect(rec.clockIn, now);
     expect(rec.scheduledStart, DateTime(2026, 7, 13, 8, 30));
+    // GPS verification was captured + passed.
+    expect(rec.clockInVerification, isNotNull);
+    expect(rec.clockInVerification!.verified, isTrue);
+    expect(rec.clockInVerification!.withinRadius, isTrue);
     await cubit.close();
   });
 
-  test('clockIn before the window opens is blocked (no write)', () async {
-    final cubit = build(at: DateTime(2026, 7, 13, 7)); // opens 08:00
+  test('clockIn outside the allowed radius is blocked (no write)', () async {
+    final cubit = build(location: _fixNear(500)); // ~500 m from the branch
     await cubit.load(user);
     repo.pushHistory([]);
     await pump();
 
-    expect(cubit.clockInCheck.reason, AttendanceBlock.outsideWindow);
-
-    // The block surfaces a transient error, then the cubit re-emits loaded, so
-    // capture the emissions rather than reading the final state.
     final states = <AttendanceState>[];
     final sub = cubit.stream.listen(states.add);
     await cubit.clockIn();
@@ -203,6 +293,30 @@ void main() {
       states.any((s) => s.maybeMap(error: (_) => true, orElse: () => false)),
       isTrue,
     );
+    await cubit.close();
+  });
+
+  test('clockIn with location permission denied is blocked (no write)', () async {
+    final cubit = build(
+      location: const LocationResult.failure(LocationError.permissionDenied),
+    );
+    await cubit.load(user);
+    repo.pushHistory([]);
+    await pump();
+
+    await cubit.clockIn();
+    expect(repo.clockedIn, isEmpty);
+    await cubit.close();
+  });
+
+  test('clockIn when the branch has no geofence is blocked (no write)', () async {
+    final cubit = build(geofence: null);
+    await cubit.load(user);
+    repo.pushHistory([]);
+    await pump();
+
+    await cubit.clockIn();
+    expect(repo.clockedIn, isEmpty);
     await cubit.close();
   });
 
@@ -234,39 +348,89 @@ void main() {
     await cubit.close();
   });
 
-  test('startBreak appends an open break; endBreak closes it', () async {
+  test('session is exposed while open, and cleared when it closes', () async {
     final cubit = build(at: DateTime(2026, 7, 13, 12));
     await cubit.load(user);
     repo.pushHistory([openRecord()]);
     await pump();
 
-    await cubit.startBreak();
-    expect(repo.breakWrites, hasLength(1));
-    expect(repo.breakWrites.last, hasLength(1));
-    expect(repo.breakWrites.last.first.isOpen, isTrue);
+    final open = cubit.state.mapOrNull(loaded: (s) => s);
+    expect(open!.session, isNotNull);
+    expect(open.session!.isOpen, isTrue);
 
-    // Record now carries that open break; end it.
-    repo.pushHistory([
-      openRecord(breaks: [AttendanceBreak(start: DateTime(2026, 7, 13, 12))]),
-    ]);
+    // A clocked-out record for the day → no live session.
+    final done = openRecord().copyWith(
+      clockOut: DateTime(2026, 7, 13, 16, 30),
+      status: AttendanceStatus.completed,
+    );
+    repo.pushHistory([done]);
     await pump();
-    await cubit.endBreak();
-    expect(repo.breakWrites, hasLength(2));
-    expect(repo.breakWrites.last.first.isOpen, isFalse); // closed
+    final closed = cubit.state.mapOrNull(loaded: (s) => s);
+    expect(closed!.session, isNull);
+    expect(closed.today, isNotNull); // today's finished record still shown
     await cubit.close();
   });
 
-  test('clockOut is blocked while a break is running', () async {
-    final cubit = build(at: DateTime(2026, 7, 13, 16));
+  test('syncing + offline flags reflect the history feed metadata', () async {
+    final cubit = build();
     await cubit.load(user);
-    repo.pushHistory([
-      openRecord(breaks: [AttendanceBreak(start: DateTime(2026, 7, 13, 12))]),
-    ]);
+    repo.pushHistory([], offline: true, pending: true);
     await pump();
 
-    expect(cubit.clockOutCheck.reason, AttendanceBlock.openBreak);
-    await cubit.clockOut();
-    expect(repo.clockedOut, isEmpty);
+    final loaded = cubit.state.maybeMap(loaded: (s) => s, orElse: () => null);
+    expect(loaded!.offline, isTrue);
+    expect(loaded.syncing, isTrue);
+
+    repo.pushHistory([], offline: false, pending: false);
+    await pump();
+    final synced = cubit.state.maybeMap(loaded: (s) => s, orElse: () => null);
+    expect(synced!.offline, isFalse);
+    expect(synced.syncing, isFalse);
+    await cubit.close();
+  });
+
+  test('requestCorrection files a pending correction for a settled record',
+      () async {
+    final cubit = build(at: DateTime(2026, 7, 13, 18));
+    await cubit.load(user);
+    // A session auto-closed to pendingReview (never clocked out).
+    final pendingReview = openRecord().copyWith(
+      status: AttendanceStatus.pendingReview,
+    );
+    repo.pushHistory([pendingReview]);
+    await pump();
+
+    await cubit.requestCorrection(
+      record: pendingReview,
+      kind: AttendanceCorrectionKind.missingClockOut,
+      reason: 'Forgot to clock out',
+      proposedClockOut: DateTime(2026, 7, 13, 16, 30),
+    );
+
+    expect(repo.corrections, hasLength(1));
+    final c = repo.corrections.single;
+    expect(c.attendanceId, 'u1_20260713_morning');
+    expect(c.userId, 'u1');
+    expect(c.requestedBy, 'u1');
+    expect(c.status, RequestStatus.pending);
+    expect(c.kind, AttendanceCorrectionKind.missingClockOut);
+    expect(c.proposedClockOut, DateTime(2026, 7, 13, 16, 30));
+    await cubit.close();
+  });
+
+  test('requestCorrection is blocked while the session is still open', () async {
+    final cubit = build(at: DateTime(2026, 7, 13, 12));
+    await cubit.load(user);
+    repo.pushHistory([openRecord()]); // still open
+    await pump();
+
+    await cubit.requestCorrection(
+      record: openRecord(),
+      kind: AttendanceCorrectionKind.wrongTime,
+      reason: 'anything',
+      proposedClockOut: DateTime(2026, 7, 13, 16, 30),
+    );
+    expect(repo.corrections, isEmpty); // sessionOpen block → no write
     await cubit.close();
   });
 

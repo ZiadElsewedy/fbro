@@ -11,12 +11,108 @@
 > **Keep this current** — update it before finishing any task (see
 > [Documentation Maintenance](PROJECT_CONTEXT.md#5-documentation-maintenance)).
 
-**Last updated:** 2026-07-08 (Community Hub / DROP Events — flagship event workspace)
-**Version:** 1.0.0+1 · **Branch:** `claude/community-hub-events-pzjvbp` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-15 (Attendance Phase 3 (engine): GPS clock-in/out · Break removed · Community removed)
+**Version:** 1.0.0+1 · **Branch:** `feature/attendance-management` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-14 (Attendance Phase 2 — corrections + server-authoritative audit/auto-close)
+**Version:** 1.0.0+1 · **Branch:** `feature/attendance-management` (DROP — monochrome premium desktop UX)
 **Last updated:** 2026-07-08 (Requests closed out: analyzer clean + tests green)
 **Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
 **Last updated:** 2026-07-08 (Work Details design system + Create Work sheet UX)
 **Version:** 1.0.0+1 · **Branch:** `feature/work-management-system` (DROP — monochrome premium desktop UX)
+
+---
+
+## 🟡 Attendance — Phase 3 (engine): GPS clock-in/out (2026-07-15)
+
+Phase 3 scope adjustment + the **GPS clock-in/out engine**. **The data/logic
+engine + removals are complete and verified; the UI is the remaining piece** (see
+end). Owner ruling: **GPS-verified Clock In/Out is the primary focus; NO Break in
+the MVP.** Server-authoritative audit architecture unchanged.
+
+- **Break removed:** the flow (use cases, cubit actions, write path, validation,
+  break audit) is gone; `AttendanceBreak` + the record `breaks` field + calculator
+  netting stay as **dormant internal extension points** (unexposed, restorable
+  without migration).
+- **GPS engine:** `geolocator` dependency + iOS/Android permission config. Pure
+  domain — `gpsDistanceMeters` (Haversine), `AttendanceVerification`
+  (location · distance · within-radius · accuracy-ok · **verified**, snapshotting
+  the branch radius + accuracy floor), `AttendanceLocationService` (abstract) +
+  `GeolocatorLocationService` (permission → service → high-accuracy fix).
+- **Branch geofence:** `BranchGeofence` (lat · lng · **radius** · **min GPS
+  accuracy**) on the branch + `BranchRepository.setGeofence` (no rules change).
+- **Record:** `clockInVerification` + `clockOutVerification` stored **separately**
+  (location · accuracy · distance · verified). **Clock times are server
+  timestamps**; `effectiveClockIn` covers the live timer until sync.
+- **Validation:** `checkClockIn` (eligibility) + `checkGpsFix` (GPS gate). Clock-in
+  **rejected on**: no active shift · location service off · permission denied · GPS
+  too inaccurate · outside the allowed radius (+ branch-not-geofenced). Clock-out
+  captures best-effort verification, **never blocked** by location.
+- **Verification:** `flutter analyze` **0 new** (1 pre-existing test lint); suite
+  **744 pass / 2 pre-existing splash failures**; new `attendance_gps_test` + GPS
+  cases across the validation + cubit suites.
+- **⚠️ Needs deploy** (`firestore.rules` + `storage.rules` — events blocks gone;
+  `functions` — break audit dropped) **+ on-device GPS QA** (can't be verified in
+  the test env).
+- **Remaining — the UI (NOT built yet):** the employee clock screen (Today's Shift
+  → Clock In → GPS Validation → Working → Clock Out → Today's Summary), the manager
+  GPS-verification view, and the admin branch-geofence editor. The engine + repo +
+  cubit are ready for them to plug into.
+
+---
+
+## ❌ Community Hub / DROP Events — REMOVED (2026-07-15)
+
+The Community Hub / DROP Events feature was **removed** at the owner's request:
+`lib/features/community/` (21 files) + its 4 tests + the `event_type`/
+`event_status`/`event_phase` enums + `eventsCollection` + all routes / sidebar
+nav / DI wiring + the `events/{id}` Firestore rule + the `events/**` Storage rule.
+Live Firestore data (if any) was left untouched. **⚠️ Deploy `firestore.rules` +
+`storage.rules`.** The historical design write-up below is kept for reference only.
+
+---
+
+## ✅ Attendance — Phase 2: data foundation complete (2026-07-14)
+
+Phase 2 of the **Attendance** feature (`lib/features/attendance/`) — the complete,
+production-ready data foundation on top of the approved Phase 1 clock-in/out slice.
+**No UI / dashboards / analytics screens** (later phases). Owner ruling:
+**server-authoritative** audit + **keep the `attendance/{id}/events` subcollection**.
+
+- **Schema (3 collections):** `attendance/{uid}_{yyyyMMdd}_{shift}` (records,
+  deterministic id — Phase 1) · `attendance/{id}/events` (append-only audit
+  subcollection, **server-written only**) · **NEW** `attendance_corrections/{id}`
+  (first-class approval object, `Pending → Approved/Rejected` via reused
+  `RequestStatus`).
+- **Server-authoritative (clients write ONLY the record + correction doc):** new
+  Cloud Functions `onAttendanceWritten` (derives the immutable audit trail by
+  diffing clock/break/status), `onAttendanceCorrectionWritten` (correction
+  lifecycle events + applies an approved resolution onto the record + notifies),
+  `autoCloseAttendance` (scheduled — closes never-clocked-out sessions to
+  `pendingReview`). Mirrors the `onRequest*` pattern; reuses the notification
+  pipeline. **`AttendanceCalculator` stays the single source of the minute math**
+  (`DecideCorrection` computes the corrected snapshot client-side; the function
+  copies it verbatim — no server recompute, no drift).
+- **Dart:** `AttendanceCorrectionEntity`/`Model`, `AttendanceResolution`,
+  `AttendanceCorrectionKind`, `RequestCorrection` + `DecideCorrection` use cases,
+  `AttendanceService` (config/dark-switch seam), `AttendanceFeed` (records +
+  offline/pending-write metadata). Employee cubit now exposes `session`,
+  `syncing`, `offline`, and `requestCorrection`.
+- **Security:** `attendance_corrections` rules — employee files own/pending;
+  manager-own-branch/admin decide; **no self-approval**; userId/attendanceId
+  immutable; delete false. + 3 composite indexes.
+- **Verification:** `flutter analyze` **0 new issues** (12 pre-existing Community
+  Hub lints remain — that feature shipped un-analyzed); suite **756 pass / 2
+  pre-existing splash-centering failures**; **+19 attendance tests**; fixed a
+  stale `notification_grouping` pill assertion (from the 2026-07-08 Requests work).
+- **⚠️ Needs deploy** (client degrades gracefully until then — clock in/out works
+  offline; audit trail + corrections + auto-close activate on deploy):
+  `firestore.rules`, `firestore.indexes.json`, `functions` (3 new). Not yet
+  deployed from this session.
+- **Deferred to Phase 3+ (by design, not placeholders):** all attendance UI —
+  the employee clock screen, the manager live board + correction review queue
+  (the repo streams `watchBranchPendingCorrections` / `watchRecordCorrections`
+  and `DecideCorrection` are built + tested, awaiting their review cubit), admin
+  dashboards, and per-branch `attendanceConfig`.
 
 ---
 

@@ -15,12 +15,22 @@ class AttendanceState with _$AttendanceState {
 
   /// Loaded. [today] is the record the clock UI acts on — the live open session
   /// if one exists (including an overnight session from yesterday), else today's
-  /// record for the resolved [shift], else null (not clocked in yet). [shift] /
-  /// [scheduledStart] / [scheduledEnd] describe today's rostered slot (null when
-  /// nothing is rostered); [leave] is set when the employee is on leave today.
-  /// [tick] is bumped by the live timer so the worked-time display recomputes.
+  /// record for the resolved [shift], else null (not clocked in yet). [session]
+  /// is the currently-running open session specifically (null when not clocked
+  /// in), exposed distinctly from [today] so the UI can tell "a live session" from
+  /// "today's finished/absent record". [shift] / [scheduledStart] /
+  /// [scheduledEnd] describe today's rostered slot (null when nothing is
+  /// rostered); [leave] is set when the employee is on leave today. [tick] is
+  /// bumped by the live timer so the worked-time display recomputes.
+  ///
+  /// [busy] is a clock action in flight (a spinner-worthy local operation);
+  /// [syncing] means a local write hasn't been acknowledged by the backend yet
+  /// (offline persistence) and [offline] means the snapshot is cache-only — both
+  /// derived from the history stream's metadata, so the UI can reassure "saved,
+  /// syncing…" without blocking the clock.
   const factory AttendanceState.loaded({
     AttendanceEntity? today,
+    AttendanceEntity? session,
     @Default(<AttendanceEntity>[]) List<AttendanceEntity> history,
     ScheduleShift? shift,
     DateTime? scheduledStart,
@@ -29,6 +39,16 @@ class AttendanceState with _$AttendanceState {
     required AttendanceConfig config,
     required DateTime tick,
     @Default(false) bool busy,
+    @Default(false) bool syncing,
+    @Default(false) bool offline,
+
+    /// A clock action is currently acquiring + verifying the GPS fix (the "GPS
+    /// Validation" step). Drives the "Checking you're at the branch…" UI.
+    @Default(false) bool verifying,
+
+    /// Whether the branch has an attendance geofence configured (an admin set
+    /// lat/lng/radius). False → GPS clock-in can't proceed here yet.
+    @Default(false) bool geofenceReady,
   }) = _Loaded;
 
   /// Transient — surfaced as a snackbar; the cubit immediately re-emits the last

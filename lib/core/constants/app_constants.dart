@@ -23,16 +23,19 @@ class AppConstants {
   static const String requestsCollection = 'requests';
   static const String countersCollection = 'counters';
 
-  /// Community Hub / DROP Events. Each event is a single self-contained document
-  /// (`events/{id}`) with every workspace section embedded inline; the hero image
-  /// lives in Storage at `events/{id}/hero.<ext>`.
-  static const String eventsCollection = 'events';
-
   /// Attendance records (clock in/out). One document per (user, day, shift) at a
   /// deterministic id `{uid}_{yyyyMMdd}_{shift}` (see `attendanceDocId`); the
   /// append-only audit trail lives in `attendance/{id}/events`, and an optional
   /// clock-in selfie in Storage at `attendance/{id}/selfie/{id}.<ext>`.
   static const String attendanceCollection = 'attendance';
+
+  /// Attendance **correction requests** — an employee disputes/fixes a settled
+  /// record (a missing clock-out, a wrong time, an absent flagged in error). A
+  /// first-class approval object at `attendance_corrections/{id}` with a
+  /// `Pending → Approved / Rejected` lifecycle (reuses `RequestStatus`); the
+  /// approved resolution is applied to the parent `attendance/{id}` record — and
+  /// the audit event written — **server-side** by `onAttendanceCorrectionWritten`.
+  static const String attendanceCorrectionsCollection = 'attendance_corrections';
 
   // ─── Communications Center — Phase 2 ──────────────────────────
   static const String broadcastTemplatesCollection = 'broadcastTemplates';

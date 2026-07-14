@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drop/features/branch/domain/branch_geofence.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
 
 /// Contract for branch data access (Phase 5). Admin-only writes are enforced
@@ -15,6 +16,10 @@ abstract class BranchRepository {
   Future<BranchEntity> createBranch(BranchEntity branch);
   Future<void> updateBranch(BranchEntity branch);
   Future<void> setBranchActive(String branchId, bool isActive);
+
+  /// Persists the branch's attendance [geofence] (dedicated path so a general
+  /// branch-form save never clobbers it). Admin-only per `firestore.rules`.
+  Future<void> setGeofence(String branchId, BranchGeofence geofence);
 
   /// Soft delete — marks the branch deleted/inactive rather than removing it.
   Future<void> deleteBranch(String branchId);

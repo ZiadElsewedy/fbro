@@ -5,6 +5,7 @@ import 'package:drop/core/enums/attendance_status.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/attendance/data/models/attendance_model.dart';
 import 'package:drop/features/attendance/domain/attendance_break.dart';
+import 'package:drop/features/attendance/domain/attendance_gps.dart';
 import 'package:drop/features/attendance/domain/attendance_location.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_event.dart';
@@ -31,8 +32,15 @@ void main() {
     earlyLeaveMinutes: 0,
     overtimeMinutes: 5,
     breakMinutes: 30,
-    location: const AttendanceLocation(
-        latitude: 30.05, longitude: 31.23, accuracyMeters: 12.5),
+    clockInVerification: const AttendanceVerification(
+      location: AttendanceLocation(
+          latitude: 30.05, longitude: 31.23, accuracyMeters: 12.5),
+      distanceMeters: 22,
+      radiusMeters: 150,
+      minAccuracyMeters: 50,
+      withinRadius: true,
+      accuracyOk: true,
+    ),
     photoUrl: 'https://x/selfie.jpg',
     deviceId: 'dev-1',
     notes: 'ok',
@@ -77,13 +85,15 @@ void main() {
     expect(back.breaks.first.isOpen, isTrue);
   });
 
-  test('location survives serialization', () {
+  test('clock-in GPS verification survives serialization', () {
     final map = AttendanceModel.fromEntity(entity).toCreateMap();
     final back = AttendanceModel.fromMap(map).toEntity();
-    expect(back.location, isNotNull);
-    expect(back.location!.latitude, 30.05);
-    expect(back.location!.longitude, 31.23);
-    expect(back.location!.accuracyMeters, 12.5);
+    expect(back.clockInVerification, isNotNull);
+    expect(back.clockInVerification!.location.latitude, 30.05);
+    expect(back.clockInVerification!.location.accuracyMeters, 12.5);
+    expect(back.clockInVerification!.distanceMeters, 22);
+    expect(back.clockInVerification!.withinRadius, isTrue);
+    expect(back.clockInVerification!.verified, isTrue);
   });
 
   test('dayKey is written to the create payload (for the branch/day query)', () {

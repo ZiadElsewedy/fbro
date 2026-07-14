@@ -4,6 +4,7 @@ import 'package:drop/core/enums/attendance_status.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/extensions/firestore_extensions.dart';
 import 'package:drop/features/attendance/domain/attendance_break.dart';
+import 'package:drop/features/attendance/domain/attendance_gps.dart';
 import 'package:drop/features/attendance/domain/attendance_location.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_event.dart';
@@ -33,7 +34,8 @@ class AttendanceModel {
   final int earlyLeaveMinutes;
   final int overtimeMinutes;
   final int breakMinutes;
-  final AttendanceLocation? location;
+  final AttendanceVerification? clockInVerification;
+  final AttendanceVerification? clockOutVerification;
   final String? photoUrl;
   final String? deviceId;
   final String? notes;
@@ -65,7 +67,8 @@ class AttendanceModel {
     this.earlyLeaveMinutes = 0,
     this.overtimeMinutes = 0,
     this.breakMinutes = 0,
-    this.location,
+    this.clockInVerification,
+    this.clockOutVerification,
     this.photoUrl,
     this.deviceId,
     this.notes,
@@ -99,7 +102,10 @@ class AttendanceModel {
         earlyLeaveMinutes: (map['earlyLeaveMinutes'] as num?)?.toInt() ?? 0,
         overtimeMinutes: (map['overtimeMinutes'] as num?)?.toInt() ?? 0,
         breakMinutes: (map['breakMinutes'] as num?)?.toInt() ?? 0,
-        location: _locationFromMap(map['location']),
+        clockInVerification:
+            _verificationFromMap(map['clockInVerification']),
+        clockOutVerification:
+            _verificationFromMap(map['clockOutVerification']),
         photoUrl: map['photoUrl'] as String?,
         deviceId: map['deviceId'] as String?,
         notes: map['notes'] as String?,
@@ -132,7 +138,8 @@ class AttendanceModel {
         earlyLeaveMinutes: e.earlyLeaveMinutes,
         overtimeMinutes: e.overtimeMinutes,
         breakMinutes: e.breakMinutes,
-        location: e.location,
+        clockInVerification: e.clockInVerification,
+        clockOutVerification: e.clockOutVerification,
         photoUrl: e.photoUrl,
         deviceId: e.deviceId,
         notes: e.notes,
@@ -164,7 +171,8 @@ class AttendanceModel {
         earlyLeaveMinutes: earlyLeaveMinutes,
         overtimeMinutes: overtimeMinutes,
         breakMinutes: breakMinutes,
-        location: location,
+        clockInVerification: clockInVerification,
+        clockOutVerification: clockOutVerification,
         photoUrl: photoUrl,
         deviceId: deviceId,
         notes: notes,
@@ -199,7 +207,8 @@ class AttendanceModel {
         'earlyLeaveMinutes': earlyLeaveMinutes,
         'overtimeMinutes': overtimeMinutes,
         'breakMinutes': breakMinutes,
-        'location': _locationToMap(location),
+        'clockInVerification': verificationToMap(clockInVerification),
+        'clockOutVerification': verificationToMap(clockOutVerification),
         'photoUrl': photoUrl,
         'deviceId': deviceId,
         'notes': notes,
@@ -257,6 +266,34 @@ class AttendanceModel {
       'accuracyMeters': loc.accuracyMeters,
       'capturedAt': loc.capturedAt == null ? null : Timestamp.fromDate(loc.capturedAt!),
     };
+  }
+
+  // ─── Embedded GPS verification (Phase 3) ──────────────────────────────
+  static Map<String, dynamic>? verificationToMap(AttendanceVerification? v) {
+    if (v == null) return null;
+    return {
+      'location': _locationToMap(v.location),
+      'distanceMeters': v.distanceMeters,
+      'radiusMeters': v.radiusMeters,
+      'minAccuracyMeters': v.minAccuracyMeters,
+      'withinRadius': v.withinRadius,
+      'accuracyOk': v.accuracyOk,
+      'verified': v.verified, // denormalized for cheap board queries/filters
+    };
+  }
+
+  static AttendanceVerification? _verificationFromMap(dynamic raw) {
+    if (raw is! Map) return null;
+    final loc = _locationFromMap(raw['location']);
+    if (loc == null) return null;
+    return AttendanceVerification(
+      location: loc,
+      distanceMeters: (raw['distanceMeters'] as num?)?.toDouble() ?? 0,
+      radiusMeters: (raw['radiusMeters'] as num?)?.toDouble() ?? 0,
+      minAccuracyMeters: (raw['minAccuracyMeters'] as num?)?.toDouble() ?? 0,
+      withinRadius: raw['withinRadius'] as bool? ?? false,
+      accuracyOk: raw['accuracyOk'] as bool? ?? false,
+    );
   }
 
   // ─── Audit events (`attendance/{id}/events/{id}`) ─────────────────────

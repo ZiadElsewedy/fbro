@@ -1,6 +1,9 @@
+import 'package:drop/core/enums/attendance_status.dart';
 import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/attendance/domain/attendance_config.dart';
+import 'package:drop/features/attendance/domain/attendance_gps.dart';
+import 'package:drop/features/attendance/domain/attendance_location_service.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_entity.dart';
 
 /// Why a clock action can't proceed. [none] means "allowed". Each carries a
@@ -11,12 +14,21 @@ enum AttendanceBlock {
   userDisabled,
   noActiveShift,
   onLeave,
-  outsideWindow,
   alreadyClockedIn,
   alreadyClockedOut,
   notClockedIn,
-  openBreak,
-  noOpenBreak;
+  // ── GPS verification (clock-in gate) ──
+  serviceDisabled,
+  permissionDenied,
+  locationUnavailable,
+  noGeofence,
+  lowAccuracy,
+  outsideRadius,
+  // ── Correction requests ──
+  emptyReason,
+  invalidTimes,
+  sessionOpen,
+  recordMissing;
 
   bool get isBlocked => this != AttendanceBlock.none;
 }
@@ -44,20 +56,16 @@ class AttendanceCheck {
 class AttendanceValidation {
   AttendanceValidation._();
 
-  /// Can [existing == null ? "this user" : "this record"] clock **in** now?
-  ///
-  /// Rules, in order of precedence:
-  ///   module enabled → user active → not on leave → has a shift (unless the
-  ///   config allows unscheduled) → not already in/out for this shift → inside
-  ///   the clock-in window `[start − lead, scheduledEnd]`.
+  /// The **eligibility** gate for a clock-in — everything that doesn't need a GPS
+  /// fix, checked first so the app never asks for location when the person can't
+  /// clock in anyway. Order: module enabled → user active → not on leave → has a
+  /// shift → not already in/out for this shift. The GPS gate ([checkGpsFix]) runs
+  /// after this passes.
   static AttendanceCheck checkClockIn({
     required bool userActive,
     required ScheduleShift? todaysShift,
     required LeaveType? leave,
-    required DateTime? scheduledStart,
-    required DateTime? scheduledEnd,
     required AttendanceEntity? existing,
-    required DateTime now,
     AttendanceConfig config = AttendanceConfig.defaults,
   }) {
     if (!config.enabled) {
@@ -84,18 +92,48 @@ class AttendanceValidation {
       return const AttendanceCheck(AttendanceBlock.alreadyClockedOut,
           'You\'ve already completed this shift.');
     }
-    // Window check only applies when we know the scheduled bounds.
-    if (scheduledStart != null) {
-      final opensAt =
-          scheduledStart.subtract(Duration(minutes: config.clockInLeadMinutes));
-      if (now.isBefore(opensAt)) {
-        return AttendanceCheck(AttendanceBlock.outsideWindow,
-            'Too early — you can clock in from ${_hhmm(opensAt)}.');
+    return AttendanceCheck.ok;
+  }
+
+  /// The **GPS gate** for a clock-in — pure over the acquisition outcome. The
+  /// caller (cubit) reads the device location, evaluates it against the branch
+  /// geofence into [verification], and passes either a [locationError] (nothing
+  /// could be read) or the [verification]. Rejections, in order:
+  ///   service off → permission denied → couldn't read → branch not geofenced →
+  ///   GPS too inaccurate → outside the allowed radius.
+  static AttendanceCheck checkGpsFix({
+    required LocationError? locationError,
+    required AttendanceVerification? verification,
+    required bool geofenceConfigured,
+  }) {
+    if (locationError != null) {
+      switch (locationError) {
+        case LocationError.serviceDisabled:
+          return const AttendanceCheck(AttendanceBlock.serviceDisabled,
+              'Turn on location services to clock in.');
+        case LocationError.permissionDenied:
+          return const AttendanceCheck(AttendanceBlock.permissionDenied,
+              'Allow location access to clock in.');
+        case LocationError.unavailable:
+          return const AttendanceCheck(AttendanceBlock.locationUnavailable,
+              'Couldn\'t get your location. Try again in the open.');
       }
-      if (scheduledEnd != null && now.isAfter(scheduledEnd)) {
-        return const AttendanceCheck(AttendanceBlock.outsideWindow,
-            'This shift has ended — file a correction instead.');
-      }
+    }
+    if (!geofenceConfigured) {
+      return const AttendanceCheck(AttendanceBlock.noGeofence,
+          'This branch isn\'t set up for GPS attendance yet.');
+    }
+    if (verification == null) {
+      return const AttendanceCheck(AttendanceBlock.locationUnavailable,
+          'Couldn\'t verify your location. Try again.');
+    }
+    if (!verification.accuracyOk) {
+      return const AttendanceCheck(AttendanceBlock.lowAccuracy,
+          'GPS signal is too weak to verify — move to open sky and retry.');
+    }
+    if (!verification.withinRadius) {
+      return const AttendanceCheck(AttendanceBlock.outsideRadius,
+          'You\'re too far from the branch to clock in.');
     }
     return AttendanceCheck.ok;
   }
@@ -119,36 +157,51 @@ class AttendanceValidation {
       return const AttendanceCheck(
           AttendanceBlock.alreadyClockedOut, 'You\'ve already clocked out.');
     }
-    if (existing.isOnBreak) {
-      return const AttendanceCheck(
-          AttendanceBlock.openBreak, 'End your break before clocking out.');
-    }
     return AttendanceCheck.ok;
   }
 
-  /// Can [existing] start a break now? Needs an open session and no break already
-  /// running.
-  static AttendanceCheck checkStartBreak({required AttendanceEntity? existing}) {
-    if (existing == null || !existing.isOpen) {
+  /// Can a correction be filed against [existing]? A correction fixes a **settled**
+  /// record, so the rules are: the record exists (and isn't soft-deleted), it
+  /// isn't a still-running session (clock out first), there's a non-empty reason,
+  /// there's actually something to change ([proposedClockIn]/[proposedClockOut]/
+  /// [proposedStatus]), and any proposed clock-out is after the (proposed or
+  /// recorded) clock-in. Pure — the cubit/UI both consult it before a write.
+  static AttendanceCheck checkCorrection({
+    required AttendanceEntity? existing,
+    required String reason,
+    DateTime? proposedClockIn,
+    DateTime? proposedClockOut,
+    AttendanceStatus? proposedStatus,
+  }) {
+    if (existing == null || existing.isDeleted) {
       return const AttendanceCheck(
-          AttendanceBlock.notClockedIn, 'Clock in before taking a break.');
+          AttendanceBlock.recordMissing, 'There\'s no record to correct yet.');
     }
-    if (existing.isOnBreak) {
+    // A genuinely-running session is fixed by clocking out, not a correction — but
+    // a `pendingReview` record (auto-closed, missing its clock-out) is exactly
+    // what corrections are for, so gate on the live status, not `isOpen`.
+    if (existing.status.isInProgress) {
+      return const AttendanceCheck(AttendanceBlock.sessionOpen,
+          'Clock out first — this shift is still running.');
+    }
+    if (reason.trim().isEmpty) {
       return const AttendanceCheck(
-          AttendanceBlock.openBreak, 'You\'re already on a break.');
+          AttendanceBlock.emptyReason, 'Add a reason for the correction.');
+    }
+    final hasChange = proposedClockIn != null ||
+        proposedClockOut != null ||
+        proposedStatus != null;
+    if (!hasChange) {
+      return const AttendanceCheck(AttendanceBlock.invalidTimes,
+          'Propose a corrected time or outcome.');
+    }
+    final start = proposedClockIn ?? existing.clockIn;
+    if (proposedClockOut != null &&
+        start != null &&
+        !proposedClockOut.isAfter(start)) {
+      return const AttendanceCheck(AttendanceBlock.invalidTimes,
+          'The clock-out must be after the clock-in.');
     }
     return AttendanceCheck.ok;
   }
-
-  /// Can [existing] end a break now? Needs a break currently running.
-  static AttendanceCheck checkEndBreak({required AttendanceEntity? existing}) {
-    if (existing == null || !existing.isOnBreak) {
-      return const AttendanceCheck(
-          AttendanceBlock.noOpenBreak, 'No break is running.');
-    }
-    return AttendanceCheck.ok;
-  }
-
-  static String _hhmm(DateTime t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 }

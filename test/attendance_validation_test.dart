@@ -4,6 +4,9 @@ import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/attendance/domain/attendance_break.dart';
 import 'package:drop/features/attendance/domain/attendance_config.dart';
+import 'package:drop/features/attendance/domain/attendance_gps.dart';
+import 'package:drop/features/attendance/domain/attendance_location.dart';
+import 'package:drop/features/attendance/domain/attendance_location_service.dart';
 import 'package:drop/features/attendance/domain/attendance_validation.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_entity.dart';
 
@@ -31,25 +34,19 @@ void main() {
         status: status,
       );
 
-  group('checkClockIn', () {
+  group('checkClockIn (eligibility)', () {
     AttendanceCheck check({
       bool userActive = true,
       ScheduleShift? shift = ScheduleShift.morning,
       LeaveType? leave,
-      DateTime? schedStart,
-      DateTime? schedEnd,
       AttendanceEntity? existing,
-      DateTime? now,
       AttendanceConfig config = enabled,
     }) =>
         AttendanceValidation.checkClockIn(
           userActive: userActive,
           todaysShift: shift,
           leave: leave,
-          scheduledStart: schedStart ?? start,
-          scheduledEnd: schedEnd ?? end,
           existing: existing,
-          now: now ?? DateTime(2026, 7, 11, 8, 15),
           config: config,
         );
 
@@ -73,8 +70,6 @@ void main() {
     test('allowed with no shift when unscheduled clock-in is on', () {
       final c = check(
         shift: null,
-        schedStart: null,
-        schedEnd: null,
         config: const AttendanceConfig(enabled: true, allowUnscheduledClockIn: true),
       );
       expect(c.allowed, isTrue);
@@ -91,19 +86,64 @@ void main() {
       expect(check(existing: done).reason, AttendanceBlock.alreadyClockedOut);
     });
 
-    test('blocked before the clock-in window opens', () {
-      // opens at 08:00 (08:30 - 30 lead); 07:30 is too early.
-      expect(check(now: DateTime(2026, 7, 11, 7, 30)).reason,
-          AttendanceBlock.outsideWindow);
-    });
-
-    test('blocked after the shift has ended', () {
-      expect(check(now: DateTime(2026, 7, 11, 17)).reason,
-          AttendanceBlock.outsideWindow);
-    });
-
-    test('allowed inside the window with no prior record', () {
+    test('allowed (eligibility) with no prior record', () {
       expect(check().allowed, isTrue);
+    });
+  });
+
+  group('checkGpsFix', () {
+    AttendanceVerification verification({
+      double distance = 10,
+      double accuracy = 8,
+      double radius = 150,
+      double minAccuracy = 50,
+    }) =>
+        AttendanceVerification(
+          location: AttendanceLocation(
+              latitude: 30, longitude: 31, accuracyMeters: accuracy),
+          distanceMeters: distance,
+          radiusMeters: radius,
+          minAccuracyMeters: minAccuracy,
+          withinRadius: distance <= radius,
+          accuracyOk: accuracy <= minAccuracy,
+        );
+
+    AttendanceCheck gps({
+      LocationError? error,
+      AttendanceVerification? v,
+      bool geofence = true,
+    }) =>
+        AttendanceValidation.checkGpsFix(
+          locationError: error,
+          verification: v,
+          geofenceConfigured: geofence,
+        );
+
+    test('location service off → serviceDisabled', () {
+      expect(gps(error: LocationError.serviceDisabled).reason,
+          AttendanceBlock.serviceDisabled);
+    });
+    test('permission denied → permissionDenied', () {
+      expect(gps(error: LocationError.permissionDenied).reason,
+          AttendanceBlock.permissionDenied);
+    });
+    test('no fix → locationUnavailable', () {
+      expect(gps(error: LocationError.unavailable).reason,
+          AttendanceBlock.locationUnavailable);
+    });
+    test('branch not geofenced → noGeofence', () {
+      expect(gps(geofence: false).reason, AttendanceBlock.noGeofence);
+    });
+    test('weak GPS → lowAccuracy', () {
+      expect(gps(v: verification(accuracy: 120)).reason,
+          AttendanceBlock.lowAccuracy);
+    });
+    test('too far → outsideRadius', () {
+      expect(gps(v: verification(distance: 500)).reason,
+          AttendanceBlock.outsideRadius);
+    });
+    test('at the branch with a good fix → allowed', () {
+      expect(gps(v: verification()).allowed, isTrue);
     });
   });
 
@@ -124,40 +164,8 @@ void main() {
       );
     });
 
-    test('blocked while a break is running', () {
-      final onBreak = record(
-        clockIn: start,
-        breaks: [AttendanceBreak(start: DateTime(2026, 7, 11, 12))],
-      );
-      expect(check(onBreak).reason, AttendanceBlock.openBreak);
-    });
-
-    test('allowed for an open session with no running break', () {
+    test('allowed for an open clocked-in session', () {
       expect(check(record(clockIn: start)).allowed, isTrue);
-    });
-  });
-
-  group('break checks', () {
-    test('start break needs an open session and no running break', () {
-      expect(AttendanceValidation.checkStartBreak(existing: null).reason,
-          AttendanceBlock.notClockedIn);
-      expect(
-          AttendanceValidation.checkStartBreak(existing: record(clockIn: start))
-              .allowed,
-          isTrue);
-      final onBreak = record(
-          clockIn: start, breaks: [AttendanceBreak(start: DateTime(2026, 7, 11, 12))]);
-      expect(AttendanceValidation.checkStartBreak(existing: onBreak).reason,
-          AttendanceBlock.openBreak);
-    });
-
-    test('end break needs a running break', () {
-      final onBreak = record(
-          clockIn: start, breaks: [AttendanceBreak(start: DateTime(2026, 7, 11, 12))]);
-      expect(
-          AttendanceValidation.checkEndBreak(existing: onBreak).allowed, isTrue);
-      expect(AttendanceValidation.checkEndBreak(existing: record(clockIn: start)).reason,
-          AttendanceBlock.noOpenBreak);
     });
   });
 }

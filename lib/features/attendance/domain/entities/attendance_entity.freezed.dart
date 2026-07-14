@@ -39,7 +39,10 @@ mixin _$AttendanceEntity {
   DateTime? get clockIn => throw _privateConstructorUsedError;
   DateTime? get clockOut => throw _privateConstructorUsedError;
 
-  /// Breaks taken this shift (small single-writer array; see [AttendanceBreak]).
+  /// Breaks taken this shift. **Dormant internal extension point** — the MVP has
+  /// no break flow (no clock UI, use case, or write path), so this stays empty
+  /// and the calculator nets 0; the field + [AttendanceBreak] value object are
+  /// kept so break support can return without a migration. Not exposed.
   List<AttendanceBreak> get breaks => throw _privateConstructorUsedError;
   AttendanceStatus get status =>
       throw _privateConstructorUsedError; // ── Snapshot totals (written at clock-out / auto-close) ──
@@ -49,12 +52,20 @@ mixin _$AttendanceEntity {
   int get overtimeMinutes => throw _privateConstructorUsedError;
   int get breakMinutes => throw _privateConstructorUsedError;
 
-  /// Optional captured location (only when the branch opts into a geofence
-  /// policy; default off). Extension point.
-  AttendanceLocation? get location => throw _privateConstructorUsedError;
+  /// The GPS verification captured **at clock-in** — the device location, its
+  /// distance from the branch, the accuracy, and whether it passed the branch
+  /// geofence. Null on a record created without a fix (shouldn't happen once
+  /// GPS is required, but stays null-safe for legacy/manual records).
+  AttendanceVerification? get clockInVerification =>
+      throw _privateConstructorUsedError;
 
-  /// Optional clock-in selfie (Storage URL). Extension point for future face
-  /// verification — stored, never analysed here.
+  /// The GPS verification captured **at clock-out** (stored separately from
+  /// [clockInVerification]).
+  AttendanceVerification? get clockOutVerification =>
+      throw _privateConstructorUsedError;
+
+  /// Optional clock-in selfie (Storage URL). Dormant extension point for future
+  /// face verification — stored, never analysed here.
   String? get photoUrl => throw _privateConstructorUsedError;
   String? get deviceId => throw _privateConstructorUsedError;
   String? get notes => throw _privateConstructorUsedError;
@@ -107,7 +118,8 @@ abstract class $AttendanceEntityCopyWith<$Res> {
     int earlyLeaveMinutes,
     int overtimeMinutes,
     int breakMinutes,
-    AttendanceLocation? location,
+    AttendanceVerification? clockInVerification,
+    AttendanceVerification? clockOutVerification,
     String? photoUrl,
     String? deviceId,
     String? notes,
@@ -154,7 +166,8 @@ class _$AttendanceEntityCopyWithImpl<$Res, $Val extends AttendanceEntity>
     Object? earlyLeaveMinutes = null,
     Object? overtimeMinutes = null,
     Object? breakMinutes = null,
-    Object? location = freezed,
+    Object? clockInVerification = freezed,
+    Object? clockOutVerification = freezed,
     Object? photoUrl = freezed,
     Object? deviceId = freezed,
     Object? notes = freezed,
@@ -237,10 +250,14 @@ class _$AttendanceEntityCopyWithImpl<$Res, $Val extends AttendanceEntity>
                 ? _value.breakMinutes
                 : breakMinutes // ignore: cast_nullable_to_non_nullable
                       as int,
-            location: freezed == location
-                ? _value.location
-                : location // ignore: cast_nullable_to_non_nullable
-                      as AttendanceLocation?,
+            clockInVerification: freezed == clockInVerification
+                ? _value.clockInVerification
+                : clockInVerification // ignore: cast_nullable_to_non_nullable
+                      as AttendanceVerification?,
+            clockOutVerification: freezed == clockOutVerification
+                ? _value.clockOutVerification
+                : clockOutVerification // ignore: cast_nullable_to_non_nullable
+                      as AttendanceVerification?,
             photoUrl: freezed == photoUrl
                 ? _value.photoUrl
                 : photoUrl // ignore: cast_nullable_to_non_nullable
@@ -318,7 +335,8 @@ abstract class _$$AttendanceEntityImplCopyWith<$Res>
     int earlyLeaveMinutes,
     int overtimeMinutes,
     int breakMinutes,
-    AttendanceLocation? location,
+    AttendanceVerification? clockInVerification,
+    AttendanceVerification? clockOutVerification,
     String? photoUrl,
     String? deviceId,
     String? notes,
@@ -364,7 +382,8 @@ class __$$AttendanceEntityImplCopyWithImpl<$Res>
     Object? earlyLeaveMinutes = null,
     Object? overtimeMinutes = null,
     Object? breakMinutes = null,
-    Object? location = freezed,
+    Object? clockInVerification = freezed,
+    Object? clockOutVerification = freezed,
     Object? photoUrl = freezed,
     Object? deviceId = freezed,
     Object? notes = freezed,
@@ -447,10 +466,14 @@ class __$$AttendanceEntityImplCopyWithImpl<$Res>
             ? _value.breakMinutes
             : breakMinutes // ignore: cast_nullable_to_non_nullable
                   as int,
-        location: freezed == location
-            ? _value.location
-            : location // ignore: cast_nullable_to_non_nullable
-                  as AttendanceLocation?,
+        clockInVerification: freezed == clockInVerification
+            ? _value.clockInVerification
+            : clockInVerification // ignore: cast_nullable_to_non_nullable
+                  as AttendanceVerification?,
+        clockOutVerification: freezed == clockOutVerification
+            ? _value.clockOutVerification
+            : clockOutVerification // ignore: cast_nullable_to_non_nullable
+                  as AttendanceVerification?,
         photoUrl: freezed == photoUrl
             ? _value.photoUrl
             : photoUrl // ignore: cast_nullable_to_non_nullable
@@ -521,7 +544,8 @@ class _$AttendanceEntityImpl extends _AttendanceEntity {
     this.earlyLeaveMinutes = 0,
     this.overtimeMinutes = 0,
     this.breakMinutes = 0,
-    this.location,
+    this.clockInVerification,
+    this.clockOutVerification,
     this.photoUrl,
     this.deviceId,
     this.notes,
@@ -568,10 +592,16 @@ class _$AttendanceEntityImpl extends _AttendanceEntity {
   @override
   final DateTime? clockOut;
 
-  /// Breaks taken this shift (small single-writer array; see [AttendanceBreak]).
+  /// Breaks taken this shift. **Dormant internal extension point** — the MVP has
+  /// no break flow (no clock UI, use case, or write path), so this stays empty
+  /// and the calculator nets 0; the field + [AttendanceBreak] value object are
+  /// kept so break support can return without a migration. Not exposed.
   final List<AttendanceBreak> _breaks;
 
-  /// Breaks taken this shift (small single-writer array; see [AttendanceBreak]).
+  /// Breaks taken this shift. **Dormant internal extension point** — the MVP has
+  /// no break flow (no clock UI, use case, or write path), so this stays empty
+  /// and the calculator nets 0; the field + [AttendanceBreak] value object are
+  /// kept so break support can return without a migration. Not exposed.
   @override
   @JsonKey()
   List<AttendanceBreak> get breaks {
@@ -600,13 +630,20 @@ class _$AttendanceEntityImpl extends _AttendanceEntity {
   @JsonKey()
   final int breakMinutes;
 
-  /// Optional captured location (only when the branch opts into a geofence
-  /// policy; default off). Extension point.
+  /// The GPS verification captured **at clock-in** — the device location, its
+  /// distance from the branch, the accuracy, and whether it passed the branch
+  /// geofence. Null on a record created without a fix (shouldn't happen once
+  /// GPS is required, but stays null-safe for legacy/manual records).
   @override
-  final AttendanceLocation? location;
+  final AttendanceVerification? clockInVerification;
 
-  /// Optional clock-in selfie (Storage URL). Extension point for future face
-  /// verification — stored, never analysed here.
+  /// The GPS verification captured **at clock-out** (stored separately from
+  /// [clockInVerification]).
+  @override
+  final AttendanceVerification? clockOutVerification;
+
+  /// Optional clock-in selfie (Storage URL). Dormant extension point for future
+  /// face verification — stored, never analysed here.
   @override
   final String? photoUrl;
   @override
@@ -642,7 +679,7 @@ class _$AttendanceEntityImpl extends _AttendanceEntity {
 
   @override
   String toString() {
-    return 'AttendanceEntity(id: $id, userId: $userId, userName: $userName, branchId: $branchId, shift: $shift, date: $date, scheduledStart: $scheduledStart, scheduledEnd: $scheduledEnd, clockIn: $clockIn, clockOut: $clockOut, breaks: $breaks, status: $status, workedMinutes: $workedMinutes, lateMinutes: $lateMinutes, earlyLeaveMinutes: $earlyLeaveMinutes, overtimeMinutes: $overtimeMinutes, breakMinutes: $breakMinutes, location: $location, photoUrl: $photoUrl, deviceId: $deviceId, notes: $notes, source: $source, resolvedBy: $resolvedBy, resolvedByName: $resolvedByName, resolvedAt: $resolvedAt, schemaVersion: $schemaVersion, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
+    return 'AttendanceEntity(id: $id, userId: $userId, userName: $userName, branchId: $branchId, shift: $shift, date: $date, scheduledStart: $scheduledStart, scheduledEnd: $scheduledEnd, clockIn: $clockIn, clockOut: $clockOut, breaks: $breaks, status: $status, workedMinutes: $workedMinutes, lateMinutes: $lateMinutes, earlyLeaveMinutes: $earlyLeaveMinutes, overtimeMinutes: $overtimeMinutes, breakMinutes: $breakMinutes, clockInVerification: $clockInVerification, clockOutVerification: $clockOutVerification, photoUrl: $photoUrl, deviceId: $deviceId, notes: $notes, source: $source, resolvedBy: $resolvedBy, resolvedByName: $resolvedByName, resolvedAt: $resolvedAt, schemaVersion: $schemaVersion, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
   }
 
   @override
@@ -677,8 +714,10 @@ class _$AttendanceEntityImpl extends _AttendanceEntity {
                 other.overtimeMinutes == overtimeMinutes) &&
             (identical(other.breakMinutes, breakMinutes) ||
                 other.breakMinutes == breakMinutes) &&
-            (identical(other.location, location) ||
-                other.location == location) &&
+            (identical(other.clockInVerification, clockInVerification) ||
+                other.clockInVerification == clockInVerification) &&
+            (identical(other.clockOutVerification, clockOutVerification) ||
+                other.clockOutVerification == clockOutVerification) &&
             (identical(other.photoUrl, photoUrl) ||
                 other.photoUrl == photoUrl) &&
             (identical(other.deviceId, deviceId) ||
@@ -721,7 +760,8 @@ class _$AttendanceEntityImpl extends _AttendanceEntity {
     earlyLeaveMinutes,
     overtimeMinutes,
     breakMinutes,
-    location,
+    clockInVerification,
+    clockOutVerification,
     photoUrl,
     deviceId,
     notes,
@@ -766,7 +806,8 @@ abstract class _AttendanceEntity extends AttendanceEntity {
     final int earlyLeaveMinutes,
     final int overtimeMinutes,
     final int breakMinutes,
-    final AttendanceLocation? location,
+    final AttendanceVerification? clockInVerification,
+    final AttendanceVerification? clockOutVerification,
     final String? photoUrl,
     final String? deviceId,
     final String? notes,
@@ -813,7 +854,10 @@ abstract class _AttendanceEntity extends AttendanceEntity {
   @override
   DateTime? get clockOut;
 
-  /// Breaks taken this shift (small single-writer array; see [AttendanceBreak]).
+  /// Breaks taken this shift. **Dormant internal extension point** — the MVP has
+  /// no break flow (no clock UI, use case, or write path), so this stays empty
+  /// and the calculator nets 0; the field + [AttendanceBreak] value object are
+  /// kept so break support can return without a migration. Not exposed.
   @override
   List<AttendanceBreak> get breaks;
   @override
@@ -829,13 +873,20 @@ abstract class _AttendanceEntity extends AttendanceEntity {
   @override
   int get breakMinutes;
 
-  /// Optional captured location (only when the branch opts into a geofence
-  /// policy; default off). Extension point.
+  /// The GPS verification captured **at clock-in** — the device location, its
+  /// distance from the branch, the accuracy, and whether it passed the branch
+  /// geofence. Null on a record created without a fix (shouldn't happen once
+  /// GPS is required, but stays null-safe for legacy/manual records).
   @override
-  AttendanceLocation? get location;
+  AttendanceVerification? get clockInVerification;
 
-  /// Optional clock-in selfie (Storage URL). Extension point for future face
-  /// verification — stored, never analysed here.
+  /// The GPS verification captured **at clock-out** (stored separately from
+  /// [clockInVerification]).
+  @override
+  AttendanceVerification? get clockOutVerification;
+
+  /// Optional clock-in selfie (Storage URL). Dormant extension point for future
+  /// face verification — stored, never analysed here.
   @override
   String? get photoUrl;
   @override

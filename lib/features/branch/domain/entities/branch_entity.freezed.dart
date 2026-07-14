@@ -41,6 +41,11 @@ mixin _$BranchEntity {
   /// as a nested map under `swapPolicy`.
   SwapPolicy? get swapPolicy => throw _privateConstructorUsedError;
 
+  /// Optional attendance **geofence** (lat/lng · allowed radius · min GPS
+  /// accuracy). Null = GPS attendance not configured here yet. Stored as a
+  /// nested map under `geofence`.
+  BranchGeofence? get geofence => throw _privateConstructorUsedError;
+
   /// Create a copy of BranchEntity
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -66,6 +71,7 @@ abstract class $BranchEntityCopyWith<$Res> {
     DateTime? updatedAt,
     DateTime? deletedAt,
     SwapPolicy? swapPolicy,
+    BranchGeofence? geofence,
   });
 }
 
@@ -94,6 +100,7 @@ class _$BranchEntityCopyWithImpl<$Res, $Val extends BranchEntity>
     Object? updatedAt = freezed,
     Object? deletedAt = freezed,
     Object? swapPolicy = freezed,
+    Object? geofence = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -137,6 +144,10 @@ class _$BranchEntityCopyWithImpl<$Res, $Val extends BranchEntity>
                 ? _value.swapPolicy
                 : swapPolicy // ignore: cast_nullable_to_non_nullable
                       as SwapPolicy?,
+            geofence: freezed == geofence
+                ? _value.geofence
+                : geofence // ignore: cast_nullable_to_non_nullable
+                      as BranchGeofence?,
           )
           as $Val,
     );
@@ -163,6 +174,7 @@ abstract class _$$BranchEntityImplCopyWith<$Res>
     DateTime? updatedAt,
     DateTime? deletedAt,
     SwapPolicy? swapPolicy,
+    BranchGeofence? geofence,
   });
 }
 
@@ -190,6 +202,7 @@ class __$$BranchEntityImplCopyWithImpl<$Res>
     Object? updatedAt = freezed,
     Object? deletedAt = freezed,
     Object? swapPolicy = freezed,
+    Object? geofence = freezed,
   }) {
     return _then(
       _$BranchEntityImpl(
@@ -233,6 +246,10 @@ class __$$BranchEntityImplCopyWithImpl<$Res>
             ? _value.swapPolicy
             : swapPolicy // ignore: cast_nullable_to_non_nullable
                   as SwapPolicy?,
+        geofence: freezed == geofence
+            ? _value.geofence
+            : geofence // ignore: cast_nullable_to_non_nullable
+                  as BranchGeofence?,
       ),
     );
   }
@@ -252,6 +269,7 @@ class _$BranchEntityImpl extends _BranchEntity {
     this.updatedAt,
     this.deletedAt,
     this.swapPolicy,
+    this.geofence,
   }) : super._();
 
   @override
@@ -289,9 +307,15 @@ class _$BranchEntityImpl extends _BranchEntity {
   @override
   final SwapPolicy? swapPolicy;
 
+  /// Optional attendance **geofence** (lat/lng · allowed radius · min GPS
+  /// accuracy). Null = GPS attendance not configured here yet. Stored as a
+  /// nested map under `geofence`.
+  @override
+  final BranchGeofence? geofence;
+
   @override
   String toString() {
-    return 'BranchEntity(id: $id, name: $name, location: $location, isActive: $isActive, logoUrl: $logoUrl, coverUrl: $coverUrl, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt, swapPolicy: $swapPolicy)';
+    return 'BranchEntity(id: $id, name: $name, location: $location, isActive: $isActive, logoUrl: $logoUrl, coverUrl: $coverUrl, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt, swapPolicy: $swapPolicy, geofence: $geofence)';
   }
 
   @override
@@ -315,7 +339,9 @@ class _$BranchEntityImpl extends _BranchEntity {
             (identical(other.deletedAt, deletedAt) ||
                 other.deletedAt == deletedAt) &&
             (identical(other.swapPolicy, swapPolicy) ||
-                other.swapPolicy == swapPolicy));
+                other.swapPolicy == swapPolicy) &&
+            (identical(other.geofence, geofence) ||
+                other.geofence == geofence));
   }
 
   @override
@@ -331,6 +357,7 @@ class _$BranchEntityImpl extends _BranchEntity {
     updatedAt,
     deletedAt,
     swapPolicy,
+    geofence,
   );
 
   /// Create a copy of BranchEntity
@@ -354,6 +381,7 @@ abstract class _BranchEntity extends BranchEntity {
     final DateTime? updatedAt,
     final DateTime? deletedAt,
     final SwapPolicy? swapPolicy,
+    final BranchGeofence? geofence,
   }) = _$BranchEntityImpl;
   const _BranchEntity._() : super._();
 
@@ -390,6 +418,12 @@ abstract class _BranchEntity extends BranchEntity {
   /// as a nested map under `swapPolicy`.
   @override
   SwapPolicy? get swapPolicy;
+
+  /// Optional attendance **geofence** (lat/lng · allowed radius · min GPS
+  /// accuracy). Null = GPS attendance not configured here yet. Stored as a
+  /// nested map under `geofence`.
+  @override
+  BranchGeofence? get geofence;
 
   /// Create a copy of BranchEntity
   /// with the given fields replaced by the non-null parameter values.

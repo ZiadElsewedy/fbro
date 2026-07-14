@@ -1,8 +1,12 @@
 import 'dart:io';
 
 import 'package:drop/core/enums/attendance_status.dart';
-import 'package:drop/features/attendance/domain/attendance_break.dart';
+import 'package:drop/core/enums/request_status.dart';
 import 'package:drop/features/attendance/domain/attendance_calculator.dart';
+import 'package:drop/features/attendance/domain/attendance_gps.dart';
+import 'package:drop/features/attendance/domain/attendance_feed.dart';
+import 'package:drop/features/attendance/domain/attendance_resolution.dart';
+import 'package:drop/features/attendance/domain/entities/attendance_correction.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_event.dart';
 
@@ -20,8 +24,9 @@ abstract class AttendanceRepository {
   Stream<AttendanceEntity?> watchRecord(String id);
 
   /// A user's own history, newest first ([limit] most recent), soft-deletes
-  /// filtered out.
-  Stream<List<AttendanceEntity>> watchUserHistory(String uid, {int limit});
+  /// filtered out — plus the snapshot's offline / pending-write sync state (the
+  /// single stream that drives the whole employee clock surface).
+  Stream<AttendanceFeed> watchUserHistory(String uid, {int limit});
 
   /// A branch's records for a single [dayKey] (`yyyyMMdd`) — the manager live
   /// board.
@@ -47,11 +52,8 @@ abstract class AttendanceRepository {
     required DateTime clockOut,
     required AttendanceStatus status,
     required AttendanceTotals totals,
+    AttendanceVerification? verification,
   });
-
-  /// Start / end a break: replaces the breaks array. Minute totals are NOT
-  /// persisted here (only at clock-out).
-  Future<void> updateBreaks(String id, List<AttendanceBreak> breaks);
 
   /// Soft-delete a record (admin) — stamps `deletedAt`; the record stays as
   /// history.
@@ -63,4 +65,39 @@ abstract class AttendanceRepository {
     required File file,
     required String uploadedBy,
   });
+
+  // ── Attendance corrections (`attendance_corrections/{id}`) ──────────────
+  // The client only writes the correction doc; on approval the
+  // `onAttendanceCorrectionWritten` Cloud Function applies [decideCorrection]'s
+  // [AttendanceResolution] onto the parent record and writes the audit event.
+
+  /// One-shot read of a correction by id.
+  Future<AttendanceCorrectionEntity?> getCorrection(String id);
+
+  /// File a correction (the employee, for their own record — status `pending`).
+  Future<void> requestCorrection(AttendanceCorrectionEntity correction);
+
+  /// Record a reviewer's decision. On approve, [resolution] carries the settled
+  /// clock times + minute snapshot (computed by `DecideCorrection` through
+  /// `AttendanceCalculator`); the Cloud Function copies it onto the record.
+  Future<void> decideCorrection(
+    String id, {
+    required RequestStatus status,
+    required String decidedBy,
+    String? decidedByName,
+    String? decisionNote,
+    AttendanceResolution? resolution,
+  });
+
+  /// A user's own corrections, newest first (soft-deletes filtered out).
+  Stream<List<AttendanceCorrectionEntity>> watchUserCorrections(String uid,
+      {int limit});
+
+  /// A branch's still-**pending** corrections — the reviewer's queue.
+  Stream<List<AttendanceCorrectionEntity>> watchBranchPendingCorrections(
+      String branchId);
+
+  /// Every correction filed against one attendance record, oldest first.
+  Stream<List<AttendanceCorrectionEntity>> watchRecordCorrections(
+      String attendanceId);
 }

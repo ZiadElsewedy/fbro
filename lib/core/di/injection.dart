@@ -92,17 +92,13 @@ import 'package:drop/features/requests/presentation/cubit/request_detail_cubit.d
 import 'package:drop/features/requests/presentation/cubit/requests_list_cubit.dart';
 import 'package:drop/features/attendance/data/datasources/attendance_remote_datasource.dart';
 import 'package:drop/features/attendance/data/repositories/attendance_repository_impl.dart';
+import 'package:drop/features/attendance/data/services/geolocator_location_service.dart';
+import 'package:drop/features/attendance/domain/attendance_service.dart';
 import 'package:drop/features/attendance/domain/repositories/attendance_repository.dart';
 import 'package:drop/features/attendance/domain/usecases/clock_in.dart';
 import 'package:drop/features/attendance/domain/usecases/clock_out.dart';
-import 'package:drop/features/attendance/domain/usecases/end_break.dart';
-import 'package:drop/features/attendance/domain/usecases/start_break.dart';
+import 'package:drop/features/attendance/domain/usecases/request_correction.dart';
 import 'package:drop/features/attendance/presentation/cubit/attendance_cubit.dart';
-import 'package:drop/features/community/data/datasources/event_remote_datasource.dart';
-import 'package:drop/features/community/data/repositories/event_repository_impl.dart';
-import 'package:drop/features/community/domain/repositories/event_repository.dart';
-import 'package:drop/features/community/presentation/cubit/community_hub_cubit.dart';
-import 'package:drop/features/community/presentation/cubit/event_workspace_cubit.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart' show UserEntity;
 
 class AppDependencies {
@@ -193,25 +189,6 @@ class AppDependencies {
 
   /// Attendance (clock in/out) — the employee-facing cubit (singleton, app-wide).
   static late final AttendanceCubit attendanceCubit;
-
-  /// Community Hub / DROP Events — the hub list cubit (singleton, app-wide).
-  static late final CommunityHubCubit communityHubCubit;
-
-  // The event repository is kept so a fresh per-event [EventWorkspaceCubit] can
-  // be built on demand (one per opened event).
-  static late final EventRepository _eventRepository;
-
-  /// Builds a fresh workspace cubit for [eventId] (owned + disposed by its
-  /// `BlocProvider`; streams the event doc + owns every section edit).
-  static EventWorkspaceCubit createEventWorkspaceCubit(
-    String eventId,
-    UserEntity? user,
-  ) =>
-      EventWorkspaceCubit(
-        repository: _eventRepository,
-        user: user,
-        eventId: eventId,
-      );
 
   /// Phase 3 task foundation, activated by the Phase 4 [taskCubit] + use cases.
   static late final TaskRepository taskRepository;
@@ -346,13 +323,17 @@ class AppDependencies {
       uploadAttachment: _uploadRequestAttachment,
     );
 
-    // ─── Attendance (clock in/out) ──────────────────────────────────────
+    // ─── Attendance (clock in/out + corrections) ────────────────────────
     // The employee-facing cubit reuses the existing schedule seam to resolve
     // today's shift + scheduled window (no attendance re-derivation), drives its
-    // whole surface from one realtime history stream, and gates every clock
-    // action through the pure validation engine. Clock actions write the record
-    // + its append-only audit event atomically. Notifications + auto-close come
-    // later (client NotifyAttendanceEvent + scheduled Cloud Functions).
+    // whole surface from one realtime history stream (carrying offline/syncing
+    // metadata), and gates every clock/correction action through the pure
+    // validation engine. Clients write ONLY the record + correction docs; the
+    // append-only audit trail, the approved-correction apply, auto-close, and all
+    // notifications are derived SERVER-SIDE (onAttendanceWritten /
+    // onAttendanceCorrectionWritten / autoCloseAttendance). `AttendanceService`
+    // is the config/dark-switch seam. `DecideCorrection` + the manager review
+    // cubit are wired when the review UI lands (a later phase).
     final AttendanceRepository attendanceRepository = AttendanceRepositoryImpl(
       AttendanceRemoteDataSourceImpl(
         FirebaseFirestore.instance,
@@ -362,27 +343,12 @@ class AppDependencies {
     attendanceCubit = AttendanceCubit(
       repository: attendanceRepository,
       scheduleRepository: scheduleRepository,
+      branchRepository: branchRepository,
+      service: const AttendanceService(),
+      locationService: const GeolocatorLocationService(),
       clockIn: ClockIn(attendanceRepository),
       clockOut: ClockOut(attendanceRepository),
-      startBreak: StartBreak(attendanceRepository),
-      endBreak: EndBreak(attendanceRepository),
-    );
-
-    // ─── Community Hub / DROP Events ────────────────────────────────────
-    // Repo-direct (like branch/admin/schedule): the app-wide hub cubit reads a
-    // role-scoped realtime stream + files new events; the per-event workspace
-    // cubit is built on demand via [createEventWorkspaceCubit] and streams the
-    // single embedded event document. Reuses branchRepository for branch names.
-    final EventRepository eventRepository = EventRepositoryImpl(
-      EventRemoteDataSourceImpl(
-        FirebaseFirestore.instance,
-        FirebaseStorage.instance,
-      ),
-    );
-    _eventRepository = eventRepository;
-    communityHubCubit = CommunityHubCubit(
-      repository: eventRepository,
-      branchRepository: branchRepository,
+      requestCorrection: RequestCorrection(attendanceRepository),
     );
 
     // ─── Admin module (Phase 5) ───────────────────────────────

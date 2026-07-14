@@ -12,6 +12,112 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed (2026-07-15 — Attendance Phase 3 (engine): GPS-verified clock-in/out · Break removed · Community removed)
+
+Phase 3 scope adjustment + GPS engine. **This entry covers the data/logic engine
++ removals (all verified); the employee/manager/admin UI is the remaining piece.**
+
+- **Break flow removed from the MVP.** Deleted the `StartBreak`/`EndBreak` use
+  cases, cubit actions, `updateBreaks` write path, break validation, break audit
+  derivation, and DI wiring. Kept `AttendanceBreak` + the record `breaks` field +
+  the calculator's break-netting as **dormant, documented internal extension
+  points** (no migration to restore breaks later).
+- **GPS-verified clock-in/out (server-authoritative kept).** New `geolocator`
+  dependency + iOS `NSLocationWhenInUseUsageDescription` + Android fine/coarse
+  location permissions. Pure GPS domain: `gpsDistanceMeters` (Haversine),
+  `AttendanceVerification` (location · distance · within-radius · accuracy-ok ·
+  verified, snapshotting the branch radius/accuracy floor), and an
+  `AttendanceLocationService` abstraction with a `GeolocatorLocationService` impl
+  (permission → service → high-accuracy fix → `LocationResult`, never throws).
+- **Branch geofence config:** `BranchGeofence` (lat · lng · allowed radius · min
+  GPS accuracy) on `BranchEntity`/`BranchModel` + a dedicated
+  `BranchRepository.setGeofence` write path (so a general branch-form save can't
+  clobber it). No rules change (rides the existing admin-only branch write).
+- **Record fields:** `clockInVerification` + `clockOutVerification` stored
+  **separately** (each with location · accuracy · distance · verified). The single
+  `location` extension point was replaced by these. **Clock times are now server
+  timestamps** (`FieldValue.serverTimestamp()`); the GPS capture time stands in
+  for the live "Working" timer via `AttendanceEntity.effectiveClockIn` until the
+  write syncs.
+- **Validation split:** `checkClockIn` is now the non-GPS **eligibility** gate;
+  `checkGpsFix` is the GPS gate. Clock-in is rejected on **no active shift ·
+  location service off · permission denied · GPS too inaccurate · outside the
+  allowed radius** (+ branch-not-geofenced · fix-unavailable). The old clock-in
+  **time-window** rejection was dropped (per "keep the workflow simple"). Clock-out
+  captures a **best-effort** verification (recorded, never blocked — you must be
+  able to end your shift).
+- **Cubit:** injects `BranchRepository` + `AttendanceLocationService`; resolves the
+  branch geofence alongside the shift; clock-in/out acquire + evaluate GPS and gate
+  through the pure validators; new `verifying` + `geofenceReady` state. Cloud
+  Functions unchanged except the break-audit derivation was dropped (they run
+  server-side where the server timestamps are already resolved).
+- **Community feature REMOVED** (owner request): deleted `lib/features/community/`
+  (21 files) + 4 tests + the `event_type`/`event_status`/`event_phase` enums +
+  `eventsCollection` + all routes/nav/DI wiring + the `events/{id}` Firestore rule
+  + the `events/**` Storage rule. Live Firestore data was left untouched.
+- **Verification:** `flutter analyze` 0 new issues (1 pre-existing test lint;
+  community's 11 lints are gone); suite **744 pass / 2 pre-existing splash
+  failures**; +GPS tests (`attendance_gps_test`, GPS cases in the validation +
+  cubit suites).
+- **⚠️ Needs deploy:** `firestore.rules` + `storage.rules` (events blocks removed),
+  and `firebase deploy --only functions` (break-audit no longer derived). **Needs
+  on-device QA** for real GPS behaviour (permission/service/accuracy/distance).
+- **Remaining (UI, not built here):** the employee clock screen (Today's Shift →
+  Clock In → GPS Validation → Working → Clock Out → Today's Summary), the manager
+  verification view, and the admin branch-geofence editor.
+
+### Added (2026-07-14 — Attendance Phase 2: corrections + server-authoritative audit/auto-close)
+
+Phase 2 of the **Attendance** feature — completing the data foundation on top of
+the approved Phase 1 clock-in/out slice (records, calculator, validation, config,
+employee cubit). No UI, dashboards, or analytics screens (later phases). Owner
+ruling: **server-authoritative** — clients write ONLY the attendance record + the
+correction doc; Cloud Functions derive the immutable audit trail + notifications;
+clock actions stay instant/optimistic on Firestore offline persistence.
+
+- **Attendance corrections** (`attendance_corrections/{id}`) — the one honest way
+  a *settled* record changes. New `AttendanceCorrectionEntity` (freezed, reuses
+  `RequestStatus` — a correction is an approval request), `AttendanceCorrectionKind`
+  enum (missing clock-out / wrong time / absence dispute / other),
+  `AttendanceResolution` value object (the applied snapshot), model, datasource,
+  repo methods, and use cases `RequestCorrection` (employee files) +
+  `DecideCorrection` (reviewer approves/rejects — computes the corrected minute
+  snapshot through `AttendanceCalculator`, the single source of that math).
+  `AttendanceValidation.checkCorrection` gates filing (settled record, non-open
+  session, non-empty reason, sane times).
+- **Server-authoritative audit + apply + auto-close (Cloud Functions, mirrors
+  `onRequest*`):** `onAttendanceWritten` derives the append-only audit trail
+  (`attendance/{id}/events`) by diffing clock/break/status transitions
+  (source-gated so auto-close/correction paths never double-audit);
+  `onAttendanceCorrectionWritten` writes the correction lifecycle events, applies
+  an approved resolution onto the parent record, and notifies; `autoCloseAttendance`
+  (scheduled, every 30 min) closes sessions never clocked out → `pendingReview`.
+  Clients never write audit events (rules: `create:false`).
+- **Notifications** reuse the existing `notifications/{id}` + `onNotificationCreated`
+  pipeline. Four server-produced `NotificationType`s
+  (`attendanceCorrectionFiled/Approved/Rejected`, `attendanceAutoClosed`); the
+  inbox badges them "Attendance" (no new filter pill — mapped onto existing
+  categories).
+- **Basic service layer** `AttendanceService` — the config/dark-switch seam
+  (replaces the cubit's inline stub; the single future point for per-branch
+  `attendanceConfig`).
+- **Cubit/state:** the employee cubit now exposes `session` (live open session,
+  distinct from `today`), `syncing` + `offline` (from the history snapshot's
+  Firestore metadata, via the new `AttendanceFeed`), and `requestCorrection`.
+- **Rules + indexes:** `attendance_corrections` rules (employee files own/pending;
+  manager-own-branch/admin decide; **no self-approval**; userId/attendanceId
+  immutable; delete false) + 3 composite indexes.
+- **Tests (+19):** `decide_correction_test`, `attendance_correction_model_test`,
+  `attendance_correction_validation_test`, plus corrections/session/sync cases in
+  `attendance_cubit_test`. Also fixed a pre-existing stale assertion in
+  `notification_grouping_test` (the Requests category pill, from 2026-07-08).
+  `flutter analyze`: 0 new issues; suite **756 pass / 2 pre-existing splash
+  failures**.
+- **⚠️ Needs deploy:** `firestore.rules`, `firestore.indexes.json`, and the new
+  `functions` (`onAttendanceWritten`, `onAttendanceCorrectionWritten`,
+  `autoCloseAttendance`). The client degrades gracefully until deployed (clock
+  in/out works; the audit trail + corrections + auto-close activate on deploy).
+
 ### Added (2026-07-08 — Community Hub / DROP Events: the flagship event workspace)
 
 A whole new flagship feature: **Community Hub** manages every internal and

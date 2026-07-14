@@ -3,8 +3,8 @@ import 'package:drop/core/enums/attendance_source.dart';
 import 'package:drop/core/enums/attendance_status.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/attendance/domain/attendance_break.dart';
+import 'package:drop/features/attendance/domain/attendance_gps.dart';
 import 'package:drop/features/attendance/domain/attendance_id.dart';
-import 'package:drop/features/attendance/domain/attendance_location.dart';
 
 part 'attendance_entity.freezed.dart';
 
@@ -51,7 +51,10 @@ class AttendanceEntity with _$AttendanceEntity {
     DateTime? clockIn,
     DateTime? clockOut,
 
-    /// Breaks taken this shift (small single-writer array; see [AttendanceBreak]).
+    /// Breaks taken this shift. **Dormant internal extension point** — the MVP has
+    /// no break flow (no clock UI, use case, or write path), so this stays empty
+    /// and the calculator nets 0; the field + [AttendanceBreak] value object are
+    /// kept so break support can return without a migration. Not exposed.
     @Default(<AttendanceBreak>[]) List<AttendanceBreak> breaks,
     @Default(AttendanceStatus.inProgress) AttendanceStatus status,
 
@@ -62,12 +65,18 @@ class AttendanceEntity with _$AttendanceEntity {
     @Default(0) int overtimeMinutes,
     @Default(0) int breakMinutes,
 
-    /// Optional captured location (only when the branch opts into a geofence
-    /// policy; default off). Extension point.
-    AttendanceLocation? location,
+    /// The GPS verification captured **at clock-in** — the device location, its
+    /// distance from the branch, the accuracy, and whether it passed the branch
+    /// geofence. Null on a record created without a fix (shouldn't happen once
+    /// GPS is required, but stays null-safe for legacy/manual records).
+    AttendanceVerification? clockInVerification,
 
-    /// Optional clock-in selfie (Storage URL). Extension point for future face
-    /// verification — stored, never analysed here.
+    /// The GPS verification captured **at clock-out** (stored separately from
+    /// [clockInVerification]).
+    AttendanceVerification? clockOutVerification,
+
+    /// Optional clock-in selfie (Storage URL). Dormant extension point for future
+    /// face verification — stored, never analysed here.
     String? photoUrl,
     String? deviceId,
     String? notes,
@@ -100,10 +109,6 @@ class AttendanceEntity with _$AttendanceEntity {
   /// A live, running session (clocked in, not out).
   bool get isOpen => hasClockedIn && !hasClockedOut;
 
-  /// The currently-open break, or null when none is running.
-  AttendanceBreak? get currentBreak => openBreak(breaks);
-  bool get isOnBreak => currentBreak != null;
-
   // ── Derived facts (from the snapshot minute fields) ──
   bool get isLate => lateMinutes > 0;
   bool get hasEarlyLeave => earlyLeaveMinutes > 0;
@@ -115,4 +120,15 @@ class AttendanceEntity with _$AttendanceEntity {
   /// True when this record was created without a rostered shift (the scheduled
   /// window is unknown) — surfaces an "unscheduled" hint.
   bool get isUnscheduled => scheduledStart == null;
+
+  // ── GPS verification (Phase 3) ──
+  bool get isClockInVerified => clockInVerification?.verified ?? false;
+  bool get isClockOutVerified => clockOutVerification?.verified ?? false;
+
+  /// The clock-in instant for the live timer. [clockIn] is written as a **server
+  /// timestamp**, so it reads back null from the offline cache until the write
+  /// syncs; until then the GPS capture time (device clock, ≈ the clock instant)
+  /// stands in so the "Working" timer never shows nothing.
+  DateTime? get effectiveClockIn =>
+      clockIn ?? clockInVerification?.location.capturedAt;
 }

@@ -23,6 +23,7 @@ mixin _$AttendanceState {
     required TResult Function() loading,
     required TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -31,6 +32,10 @@ mixin _$AttendanceState {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )
     loaded,
     required TResult Function(String message) error,
@@ -41,6 +46,7 @@ mixin _$AttendanceState {
     TResult? Function()? loading,
     TResult? Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -49,6 +55,10 @@ mixin _$AttendanceState {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -59,6 +69,7 @@ mixin _$AttendanceState {
     TResult Function()? loading,
     TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -67,6 +78,10 @@ mixin _$AttendanceState {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -165,6 +180,7 @@ class _$InitialImpl implements _Initial {
     required TResult Function() loading,
     required TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -173,6 +189,10 @@ class _$InitialImpl implements _Initial {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )
     loaded,
     required TResult Function(String message) error,
@@ -187,6 +207,7 @@ class _$InitialImpl implements _Initial {
     TResult? Function()? loading,
     TResult? Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -195,6 +216,10 @@ class _$InitialImpl implements _Initial {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -209,6 +234,7 @@ class _$InitialImpl implements _Initial {
     TResult Function()? loading,
     TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -217,6 +243,10 @@ class _$InitialImpl implements _Initial {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -317,6 +347,7 @@ class _$LoadingImpl implements _Loading {
     required TResult Function() loading,
     required TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -325,6 +356,10 @@ class _$LoadingImpl implements _Loading {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )
     loaded,
     required TResult Function(String message) error,
@@ -339,6 +374,7 @@ class _$LoadingImpl implements _Loading {
     TResult? Function()? loading,
     TResult? Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -347,6 +383,10 @@ class _$LoadingImpl implements _Loading {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -361,6 +401,7 @@ class _$LoadingImpl implements _Loading {
     TResult Function()? loading,
     TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -369,6 +410,10 @@ class _$LoadingImpl implements _Loading {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -431,6 +476,7 @@ abstract class _$$LoadedImplCopyWith<$Res> {
   @useResult
   $Res call({
     AttendanceEntity? today,
+    AttendanceEntity? session,
     List<AttendanceEntity> history,
     ScheduleShift? shift,
     DateTime? scheduledStart,
@@ -439,9 +485,14 @@ abstract class _$$LoadedImplCopyWith<$Res> {
     AttendanceConfig config,
     DateTime tick,
     bool busy,
+    bool syncing,
+    bool offline,
+    bool verifying,
+    bool geofenceReady,
   });
 
   $AttendanceEntityCopyWith<$Res>? get today;
+  $AttendanceEntityCopyWith<$Res>? get session;
 }
 
 /// @nodoc
@@ -459,6 +510,7 @@ class __$$LoadedImplCopyWithImpl<$Res>
   @override
   $Res call({
     Object? today = freezed,
+    Object? session = freezed,
     Object? history = null,
     Object? shift = freezed,
     Object? scheduledStart = freezed,
@@ -467,12 +519,20 @@ class __$$LoadedImplCopyWithImpl<$Res>
     Object? config = null,
     Object? tick = null,
     Object? busy = null,
+    Object? syncing = null,
+    Object? offline = null,
+    Object? verifying = null,
+    Object? geofenceReady = null,
   }) {
     return _then(
       _$LoadedImpl(
         today: freezed == today
             ? _value.today
             : today // ignore: cast_nullable_to_non_nullable
+                  as AttendanceEntity?,
+        session: freezed == session
+            ? _value.session
+            : session // ignore: cast_nullable_to_non_nullable
                   as AttendanceEntity?,
         history: null == history
             ? _value._history
@@ -506,6 +566,22 @@ class __$$LoadedImplCopyWithImpl<$Res>
             ? _value.busy
             : busy // ignore: cast_nullable_to_non_nullable
                   as bool,
+        syncing: null == syncing
+            ? _value.syncing
+            : syncing // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        offline: null == offline
+            ? _value.offline
+            : offline // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        verifying: null == verifying
+            ? _value.verifying
+            : verifying // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        geofenceReady: null == geofenceReady
+            ? _value.geofenceReady
+            : geofenceReady // ignore: cast_nullable_to_non_nullable
+                  as bool,
       ),
     );
   }
@@ -523,6 +599,20 @@ class __$$LoadedImplCopyWithImpl<$Res>
       return _then(_value.copyWith(today: value));
     });
   }
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @pragma('vm:prefer-inline')
+  $AttendanceEntityCopyWith<$Res>? get session {
+    if (_value.session == null) {
+      return null;
+    }
+
+    return $AttendanceEntityCopyWith<$Res>(_value.session!, (value) {
+      return _then(_value.copyWith(session: value));
+    });
+  }
 }
 
 /// @nodoc
@@ -530,6 +620,7 @@ class __$$LoadedImplCopyWithImpl<$Res>
 class _$LoadedImpl implements _Loaded {
   const _$LoadedImpl({
     this.today,
+    this.session,
     final List<AttendanceEntity> history = const <AttendanceEntity>[],
     this.shift,
     this.scheduledStart,
@@ -538,10 +629,16 @@ class _$LoadedImpl implements _Loaded {
     required this.config,
     required this.tick,
     this.busy = false,
+    this.syncing = false,
+    this.offline = false,
+    this.verifying = false,
+    this.geofenceReady = false,
   }) : _history = history;
 
   @override
   final AttendanceEntity? today;
+  @override
+  final AttendanceEntity? session;
   final List<AttendanceEntity> _history;
   @override
   @JsonKey()
@@ -566,10 +663,28 @@ class _$LoadedImpl implements _Loaded {
   @override
   @JsonKey()
   final bool busy;
+  @override
+  @JsonKey()
+  final bool syncing;
+  @override
+  @JsonKey()
+  final bool offline;
+
+  /// A clock action is currently acquiring + verifying the GPS fix (the "GPS
+  /// Validation" step). Drives the "Checking you're at the branch…" UI.
+  @override
+  @JsonKey()
+  final bool verifying;
+
+  /// Whether the branch has an attendance geofence configured (an admin set
+  /// lat/lng/radius). False → GPS clock-in can't proceed here yet.
+  @override
+  @JsonKey()
+  final bool geofenceReady;
 
   @override
   String toString() {
-    return 'AttendanceState.loaded(today: $today, history: $history, shift: $shift, scheduledStart: $scheduledStart, scheduledEnd: $scheduledEnd, leave: $leave, config: $config, tick: $tick, busy: $busy)';
+    return 'AttendanceState.loaded(today: $today, session: $session, history: $history, shift: $shift, scheduledStart: $scheduledStart, scheduledEnd: $scheduledEnd, leave: $leave, config: $config, tick: $tick, busy: $busy, syncing: $syncing, offline: $offline, verifying: $verifying, geofenceReady: $geofenceReady)';
   }
 
   @override
@@ -578,6 +693,7 @@ class _$LoadedImpl implements _Loaded {
         (other.runtimeType == runtimeType &&
             other is _$LoadedImpl &&
             (identical(other.today, today) || other.today == today) &&
+            (identical(other.session, session) || other.session == session) &&
             const DeepCollectionEquality().equals(other._history, _history) &&
             (identical(other.shift, shift) || other.shift == shift) &&
             (identical(other.scheduledStart, scheduledStart) ||
@@ -587,13 +703,20 @@ class _$LoadedImpl implements _Loaded {
             (identical(other.leave, leave) || other.leave == leave) &&
             (identical(other.config, config) || other.config == config) &&
             (identical(other.tick, tick) || other.tick == tick) &&
-            (identical(other.busy, busy) || other.busy == busy));
+            (identical(other.busy, busy) || other.busy == busy) &&
+            (identical(other.syncing, syncing) || other.syncing == syncing) &&
+            (identical(other.offline, offline) || other.offline == offline) &&
+            (identical(other.verifying, verifying) ||
+                other.verifying == verifying) &&
+            (identical(other.geofenceReady, geofenceReady) ||
+                other.geofenceReady == geofenceReady));
   }
 
   @override
   int get hashCode => Object.hash(
     runtimeType,
     today,
+    session,
     const DeepCollectionEquality().hash(_history),
     shift,
     scheduledStart,
@@ -602,6 +725,10 @@ class _$LoadedImpl implements _Loaded {
     config,
     tick,
     busy,
+    syncing,
+    offline,
+    verifying,
+    geofenceReady,
   );
 
   /// Create a copy of AttendanceState
@@ -619,6 +746,7 @@ class _$LoadedImpl implements _Loaded {
     required TResult Function() loading,
     required TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -627,12 +755,17 @@ class _$LoadedImpl implements _Loaded {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )
     loaded,
     required TResult Function(String message) error,
   }) {
     return loaded(
       today,
+      session,
       history,
       shift,
       scheduledStart,
@@ -641,6 +774,10 @@ class _$LoadedImpl implements _Loaded {
       config,
       tick,
       busy,
+      syncing,
+      offline,
+      verifying,
+      geofenceReady,
     );
   }
 
@@ -651,6 +788,7 @@ class _$LoadedImpl implements _Loaded {
     TResult? Function()? loading,
     TResult? Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -659,12 +797,17 @@ class _$LoadedImpl implements _Loaded {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult? Function(String message)? error,
   }) {
     return loaded?.call(
       today,
+      session,
       history,
       shift,
       scheduledStart,
@@ -673,6 +816,10 @@ class _$LoadedImpl implements _Loaded {
       config,
       tick,
       busy,
+      syncing,
+      offline,
+      verifying,
+      geofenceReady,
     );
   }
 
@@ -683,6 +830,7 @@ class _$LoadedImpl implements _Loaded {
     TResult Function()? loading,
     TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -691,6 +839,10 @@ class _$LoadedImpl implements _Loaded {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -699,6 +851,7 @@ class _$LoadedImpl implements _Loaded {
     if (loaded != null) {
       return loaded(
         today,
+        session,
         history,
         shift,
         scheduledStart,
@@ -707,6 +860,10 @@ class _$LoadedImpl implements _Loaded {
         config,
         tick,
         busy,
+        syncing,
+        offline,
+        verifying,
+        geofenceReady,
       );
     }
     return orElse();
@@ -753,6 +910,7 @@ class _$LoadedImpl implements _Loaded {
 abstract class _Loaded implements AttendanceState {
   const factory _Loaded({
     final AttendanceEntity? today,
+    final AttendanceEntity? session,
     final List<AttendanceEntity> history,
     final ScheduleShift? shift,
     final DateTime? scheduledStart,
@@ -761,9 +919,14 @@ abstract class _Loaded implements AttendanceState {
     required final AttendanceConfig config,
     required final DateTime tick,
     final bool busy,
+    final bool syncing,
+    final bool offline,
+    final bool verifying,
+    final bool geofenceReady,
   }) = _$LoadedImpl;
 
   AttendanceEntity? get today;
+  AttendanceEntity? get session;
   List<AttendanceEntity> get history;
   ScheduleShift? get shift;
   DateTime? get scheduledStart;
@@ -772,6 +935,16 @@ abstract class _Loaded implements AttendanceState {
   AttendanceConfig get config;
   DateTime get tick;
   bool get busy;
+  bool get syncing;
+  bool get offline;
+
+  /// A clock action is currently acquiring + verifying the GPS fix (the "GPS
+  /// Validation" step). Drives the "Checking you're at the branch…" UI.
+  bool get verifying;
+
+  /// Whether the branch has an attendance geofence configured (an admin set
+  /// lat/lng/radius). False → GPS clock-in can't proceed here yet.
+  bool get geofenceReady;
 
   /// Create a copy of AttendanceState
   /// with the given fields replaced by the non-null parameter values.
@@ -854,6 +1027,7 @@ class _$ErrorImpl implements _Error {
     required TResult Function() loading,
     required TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -862,6 +1036,10 @@ class _$ErrorImpl implements _Error {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )
     loaded,
     required TResult Function(String message) error,
@@ -876,6 +1054,7 @@ class _$ErrorImpl implements _Error {
     TResult? Function()? loading,
     TResult? Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -884,6 +1063,10 @@ class _$ErrorImpl implements _Error {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -898,6 +1081,7 @@ class _$ErrorImpl implements _Error {
     TResult Function()? loading,
     TResult Function(
       AttendanceEntity? today,
+      AttendanceEntity? session,
       List<AttendanceEntity> history,
       ScheduleShift? shift,
       DateTime? scheduledStart,
@@ -906,6 +1090,10 @@ class _$ErrorImpl implements _Error {
       AttendanceConfig config,
       DateTime tick,
       bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
     )?
     loaded,
     TResult Function(String message)? error,

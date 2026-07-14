@@ -1,22 +1,29 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:io';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:drop/core/enums/attendance_correction_kind.dart';
+import 'package:drop/core/enums/attendance_status.dart';
 import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/errors/failures.dart';
 import 'package:drop/features/attendance/domain/attendance_config.dart';
+import 'package:drop/features/attendance/domain/attendance_feed.dart';
+import 'package:drop/features/attendance/domain/attendance_gps.dart';
 import 'package:drop/features/attendance/domain/attendance_id.dart';
+import 'package:drop/features/attendance/domain/attendance_location_service.dart';
+import 'package:drop/features/attendance/domain/attendance_service.dart';
 import 'package:drop/features/attendance/domain/attendance_validation.dart';
+import 'package:drop/features/attendance/domain/entities/attendance_correction.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:drop/features/attendance/domain/repositories/attendance_repository.dart';
 import 'package:drop/features/attendance/domain/usecases/clock_in.dart';
 import 'package:drop/features/attendance/domain/usecases/clock_out.dart';
-import 'package:drop/features/attendance/domain/usecases/end_break.dart';
-import 'package:drop/features/attendance/domain/usecases/start_break.dart';
+import 'package:drop/features/attendance/domain/usecases/request_correction.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/branch/domain/branch_geofence.dart';
+import 'package:drop/features/branch/domain/repositories/branch_repository.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
 import 'package:drop/features/schedule/domain/repositories/schedule_repository.dart';
 import 'package:drop/features/schedule/domain/shift_window.dart';
@@ -41,10 +48,12 @@ import 'attendance_state.dart';
 class AttendanceCubit extends Cubit<AttendanceState> {
   final AttendanceRepository _repository;
   final ScheduleRepository _scheduleRepository;
+  final BranchRepository _branchRepository;
+  final AttendanceService _service;
+  final AttendanceLocationService _locationService;
   final ClockIn _clockIn;
   final ClockOut _clockOut;
-  final StartBreak _startBreak;
-  final EndBreak _endBreak;
+  final RequestCorrection _requestCorrection;
 
   /// Injectable clock (defaults to [DateTime.now]) — the single time source, so
   /// the clock-in window and the live timer are deterministic under test.
@@ -54,7 +63,10 @@ class AttendanceCubit extends Cubit<AttendanceState> {
   _TodayContext? _ctx;
   AttendanceConfig _config = const AttendanceConfig(enabled: true);
   List<AttendanceEntity> _history = const [];
-  StreamSubscription<List<AttendanceEntity>>? _sub;
+  bool _offline = false;
+  bool _syncing = false;
+  bool _verifying = false;
+  StreamSubscription<AttendanceFeed>? _sub;
   Timer? _timer;
   bool _busy = false;
   late DateTime _tick = _now();
@@ -62,17 +74,21 @@ class AttendanceCubit extends Cubit<AttendanceState> {
   AttendanceCubit({
     required AttendanceRepository repository,
     required ScheduleRepository scheduleRepository,
+    required BranchRepository branchRepository,
+    required AttendanceService service,
+    required AttendanceLocationService locationService,
     required ClockIn clockIn,
     required ClockOut clockOut,
-    required StartBreak startBreak,
-    required EndBreak endBreak,
+    required RequestCorrection requestCorrection,
     DateTime Function()? now,
   })  : _repository = repository,
         _scheduleRepository = scheduleRepository,
+        _branchRepository = branchRepository,
+        _service = service,
+        _locationService = locationService,
         _clockIn = clockIn,
         _clockOut = clockOut,
-        _startBreak = startBreak,
-        _endBreak = endBreak,
+        _requestCorrection = requestCorrection,
         _now = now ?? DateTime.now,
         super(const AttendanceState.initial());
   // Fields are assigned explicitly (named args read better at the call site than
@@ -102,7 +118,9 @@ class AttendanceCubit extends Cubit<AttendanceState> {
   /// The record the clock UI acts on.
   AttendanceEntity? get _clockRecord => _activeRecord ?? _todayTargetRecord;
 
-  /// Whether the employee can clock in right now (and why not).
+  /// The **eligibility** to clock in (shift / leave / already-clocked) — the
+  /// non-GPS gate the UI can show before the person taps. The GPS gate
+  /// (permission · service · radius · accuracy) runs at tap time in [clockIn].
   AttendanceCheck get clockInCheck {
     final ctx = _ctx, user = _user;
     if (ctx == null || user == null) {
@@ -112,10 +130,7 @@ class AttendanceCubit extends Cubit<AttendanceState> {
       userActive: user.isActive,
       todaysShift: ctx.shift,
       leave: ctx.leave,
-      scheduledStart: ctx.scheduledStart,
-      scheduledEnd: ctx.scheduledEnd,
       existing: _todayTargetRecord,
-      now: _now(),
       config: _config,
     );
   }
@@ -144,8 +159,10 @@ class AttendanceCubit extends Cubit<AttendanceState> {
 
     await _sub?.cancel();
     _sub = _repository.watchUserHistory(user.uid).listen(
-      (history) {
-        _history = history;
+      (feed) {
+        _history = feed.records;
+        _offline = feed.isOffline;
+        _syncing = feed.hasPendingWrites;
         _emitLoaded();
         _syncTimer();
       },
@@ -162,11 +179,9 @@ class AttendanceCubit extends Cubit<AttendanceState> {
     if (user != null) await load(user, forceRefresh: true);
   }
 
-  /// Config seam (branch-configurable later): today every branch runs the
-  /// standing defaults with the module enabled. This is the single place to later
-  /// read `branches/{id}/attendanceConfig` — no call site changes.
-  AttendanceConfig _resolveConfig(UserEntity user) =>
-      const AttendanceConfig(enabled: true);
+  /// Config seam — delegated to [AttendanceService], the single place that later
+  /// reads a per-branch `branches/{id}/attendanceConfig`. No call-site changes.
+  AttendanceConfig _resolveConfig(UserEntity user) => _service.configFor(user);
 
   /// Resolve today's rostered shift + scheduled window from the schedule (one
   /// cached read). Degrades gracefully to "no shift" when nothing is rostered.
@@ -186,11 +201,13 @@ class AttendanceCubit extends Cubit<AttendanceState> {
         _ctx = _TodayContext(todayDate: todayDate);
         return;
       }
+      final geofence = await _resolveGeofence(branchId);
       final leave = schedule.leaveTypeOf(user.uid, day);
       final shifts = schedule.shiftsFor(user.uid, day);
       final target = _pickTargetShift(shifts, schedule, weekStart, day, now);
       if (target == null) {
-        _ctx = _TodayContext(todayDate: todayDate, leave: leave);
+        _ctx = _TodayContext(
+            todayDate: todayDate, leave: leave, geofence: geofence);
         return;
       }
       final hours = schedule.hoursFor(day, target);
@@ -198,6 +215,7 @@ class AttendanceCubit extends Cubit<AttendanceState> {
         todayDate: todayDate,
         shift: target,
         leave: leave,
+        geofence: geofence,
         scheduledStart: ShiftWindow.startOf(weekStart, day, hours),
         scheduledEnd: ShiftWindow.endOf(weekStart, day, hours),
         targetRecordId:
@@ -208,6 +226,21 @@ class AttendanceCubit extends Cubit<AttendanceState> {
           name: 'ATTENDANCE', error: e, stackTrace: st);
       _ctx = _TodayContext(todayDate: todayDate);
     }
+  }
+
+  /// The branch's attendance geofence (from the cached branch list — cheap). Null
+  /// when the branch has none configured, or on a lookup failure.
+  Future<BranchGeofence?> _resolveGeofence(String branchId) async {
+    try {
+      final branches = await _branchRepository.getBranches();
+      for (final b in branches) {
+        if (b.id == branchId) return b.geofence;
+      }
+    } catch (e, st) {
+      developer.log('[ATTENDANCE] geofence resolve failed: $e',
+          name: 'ATTENDANCE', error: e, stackTrace: st);
+    }
+    return null;
   }
 
   /// Of the shift(s) rostered today, the one the clock should target now: the
@@ -236,6 +269,7 @@ class AttendanceCubit extends Cubit<AttendanceState> {
     final ctx = _ctx;
     emit(AttendanceState.loaded(
       today: _clockRecord,
+      session: _activeRecord,
       history: _history,
       shift: ctx?.shift,
       scheduledStart: ctx?.scheduledStart,
@@ -244,33 +278,46 @@ class AttendanceCubit extends Cubit<AttendanceState> {
       config: _config,
       tick: _tick,
       busy: _busy,
+      syncing: _syncing,
+      offline: _offline,
+      verifying: _verifying,
+      geofenceReady: ctx?.geofence != null,
     ));
   }
 
   // ─── Clock actions ───────────────────────────────────────────────────
-  Future<void> clockIn({File? selfie}) async {
+  /// Clock in — the GPS-verified path: eligibility → acquire + verify the GPS fix
+  /// → gate on permission/service/radius/accuracy → write the record (with the
+  /// clock-in verification; the clock TIME is a server timestamp). Rejections are
+  /// surfaced as transient errors.
+  Future<void> clockIn() async {
     final user = _user, ctx = _ctx;
-    if (user == null || ctx == null || _busy) return;
-    final check = clockInCheck;
-    if (check.blocked) {
-      _surface(check.message);
+    if (user == null || ctx == null || _busy || _verifying) return;
+    final eligibility = clockInCheck;
+    if (eligibility.blocked) {
+      _surface(eligibility.message);
       return;
     }
     final id = ctx.targetRecordId;
     final shift = ctx.shift;
     if (id == null || shift == null) return;
 
+    // ── GPS Validation step ──
+    _setVerifying(true);
+    final gps = await _captureVerification(ctx.geofence);
+    _setVerifying(false);
+    final gpsCheck = AttendanceValidation.checkGpsFix(
+      locationError: gps.error,
+      verification: gps.verification,
+      geofenceConfigured: ctx.geofence != null,
+    );
+    if (gpsCheck.blocked) {
+      _surface(gpsCheck.message);
+      return;
+    }
+
     _setBusy(true);
     try {
-      final now = _now();
-      String? photoUrl;
-      if (selfie != null) {
-        photoUrl = await _repository.uploadSelfie(
-          recordId: id,
-          file: selfie,
-          uploadedBy: user.uid,
-        );
-      }
       final record = AttendanceEntity(
         id: id,
         userId: user.uid,
@@ -280,8 +327,9 @@ class AttendanceCubit extends Cubit<AttendanceState> {
         date: ctx.todayDate,
         scheduledStart: ctx.scheduledStart,
         scheduledEnd: ctx.scheduledEnd,
-        clockIn: now,
-        photoUrl: photoUrl,
+        // A placeholder — the datasource overrides it with a server timestamp.
+        clockIn: _now(),
+        clockInVerification: gps.verification,
       );
       await _clockIn(record);
     } on Failure catch (e) {
@@ -293,18 +341,27 @@ class AttendanceCubit extends Cubit<AttendanceState> {
     }
   }
 
+  /// Clock out — captures a **best-effort** GPS verification (recorded wherever
+  /// the person is, so a manager can see if they left the branch), but is never
+  /// blocked by location: you must always be able to end your shift.
   Future<void> clockOut() async {
     final user = _user;
     final record = _activeRecord;
-    if (user == null || record == null || _busy) return;
+    if (user == null || record == null || _busy || _verifying) return;
     final check = clockOutCheck;
     if (check.blocked) {
       _surface(check.message);
       return;
     }
+
+    _setVerifying(true);
+    final gps = await _captureVerification(_ctx?.geofence);
+    _setVerifying(false);
+
     _setBusy(true);
     try {
-      await _clockOut(record, now: _now(), config: _config);
+      await _clockOut(record,
+          now: _now(), config: _config, verification: gps.verification);
     } on Failure catch (e) {
       _surface(e.message);
     } catch (_) {
@@ -314,43 +371,80 @@ class AttendanceCubit extends Cubit<AttendanceState> {
     }
   }
 
-  Future<void> startBreak() async {
-    final user = _user;
-    final record = _activeRecord;
-    if (user == null || record == null || _busy) return;
-    final check = AttendanceValidation.checkStartBreak(existing: record);
-    if (check.blocked) {
-      _surface(check.message);
-      return;
-    }
-    _setBusy(true);
-    try {
-      await _startBreak(record, now: _now());
-    } on Failure catch (e) {
-      _surface(e.message);
-    } catch (_) {
-      _surface('Something went wrong starting your break.');
-    } finally {
-      _setBusy(false);
-    }
+  /// Read the device location and evaluate it against [geofence]. Returns the
+  /// acquisition [LocationError] (nothing readable) OR the built
+  /// [AttendanceVerification] (readable + a geofence to score against).
+  Future<({LocationError? error, AttendanceVerification? verification})>
+      _captureVerification(BranchGeofence? geofence) async {
+    final result = await _locationService.currentLocation();
+    if (!result.ok) return (error: result.error, verification: null);
+    if (geofence == null) return (error: null, verification: null);
+    return (
+      error: null,
+      verification: AttendanceVerification.evaluate(
+        location: result.location!,
+        branchLat: geofence.latitude,
+        branchLng: geofence.longitude,
+        radiusMeters: geofence.radiusMeters,
+        minAccuracyMeters: geofence.minAccuracyMeters,
+      ),
+    );
   }
 
-  Future<void> endBreak() async {
+  void _setVerifying(bool verifying) {
+    _verifying = verifying;
+    _emitLoaded();
+  }
+
+  // ─── Corrections ─────────────────────────────────────────────────────
+  /// File a correction against a settled [record] (the employee's own). Gated by
+  /// the pure [AttendanceValidation.checkCorrection]; a blocked check surfaces as
+  /// a transient error. The `correctionRequested` audit event + reviewer
+  /// notifications are derived server-side by `onAttendanceCorrectionWritten`.
+  Future<void> requestCorrection({
+    required AttendanceEntity record,
+    required AttendanceCorrectionKind kind,
+    required String reason,
+    DateTime? proposedClockIn,
+    DateTime? proposedClockOut,
+    AttendanceStatus? proposedStatus,
+  }) async {
     final user = _user;
-    final record = _activeRecord;
-    if (user == null || record == null || _busy) return;
-    final check = AttendanceValidation.checkEndBreak(existing: record);
+    if (user == null || _busy) return;
+    final check = AttendanceValidation.checkCorrection(
+      existing: record,
+      reason: reason,
+      proposedClockIn: proposedClockIn,
+      proposedClockOut: proposedClockOut,
+      proposedStatus: proposedStatus,
+    );
     if (check.blocked) {
       _surface(check.message);
       return;
     }
     _setBusy(true);
     try {
-      await _endBreak(record, now: _now());
+      final correction = AttendanceCorrectionEntity(
+        id: '',
+        attendanceId: record.id,
+        userId: user.uid,
+        userName: user.displayName,
+        branchId: user.branchId,
+        shift: record.shift,
+        date: record.date,
+        requestedBy: user.uid,
+        requestedByName: user.displayName,
+        kind: kind,
+        reason: reason.trim(),
+        proposedClockIn: proposedClockIn,
+        proposedClockOut: proposedClockOut,
+        proposedStatus: proposedStatus,
+      );
+      await _requestCorrection(correction);
     } on Failure catch (e) {
       _surface(e.message);
     } catch (_) {
-      _surface('Something went wrong ending your break.');
+      _surface('Something went wrong filing the correction.');
     } finally {
       _setBusy(false);
     }
@@ -396,6 +490,7 @@ class _TodayContext {
   final DateTime todayDate;
   final ScheduleShift? shift;
   final LeaveType? leave;
+  final BranchGeofence? geofence;
   final DateTime? scheduledStart;
   final DateTime? scheduledEnd;
   final String? targetRecordId;
@@ -404,6 +499,7 @@ class _TodayContext {
     required this.todayDate,
     this.shift,
     this.leave,
+    this.geofence,
     this.scheduledStart,
     this.scheduledEnd,
     this.targetRecordId,

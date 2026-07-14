@@ -5,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:drop/core/constants/app_constants.dart';
 import 'package:drop/core/errors/exceptions.dart';
 import 'package:drop/features/branch/data/models/branch_model.dart';
+import 'package:drop/features/branch/domain/branch_geofence.dart';
 
 abstract class BranchRemoteDataSource {
   /// All branches; soft-deleted ones are excluded unless [includeDeleted].
@@ -13,6 +14,10 @@ abstract class BranchRemoteDataSource {
   Future<void> updateBranch(BranchModel branch);
   Future<void> setBranchActive(String branchId, bool isActive);
   Future<void> softDeleteBranch(String branchId);
+
+  /// Writes the branch's attendance geofence (dedicated field path so a general
+  /// branch-form save never clobbers it).
+  Future<void> setGeofence(String branchId, BranchGeofence geofence);
 
   /// Uploads a branch **logo** ([isLogo] true) or **cover** image to Storage,
   /// writes the resulting URL onto `branches/{branchId}` (so the field never
@@ -122,6 +127,18 @@ class BranchRemoteDataSourceImpl implements BranchRemoteDataSource {
       return url;
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to upload branch image.');
+    }
+  }
+
+  @override
+  Future<void> setGeofence(String branchId, BranchGeofence geofence) async {
+    try {
+      await _branches.doc(branchId).set({
+        'geofence': geofence.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to save the branch location.');
     }
   }
 

@@ -46,16 +46,6 @@ void main() {
     expect(make().isOpen, isFalse); // never clocked in
   });
 
-  test('break helpers surface the running break', () {
-    final onBreak = make(
-      clockIn: DateTime(2026, 7, 11, 8, 30),
-      breaks: [AttendanceBreak(start: DateTime(2026, 7, 11, 12))],
-    );
-    expect(onBreak.isOnBreak, isTrue);
-    expect(onBreak.currentBreak, isNotNull);
-    expect(make(clockIn: DateTime(2026, 7, 11, 8, 30)).isOnBreak, isFalse);
-  });
-
   test('derived facts read from the minute snapshot', () {
     expect(make(lateMinutes: 12).isLate, isTrue);
     expect(make(earlyLeaveMinutes: 8).hasEarlyLeave, isTrue);

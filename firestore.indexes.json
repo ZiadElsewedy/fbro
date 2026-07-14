@@ -32,6 +32,31 @@
         { "fieldPath": "branchId", "order": "ASCENDING" },
         { "fieldPath": "dayKey", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "attendance_corrections",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "attendance_corrections",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "branchId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "attendance_corrections",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "attendanceId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

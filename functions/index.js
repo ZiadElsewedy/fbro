@@ -27,7 +27,7 @@
  */
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
@@ -53,6 +53,12 @@ const CONFIG = "config";
 const CASES = "cases";
 const REQUESTS = "requests";
 const COUNTERS = "counters";
+const ATTENDANCE = "attendance";
+const ATTENDANCE_CORRECTIONS = "attendance_corrections";
+
+// Auto-close grace — mirrors AttendanceConfig.defaults.autoCloseGraceMinutes on
+// the client (the single knob until per-branch attendance config lands).
+const ATTENDANCE_AUTO_CLOSE_GRACE_MINUTES = 120;
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -2320,3 +2326,319 @@ exports.onRequestEventCreated = onDocumentCreated(
     }
   },
 );
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Attendance — server-authoritative audit trail + correction apply + auto-close.
+//
+//  Clients write ONLY the attendance record (clock in/out/breaks) and the
+//  correction doc (file / decide). Everything a client can't be trusted with is
+//  derived here by the Admin SDK:
+//    • the immutable, append-only audit trail (`attendance/{id}/events`),
+//    • applying an APPROVED correction's resolution onto the parent record,
+//    • auto-closing sessions the employee never clocked out of,
+//    • every notification (routing needs branch/role lookups).
+//  Mirrors the `onRequest*` pattern. No re-fire: the audit append writes a
+//  subcollection doc (never the parent record), and the correction-apply write
+//  carries `source: 'correction'` — which `onAttendanceWritten` ignores for the
+//  self-clock events, so it never double-audits.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Appends one server-authored, immutable audit event to attendance/{id}/events.
+// Clients cannot write these (firestore.rules), so the trail can't be forged.
+async function appendAttendanceEvent(recordId, ev) {
+  if (!recordId) return;
+  try {
+    const ref = db.collection(ATTENDANCE).doc(recordId).collection("events").doc();
+    await ref.set({
+      kind: String(ev.kind || ""),
+      actorId: String(ev.actorId || ""),
+      actorName: ev.actorName != null ? String(ev.actorName) : null,
+      note: ev.note != null ? String(ev.note) : null,
+      data: ev.data && typeof ev.data === "object" ? ev.data : {},
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    logger.warn("failed to append attendance event", { recordId, error: String(e) });
+  }
+}
+
+// The reviewers for an attendance correction — the branch's managers + all
+// admins (active), minus [excludeUid]. Mirrors resolveRequestApprovers.
+async function resolveAttendanceReviewers(branchId, excludeUid) {
+  const out = new Set();
+  const bid = String(branchId || "");
+  if (bid) {
+    try {
+      const snap = await db.collection(USERS)
+        .where("branchId", "==", bid)
+        .where("role", "==", "manager").get();
+      snap.docs.forEach((d) => { if ((d.data() || {}).isActive !== false) out.add(d.id); });
+    } catch (e) { logger.warn("attendance manager lookup failed", { error: String(e) }); }
+  }
+  try {
+    const snap = await db.collection(USERS).where("role", "==", "admin").get();
+    snap.docs.forEach((d) => { if ((d.data() || {}).isActive !== false) out.add(d.id); });
+  } catch (e) { logger.warn("attendance admin lookup failed", { error: String(e) }); }
+  out.delete(excludeUid);
+  out.delete("");
+  return [...out];
+}
+
+// Writes one in-app notification doc per recipient (Admin SDK). onNotificationCreated
+// handles the matching push. Best-effort.
+async function writeAttendanceNotifications(
+  recipientUids,
+  { type, title, body, recordId, correctionId, senderUid },
+) {
+  const uids = [...new Set((recipientUids || []).filter(Boolean))];
+  if (uids.length === 0) return;
+  const payload = { route: "attendance" };
+  if (recordId) payload.recordId = recordId;
+  if (correctionId) payload.correctionId = correctionId;
+  try {
+    for (let i = 0; i < uids.length; i += BATCH_LIMIT) {
+      const slice = uids.slice(i, i + BATCH_LIMIT);
+      const batch = db.batch();
+      for (const uid of slice) {
+        const ref = db.collection(NOTIFICATIONS).doc();
+        batch.set(ref, {
+          id: ref.id,
+          recipientUid: uid,
+          senderUid: String(senderUid || ""),
+          type,
+          title: String(title || "").slice(0, 120),
+          body: String(body || "").slice(0, 500),
+          readAt: null,
+          payload,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    logger.warn("failed to persist attendance notifications", { error: String(err) });
+  }
+}
+
+// A readable label for a correction kind (mirrors AttendanceCorrectionKind.label).
+function attendanceCorrectionKindLabel(kind) {
+  switch (String(kind || "")) {
+    case "missingClockOut": return "missing clock-out";
+    case "wrongTime": return "wrong time";
+    case "absenceDispute": return "absence dispute";
+    default: return "correction";
+  }
+}
+
+// Any write to an attendance record → derive the append-only audit events by
+// diffing before/after. Self-clock events are gated on `source: 'clock'` so the
+// auto-close and correction-apply paths (which own their own events) never
+// double-audit.
+exports.onAttendanceWritten = onDocumentWritten(`${ATTENDANCE}/{recordId}`, async (event) => {
+  const recordId = event.params.recordId;
+  const beforeSnap = event.data && event.data.before;
+  const afterSnap = event.data && event.data.after;
+  const before = (beforeSnap && beforeSnap.exists) ? (beforeSnap.data() || {}) : null;
+  const after = (afterSnap && afterSnap.exists) ? (afterSnap.data() || {}) : null;
+  if (!after) return; // deleted — records are soft-deleted, so this is defensive.
+
+  const source = String(after.source || "clock");
+  const actorId = String(after.userId || "");
+  const actorName = after.userName != null ? String(after.userName) : null;
+  const events = [];
+
+  // Clock-in — first appearance of clockIn on a self-clocked record.
+  if (source === "clock" && !(before && before.clockIn) && after.clockIn) {
+    events.push({ kind: "clockedIn", actorId, actorName });
+  }
+  // Clock-out — clockOut newly set, self-clocked.
+  if (source === "clock" && !(before && before.clockOut) && after.clockOut) {
+    events.push({ kind: "clockedOut", actorId, actorName });
+  }
+  // (Breaks are not part of the MVP — no break audit is derived. The record's
+  // `breaks` array stays a dormant extension point.)
+
+  const beforeStatus = before ? String(before.status || "") : "";
+  const afterStatus = String(after.status || "");
+  // Auto-closed — the scheduled sweep flips an open session to pendingReview.
+  if (beforeStatus !== "pendingReview" && afterStatus === "pendingReview" && source === "autoClose") {
+    events.push({ kind: "autoClosed", actorId: "", actorName: null, note: "Session auto-closed — never clocked out" });
+  }
+  // Marked absent — a manager recorded a no-show.
+  if (beforeStatus !== "absent" && afterStatus === "absent") {
+    events.push({
+      kind: "markedAbsent",
+      actorId: String(after.resolvedBy || ""),
+      actorName: after.resolvedByName != null ? String(after.resolvedByName) : null,
+    });
+  }
+
+  for (const ev of events) {
+    await appendAttendanceEvent(recordId, ev);
+  }
+});
+
+// Any write to a correction → own its lifecycle events + notifications, and (on
+// approval) apply the resolution onto the parent record. Clients never touch the
+// record's corrected fields or the audit trail directly.
+exports.onAttendanceCorrectionWritten = onDocumentWritten(
+  `${ATTENDANCE_CORRECTIONS}/{correctionId}`,
+  async (event) => {
+    const beforeSnap = event.data && event.data.before;
+    const afterSnap = event.data && event.data.after;
+    const before = (beforeSnap && beforeSnap.exists) ? (beforeSnap.data() || {}) : null;
+    const after = (afterSnap && afterSnap.exists) ? (afterSnap.data() || {}) : null;
+    if (!after) return; // soft-deleted only — nothing to do.
+
+    const correctionId = event.params.correctionId;
+    const recordId = String(after.attendanceId || "");
+    const employeeUid = String(after.userId || "");
+    const data = { correctionKind: String(after.kind || "other") };
+
+    // 1) Newly filed → the opening audit event + notify the reviewers.
+    if (!before) {
+      await appendAttendanceEvent(recordId, {
+        kind: "correctionRequested",
+        actorId: String(after.requestedBy || ""),
+        actorName: after.requestedByName != null ? String(after.requestedByName) : null,
+        note: after.reason != null ? String(after.reason) : null,
+        data,
+      });
+      const reviewers = await resolveAttendanceReviewers(after.branchId, String(after.requestedBy || ""));
+      await writeAttendanceNotifications(reviewers, {
+        type: "attendanceCorrectionFiled",
+        title: "Attendance correction",
+        body: `${String(after.userName || "An employee")} filed a ${attendanceCorrectionKindLabel(after.kind)} correction`,
+        recordId,
+        correctionId,
+        senderUid: String(after.requestedBy || ""),
+      });
+      return;
+    }
+
+    // 2) Decision — pending → approved / rejected (ignore other field bumps).
+    const beforeStatus = String(before.status || "pending");
+    const afterStatus = String(after.status || "pending");
+    if (beforeStatus === afterStatus) return;
+    if (afterStatus !== "approved" && afterStatus !== "rejected") return;
+
+    const deciderName = String(after.decidedByName || "").trim();
+    const decidedBy = String(after.decidedBy || "");
+
+    if (afterStatus === "approved") {
+      // Apply the client-computed resolution (single source of the minute math:
+      // AttendanceCalculator) onto the parent record — server-authoritative.
+      const res = (after.resolution && typeof after.resolution === "object") ? after.resolution : {};
+      if (recordId) {
+        try {
+          await db.collection(ATTENDANCE).doc(recordId).update({
+            clockIn: res.clockIn || null,
+            clockOut: res.clockOut || null,
+            status: String(res.status || "completed"),
+            workedMinutes: Number(res.workedMinutes || 0),
+            lateMinutes: Number(res.lateMinutes || 0),
+            earlyLeaveMinutes: Number(res.earlyLeaveMinutes || 0),
+            overtimeMinutes: Number(res.overtimeMinutes || 0),
+            breakMinutes: Number(res.breakMinutes || 0),
+            source: "correction",
+            resolvedBy: decidedBy,
+            resolvedByName: after.decidedByName != null ? String(after.decidedByName) : null,
+            resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          logger.warn("failed to apply approved correction", { recordId, error: String(e) });
+        }
+        await appendAttendanceEvent(recordId, {
+          kind: "correctionApproved",
+          actorId: decidedBy,
+          actorName: after.decidedByName != null ? String(after.decidedByName) : null,
+          note: after.decisionNote != null ? String(after.decisionNote) : null,
+          data,
+        });
+      }
+      if (employeeUid) {
+        await writeAttendanceNotifications([employeeUid], {
+          type: "attendanceCorrectionApproved",
+          title: "Correction approved",
+          body: deciderName
+            ? `${deciderName} approved your attendance correction`
+            : "Your attendance correction was approved",
+          recordId,
+          correctionId,
+          senderUid: decidedBy,
+        });
+      }
+      return;
+    }
+
+    // rejected — record untouched; audit the decision + notify the employee.
+    await appendAttendanceEvent(recordId, {
+      kind: "correctionRejected",
+      actorId: decidedBy,
+      actorName: after.decidedByName != null ? String(after.decidedByName) : null,
+      note: after.decisionNote != null ? String(after.decisionNote) : null,
+      data,
+    });
+    if (employeeUid) {
+      await writeAttendanceNotifications([employeeUid], {
+        type: "attendanceCorrectionRejected",
+        title: "Correction rejected",
+        body: deciderName
+          ? `${deciderName} rejected your attendance correction`
+          : "Your attendance correction was rejected",
+        recordId,
+        correctionId,
+        senderUid: decidedBy,
+      });
+    }
+  },
+);
+
+// Auto-close sessions the employee never clocked out of. A still-open session
+// (status inProgress, no clockOut) whose scheduled end + grace has passed is
+// flipped to `pendingReview` with source `autoClose` — which onAttendanceWritten
+// audits as `autoClosed`. The employee is nudged to file a correction.
+exports.autoCloseAttendance = onSchedule("every 30 minutes", async () => {
+  const nowMs = Date.now();
+  const graceMs = ATTENDANCE_AUTO_CLOSE_GRACE_MINUTES * 60 * 1000;
+  let snap;
+  try {
+    // Open sessions are naturally bounded (only people currently clocked in);
+    // status equality needs only the automatic single-field index.
+    snap = await db.collection(ATTENDANCE).where("status", "==", "inProgress").get();
+  } catch (e) {
+    logger.warn("autoCloseAttendance query failed", { error: String(e) });
+    return;
+  }
+  let closed = 0;
+  for (const doc of snap.docs) {
+    const d = doc.data() || {};
+    if (d.clockOut || d.deletedAt) continue;
+    const sched = d.scheduledEnd;
+    // No scheduled end → nothing to measure against; leave it for a manual fix.
+    if (!sched || typeof sched.toMillis !== "function") continue;
+    if (sched.toMillis() + graceMs > nowMs) continue;
+    try {
+      await doc.ref.update({
+        status: "pendingReview",
+        source: "autoClose",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      closed++;
+      const uid = String(d.userId || "");
+      if (uid) {
+        await writeAttendanceNotifications([uid], {
+          type: "attendanceAutoClosed",
+          title: "Shift needs review",
+          body: "You didn't clock out — file a correction with your real clock-out time.",
+          recordId: doc.id,
+          senderUid: "",
+        });
+      }
+    } catch (e) {
+      logger.warn("autoCloseAttendance update failed", { recordId: doc.id, error: String(e) });
+    }
+  }
+  if (closed > 0) logger.info("autoCloseAttendance closed sessions", { closed });
+});
