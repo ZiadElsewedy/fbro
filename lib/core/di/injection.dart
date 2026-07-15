@@ -97,7 +97,9 @@ import 'package:drop/features/attendance/domain/attendance_service.dart';
 import 'package:drop/features/attendance/domain/repositories/attendance_repository.dart';
 import 'package:drop/features/attendance/domain/usecases/clock_in.dart';
 import 'package:drop/features/attendance/domain/usecases/clock_out.dart';
+import 'package:drop/features/attendance/domain/usecases/decide_correction.dart';
 import 'package:drop/features/attendance/domain/usecases/request_correction.dart';
+import 'package:drop/features/attendance/presentation/cubit/attendance_admin_cubit.dart';
 import 'package:drop/features/attendance/presentation/cubit/attendance_cubit.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart' show UserEntity;
 
@@ -189,6 +191,10 @@ class AppDependencies {
 
   /// Attendance (clock in/out) — the employee-facing cubit (singleton, app-wide).
   static late final AttendanceCubit attendanceCubit;
+
+  /// Admin attendance dashboard — the branch-scoped roster × attendance board +
+  /// correction queue (singleton, app-wide; a future manager view reuses it).
+  static late final AttendanceAdminCubit attendanceAdminCubit;
 
   /// Phase 3 task foundation, activated by the Phase 4 [taskCubit] + use cases.
   static late final TaskRepository taskRepository;
@@ -349,6 +355,14 @@ class AppDependencies {
       clockIn: ClockIn(attendanceRepository),
       clockOut: ClockOut(attendanceRepository),
       requestCorrection: RequestCorrection(attendanceRepository),
+    );
+    attendanceAdminCubit = AttendanceAdminCubit(
+      repository: attendanceRepository,
+      scheduleRepository: scheduleRepository,
+      branchRepository: branchRepository,
+      getUsersByBranch: GetUsersByBranch(authRepository),
+      decideCorrection: DecideCorrection(attendanceRepository),
+      service: const AttendanceService(),
     );
 
     // ─── Admin module (Phase 5) ───────────────────────────────

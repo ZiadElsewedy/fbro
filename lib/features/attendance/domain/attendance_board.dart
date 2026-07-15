@@ -1,0 +1,214 @@
+import 'package:drop/core/enums/leave_type.dart';
+import 'package:drop/core/enums/schedule_shift.dart';
+import 'package:drop/features/attendance/domain/attendance_config.dart';
+import 'package:drop/features/attendance/domain/entities/attendance_entity.dart';
+
+/// The per-employee state on the attendance board — the **join of the roster and
+/// today's attendance records**, derived against the current time. This is the
+/// single source of "who's working / late / absent" and it is **role-agnostic**:
+/// the Admin dashboard and a future Manager view both render the same rows; only
+/// the branch *scope* differs.
+enum AttendanceBoardStatus {
+  /// Rostered, hasn't clocked in yet, still inside the grace window.
+  notStarted,
+
+  /// Rostered, hasn't clocked in, the shift is under way and grace has passed.
+  late,
+
+  /// Clocked in, not yet out.
+  working,
+
+  /// Clocked out.
+  completed,
+
+  /// Rostered, the shift is over, never clocked in.
+  absent,
+
+  /// On leave today (from the schedule) — not expected.
+  onLeave,
+
+  /// Auto-closed / flagged, waiting on a correction or review.
+  pendingReview;
+
+  String get label => switch (this) {
+        AttendanceBoardStatus.notStarted => 'Not started',
+        AttendanceBoardStatus.late => 'Late',
+        AttendanceBoardStatus.working => 'Working',
+        AttendanceBoardStatus.completed => 'Completed',
+        AttendanceBoardStatus.absent => 'Absent',
+        AttendanceBoardStatus.onLeave => 'On leave',
+        AttendanceBoardStatus.pendingReview => 'Needs review',
+      };
+
+  /// Sort weight — problems first (an admin scanning the board sees what needs
+  /// action at the top), routine states last.
+  int get priority => switch (this) {
+        AttendanceBoardStatus.pendingReview => 0,
+        AttendanceBoardStatus.absent => 1,
+        AttendanceBoardStatus.late => 2,
+        AttendanceBoardStatus.working => 3,
+        AttendanceBoardStatus.notStarted => 4,
+        AttendanceBoardStatus.completed => 5,
+        AttendanceBoardStatus.onLeave => 6,
+      };
+}
+
+/// One rostered slot for today, resolved from the schedule (the cubit builds
+/// these from `WeeklyScheduleEntity` + `ShiftWindow` + branch users). Pure input
+/// to [computeAttendanceBoard].
+class AttendanceRosterEntry {
+  final String uid;
+  final String name;
+  final ScheduleShift shift;
+  final DateTime? scheduledStart;
+  final DateTime? scheduledEnd;
+  final LeaveType? leave;
+
+  const AttendanceRosterEntry({
+    required this.uid,
+    required this.name,
+    required this.shift,
+    this.scheduledStart,
+    this.scheduledEnd,
+    this.leave,
+  });
+}
+
+/// One board row — a roster entry joined with its attendance [record] (null when
+/// the employee hasn't clocked in) and the derived [status].
+class AttendanceBoardRow {
+  final AttendanceRosterEntry entry;
+  final AttendanceEntity? record;
+  final AttendanceBoardStatus status;
+
+  /// Late in any sense — clocked in after grace, OR overdue and not yet in.
+  final bool isLate;
+
+  const AttendanceBoardRow({
+    required this.entry,
+    required this.record,
+    required this.status,
+    required this.isLate,
+  });
+
+  String get uid => entry.uid;
+  String get name => entry.name;
+  ScheduleShift get shift => entry.shift;
+
+  /// The clock-in GPS verification, when the employee clocked in.
+  bool get isVerified => record?.isClockInVerified ?? false;
+  bool get hasGps => record?.clockInVerification != null;
+}
+
+/// The whole board — rows (sorted problems-first) plus the headline counts the
+/// admin KPIs read.
+class AttendanceBoard {
+  final List<AttendanceBoardRow> rows;
+
+  const AttendanceBoard(this.rows);
+
+  static const AttendanceBoard empty = AttendanceBoard(<AttendanceBoardRow>[]);
+
+  int get rostered => rows.length;
+  int _count(AttendanceBoardStatus s) =>
+      rows.where((r) => r.status == s).length;
+
+  int get working => _count(AttendanceBoardStatus.working);
+  int get completed => _count(AttendanceBoardStatus.completed);
+  int get absent => _count(AttendanceBoardStatus.absent);
+  int get notStarted => _count(AttendanceBoardStatus.notStarted);
+  int get onLeave => _count(AttendanceBoardStatus.onLeave);
+  int get pendingReview => _count(AttendanceBoardStatus.pendingReview);
+
+  /// Everyone late in any sense (overdue no-shows + late arrivals).
+  int get late => rows.where((r) => r.isLate).length;
+
+  /// Showed up today (working, completed, or pending-review — they clocked in).
+  int get present => rows.where((r) => r.record?.hasClockedIn ?? false).length;
+
+  /// Rows filtered to a single status (for the KPI drill-downs).
+  List<AttendanceBoardRow> withStatus(AttendanceBoardStatus s) =>
+      rows.where((r) => r.status == s).toList();
+}
+
+/// Joins [roster] with today's [records] and derives each employee's board
+/// status against [now]. Pure + framework-free — the single place the
+/// "Not started → Late → Absent" policy lives (see [AttendanceBoardStatus]).
+///
+/// A no-show is timed against the schedule: before `start + lateGrace` →
+/// notStarted; after grace while the shift runs → late; after the scheduled end
+/// → absent. A record present resolves to working / completed / pendingReview,
+/// carrying a late flag when the clock-in itself was late.
+AttendanceBoard computeAttendanceBoard({
+  required List<AttendanceRosterEntry> roster,
+  required List<AttendanceEntity> records,
+  required DateTime now,
+  AttendanceConfig config = AttendanceConfig.defaults,
+}) {
+  final rows = <AttendanceBoardRow>[];
+
+  for (final entry in roster) {
+    final record = _recordFor(records, entry.uid, entry.shift);
+
+    final AttendanceBoardStatus status;
+    var isLate = false;
+
+    if (record != null) {
+      isLate = record.isLate;
+      if (record.needsReview) {
+        status = AttendanceBoardStatus.pendingReview;
+      } else if (record.isOpen) {
+        status = AttendanceBoardStatus.working;
+      } else {
+        status = AttendanceBoardStatus.completed;
+      }
+    } else if (entry.leave != null) {
+      status = AttendanceBoardStatus.onLeave;
+    } else {
+      final start = entry.scheduledStart;
+      if (start == null) {
+        status = AttendanceBoardStatus.notStarted;
+      } else {
+        final opensLate =
+            start.add(Duration(minutes: config.lateGraceMinutes));
+        final end = entry.scheduledEnd;
+        if (now.isBefore(opensLate)) {
+          status = AttendanceBoardStatus.notStarted;
+        } else if (end != null && now.isAfter(end)) {
+          status = AttendanceBoardStatus.absent;
+        } else {
+          status = AttendanceBoardStatus.late; // overdue, shift still running
+          isLate = true;
+        }
+      }
+    }
+
+    // A leave day with a clock-in (they came in anyway) stays a real record
+    // status; leave only wins when there's no record.
+    rows.add(AttendanceBoardRow(
+      entry: entry,
+      record: record,
+      status: status,
+      isLate: isLate,
+    ));
+  }
+
+  rows.sort((a, b) {
+    final byPriority = a.status.priority.compareTo(b.status.priority);
+    if (byPriority != 0) return byPriority;
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+
+  return AttendanceBoard(rows);
+}
+
+AttendanceEntity? _recordFor(
+  List<AttendanceEntity> records,
+  String uid,
+  ScheduleShift shift,
+) {
+  for (final r in records) {
+    if (r.userId == uid && r.shift == shift && !r.isDeleted) return r;
+  }
+  return null;
+}

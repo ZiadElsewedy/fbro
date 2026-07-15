@@ -2,6 +2,8 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/attendance/domain/attendance_config.dart';
+import 'package:drop/features/attendance/domain/attendance_gps.dart';
+import 'package:drop/features/attendance/domain/attendance_location_service.dart';
 import 'package:drop/features/attendance/domain/entities/attendance_entity.dart';
 
 part 'attendance_state.freezed.dart';
@@ -49,6 +51,21 @@ class AttendanceState with _$AttendanceState {
     /// Whether the branch has an attendance geofence configured (an admin set
     /// lat/lng/radius). False → GPS clock-in can't proceed here yet.
     @Default(false) bool geofenceReady,
+
+    // ── Live GPS preview (Ready phase) ──
+    // A passive location read taken while the employee is *deciding* to clock in,
+    // so the GPS card is state-driven before they tap: it shows "At branch · 22 m"
+    // / "Outside · 143 m" / a permission or service prompt. A fresh fix is taken
+    // again on the actual clock-in write.
+    /// True while the preview fix is being acquired ("Checking location…").
+    @Default(false) bool previewing,
+
+    /// The evaluated preview (distance · within-radius · accuracy), or null before
+    /// the first read / when there's nothing to preview.
+    AttendanceVerification? previewVerification,
+
+    /// The reason the preview couldn't be read (permission / service / no fix).
+    LocationError? previewError,
   }) = _Loaded;
 
   /// Transient — surfaced as a snackbar; the cubit immediately re-emits the last

@@ -434,6 +434,60 @@ void main() {
     await cubit.close();
   });
 
+  test('previewLocation exposes an at-branch preview in the Ready phase',
+      () async {
+    final cubit = build(location: _fixNear(20)); // ~20 m from the branch
+    await cubit.load(user);
+    repo.pushHistory([]);
+    await pump();
+
+    await cubit.previewLocation();
+    final s = cubit.state.mapOrNull(loaded: (x) => x);
+    expect(s!.previewVerification, isNotNull);
+    expect(s.previewVerification!.verified, isTrue);
+    expect(s.previewError, isNull);
+    await cubit.close();
+  });
+
+  test('previewLocation flags an outside-radius preview', () async {
+    final cubit = build(location: _fixNear(500));
+    await cubit.load(user);
+    repo.pushHistory([]);
+    await pump();
+
+    await cubit.previewLocation();
+    final s = cubit.state.mapOrNull(loaded: (x) => x);
+    expect(s!.previewVerification!.withinRadius, isFalse);
+    await cubit.close();
+  });
+
+  test('previewLocation surfaces a permission error', () async {
+    final cubit = build(
+      location: const LocationResult.failure(LocationError.permissionDenied),
+    );
+    await cubit.load(user);
+    repo.pushHistory([]);
+    await pump();
+
+    await cubit.previewLocation();
+    final s = cubit.state.mapOrNull(loaded: (x) => x);
+    expect(s!.previewError, LocationError.permissionDenied);
+    expect(s.previewVerification, isNull);
+    await cubit.close();
+  });
+
+  test('previewLocation is a no-op once clocked in', () async {
+    final cubit = build();
+    await cubit.load(user);
+    repo.pushHistory([openRecord()]); // an open session → Working phase
+    await pump();
+
+    await cubit.previewLocation();
+    final s = cubit.state.mapOrNull(loaded: (x) => x);
+    expect(s!.previewVerification, isNull);
+    await cubit.close();
+  });
+
   test('the live timer is cancelled on close (no pending timer)', () async {
     final cubit = build();
     await cubit.load(user);

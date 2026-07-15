@@ -36,6 +36,9 @@ mixin _$AttendanceState {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )
     loaded,
     required TResult Function(String message) error,
@@ -59,6 +62,9 @@ mixin _$AttendanceState {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -82,6 +88,9 @@ mixin _$AttendanceState {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -193,6 +202,9 @@ class _$InitialImpl implements _Initial {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )
     loaded,
     required TResult Function(String message) error,
@@ -220,6 +232,9 @@ class _$InitialImpl implements _Initial {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -247,6 +262,9 @@ class _$InitialImpl implements _Initial {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -360,6 +378,9 @@ class _$LoadingImpl implements _Loading {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )
     loaded,
     required TResult Function(String message) error,
@@ -387,6 +408,9 @@ class _$LoadingImpl implements _Loading {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -414,6 +438,9 @@ class _$LoadingImpl implements _Loading {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -489,6 +516,9 @@ abstract class _$$LoadedImplCopyWith<$Res> {
     bool offline,
     bool verifying,
     bool geofenceReady,
+    bool previewing,
+    AttendanceVerification? previewVerification,
+    LocationError? previewError,
   });
 
   $AttendanceEntityCopyWith<$Res>? get today;
@@ -523,6 +553,9 @@ class __$$LoadedImplCopyWithImpl<$Res>
     Object? offline = null,
     Object? verifying = null,
     Object? geofenceReady = null,
+    Object? previewing = null,
+    Object? previewVerification = freezed,
+    Object? previewError = freezed,
   }) {
     return _then(
       _$LoadedImpl(
@@ -582,6 +615,18 @@ class __$$LoadedImplCopyWithImpl<$Res>
             ? _value.geofenceReady
             : geofenceReady // ignore: cast_nullable_to_non_nullable
                   as bool,
+        previewing: null == previewing
+            ? _value.previewing
+            : previewing // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        previewVerification: freezed == previewVerification
+            ? _value.previewVerification
+            : previewVerification // ignore: cast_nullable_to_non_nullable
+                  as AttendanceVerification?,
+        previewError: freezed == previewError
+            ? _value.previewError
+            : previewError // ignore: cast_nullable_to_non_nullable
+                  as LocationError?,
       ),
     );
   }
@@ -633,6 +678,9 @@ class _$LoadedImpl implements _Loaded {
     this.offline = false,
     this.verifying = false,
     this.geofenceReady = false,
+    this.previewing = false,
+    this.previewVerification,
+    this.previewError,
   }) : _history = history;
 
   @override
@@ -681,10 +729,28 @@ class _$LoadedImpl implements _Loaded {
   @override
   @JsonKey()
   final bool geofenceReady;
+  // ── Live GPS preview (Ready phase) ──
+  // A passive location read taken while the employee is *deciding* to clock in,
+  // so the GPS card is state-driven before they tap: it shows "At branch · 22 m"
+  // / "Outside · 143 m" / a permission or service prompt. A fresh fix is taken
+  // again on the actual clock-in write.
+  /// True while the preview fix is being acquired ("Checking location…").
+  @override
+  @JsonKey()
+  final bool previewing;
+
+  /// The evaluated preview (distance · within-radius · accuracy), or null before
+  /// the first read / when there's nothing to preview.
+  @override
+  final AttendanceVerification? previewVerification;
+
+  /// The reason the preview couldn't be read (permission / service / no fix).
+  @override
+  final LocationError? previewError;
 
   @override
   String toString() {
-    return 'AttendanceState.loaded(today: $today, session: $session, history: $history, shift: $shift, scheduledStart: $scheduledStart, scheduledEnd: $scheduledEnd, leave: $leave, config: $config, tick: $tick, busy: $busy, syncing: $syncing, offline: $offline, verifying: $verifying, geofenceReady: $geofenceReady)';
+    return 'AttendanceState.loaded(today: $today, session: $session, history: $history, shift: $shift, scheduledStart: $scheduledStart, scheduledEnd: $scheduledEnd, leave: $leave, config: $config, tick: $tick, busy: $busy, syncing: $syncing, offline: $offline, verifying: $verifying, geofenceReady: $geofenceReady, previewing: $previewing, previewVerification: $previewVerification, previewError: $previewError)';
   }
 
   @override
@@ -709,7 +775,13 @@ class _$LoadedImpl implements _Loaded {
             (identical(other.verifying, verifying) ||
                 other.verifying == verifying) &&
             (identical(other.geofenceReady, geofenceReady) ||
-                other.geofenceReady == geofenceReady));
+                other.geofenceReady == geofenceReady) &&
+            (identical(other.previewing, previewing) ||
+                other.previewing == previewing) &&
+            (identical(other.previewVerification, previewVerification) ||
+                other.previewVerification == previewVerification) &&
+            (identical(other.previewError, previewError) ||
+                other.previewError == previewError));
   }
 
   @override
@@ -729,6 +801,9 @@ class _$LoadedImpl implements _Loaded {
     offline,
     verifying,
     geofenceReady,
+    previewing,
+    previewVerification,
+    previewError,
   );
 
   /// Create a copy of AttendanceState
@@ -759,6 +834,9 @@ class _$LoadedImpl implements _Loaded {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )
     loaded,
     required TResult Function(String message) error,
@@ -778,6 +856,9 @@ class _$LoadedImpl implements _Loaded {
       offline,
       verifying,
       geofenceReady,
+      previewing,
+      previewVerification,
+      previewError,
     );
   }
 
@@ -801,6 +882,9 @@ class _$LoadedImpl implements _Loaded {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -820,6 +904,9 @@ class _$LoadedImpl implements _Loaded {
       offline,
       verifying,
       geofenceReady,
+      previewing,
+      previewVerification,
+      previewError,
     );
   }
 
@@ -843,6 +930,9 @@ class _$LoadedImpl implements _Loaded {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult Function(String message)? error,
@@ -864,6 +954,9 @@ class _$LoadedImpl implements _Loaded {
         offline,
         verifying,
         geofenceReady,
+        previewing,
+        previewVerification,
+        previewError,
       );
     }
     return orElse();
@@ -923,6 +1016,9 @@ abstract class _Loaded implements AttendanceState {
     final bool offline,
     final bool verifying,
     final bool geofenceReady,
+    final bool previewing,
+    final AttendanceVerification? previewVerification,
+    final LocationError? previewError,
   }) = _$LoadedImpl;
 
   AttendanceEntity? get today;
@@ -944,7 +1040,20 @@ abstract class _Loaded implements AttendanceState {
 
   /// Whether the branch has an attendance geofence configured (an admin set
   /// lat/lng/radius). False → GPS clock-in can't proceed here yet.
-  bool get geofenceReady;
+  bool get geofenceReady; // ── Live GPS preview (Ready phase) ──
+  // A passive location read taken while the employee is *deciding* to clock in,
+  // so the GPS card is state-driven before they tap: it shows "At branch · 22 m"
+  // / "Outside · 143 m" / a permission or service prompt. A fresh fix is taken
+  // again on the actual clock-in write.
+  /// True while the preview fix is being acquired ("Checking location…").
+  bool get previewing;
+
+  /// The evaluated preview (distance · within-radius · accuracy), or null before
+  /// the first read / when there's nothing to preview.
+  AttendanceVerification? get previewVerification;
+
+  /// The reason the preview couldn't be read (permission / service / no fix).
+  LocationError? get previewError;
 
   /// Create a copy of AttendanceState
   /// with the given fields replaced by the non-null parameter values.
@@ -1040,6 +1149,9 @@ class _$ErrorImpl implements _Error {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )
     loaded,
     required TResult Function(String message) error,
@@ -1067,6 +1179,9 @@ class _$ErrorImpl implements _Error {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult? Function(String message)? error,
@@ -1094,6 +1209,9 @@ class _$ErrorImpl implements _Error {
       bool offline,
       bool verifying,
       bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
     )?
     loaded,
     TResult Function(String message)? error,

@@ -62,9 +62,33 @@ Phase 3 scope adjustment + GPS engine. **This entry covers the data/logic engine
 - **⚠️ Needs deploy:** `firestore.rules` + `storage.rules` (events blocks removed),
   and `firebase deploy --only functions` (break-audit no longer derived). **Needs
   on-device QA** for real GPS behaviour (permission/service/accuracy/distance).
-- **Remaining (UI, not built here):** the employee clock screen (Today's Shift →
-  Clock In → GPS Validation → Working → Clock Out → Today's Summary), the manager
-  verification view, and the admin branch-geofence editor.
+- **Employee clock screen BUILT + premium-polished** (`attendance_screen.dart`,
+  2026-07-15): the full workflow off the cubit, then an owner-feedback polish pass —
+  live `HH:MM:SS` timer (screen 1s ticker); phase status badge; clearer shift block;
+  a **state-driven GPS card** driven by a new live **location preview** (cubit
+  `previewLocation()` + `previewing`/`previewVerification`/`previewError`: Checking →
+  At branch → Outside → permission/service → weak signal); bigger 64px CTA;
+  `AnimatedSwitcher` phase transitions; padded `08h 03m` summary; completed state
+  with a View-history sheet and no clock button; clock-out records "not at branch"
+  honestly, never blocked. Route `/attendance` + employee sidebar + ⌘K + mobile
+  app-bar action.
+- **Admin branch-geofence editor BUILT** (`branch_geofence_editor_screen.dart`,
+  2026-07-15): a per-branch **Set GPS area** action sets location · radius · min
+  accuracy via **Use current location** (reuses `geolocator`) + editable fields,
+  validated by pure `BranchGeofence.validateInput`, saved through
+  `BranchCubit.setGeofence`. Closes the config loop — GPS clock-in stays inert on a
+  branch until an admin configures it. +11 geofence tests.
+- **Admin attendance dashboard BUILT** (`admin_attendance_screen.dart` +
+  `AttendanceAdminCubit`, 2026-07-15): V1 simplified to **Employee + Admin only**.
+  The dashboard is the schedule × attendance join — pure `computeAttendanceBoard`
+  derives Not started / Late / Absent / Working / Completed / On-leave / Needs-review;
+  the cubit fuses roster (schedule + branch users) with live `watchBranchDay` records
+  + the correction queue. Branch picker · filterable Working/Late/Absent KPIs · roster
+  rows → details sheet (GPS verification) · Corrections approve/reject (`DecideCorrection`)
+  · GPS-area shortcut. Route `/admin/attendance` + admin sidebar. **Branch-scoped so a
+  future Manager view reuses the same components** (pinned to own branch). +5 board tests.
+- **Manager attendance view descoped for V1** (owner ruling) — later reuses the Admin
+  components with branch scope + permissions.
 
 ### Added (2026-07-14 — Attendance Phase 2: corrections + server-authoritative audit/auto-close)
 

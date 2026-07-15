@@ -53,10 +53,48 @@ the MVP.** Server-authoritative audit architecture unchanged.
 - **⚠️ Needs deploy** (`firestore.rules` + `storage.rules` — events blocks gone;
   `functions` — break audit dropped) **+ on-device GPS QA** (can't be verified in
   the test env).
-- **Remaining — the UI (NOT built yet):** the employee clock screen (Today's Shift
-  → Clock In → GPS Validation → Working → Clock Out → Today's Summary), the manager
-  GPS-verification view, and the admin branch-geofence editor. The engine + repo +
-  cubit are ready for them to plug into.
+- **Employee clock screen — BUILT + PREMIUM-POLISHED (2026-07-15):**
+  `attendance_screen.dart` renders the full workflow off the cubit. **Polish pass
+  (owner feedback):** live **`HH:MM:SS`** timer while working (screen-local 1s
+  ticker; the cubit's 30s tick still owns the persisted snapshot); a phase **status
+  badge** (On shift / Not clocked in / …); a clearer shift block (TODAY'S SHIFT /
+  `Morning Shift` / `08:30 — 16:30`); a **state-driven GPS card** driven by a live
+  **location preview** (new cubit `previewLocation()` + `previewing`/
+  `previewVerification`/`previewError` state → Checking → At branch `22 m` → Outside
+  work area `143 m away` → permission / service prompts → weak signal, tap-to-
+  re-check); a bigger prominent 64px clock CTA; subtle `AnimatedSwitcher` phase
+  transitions; padded `08h 03m` summary; a completed state with **no clock button**
+  + a **View history** bottom sheet (reuses the loaded `history`). Clock-out records
+  an honest "Recorded — not at branch" when outside, **never blocked**. Route
+  `/attendance` + employee sidebar + ⌘K + mobile app-bar action. Analyze clean; 748
+  pass/2 pre-existing splash (+4 preview tests).
+- **Admin branch-geofence editor — BUILT (2026-07-15):** owner found there was no
+  way to configure a branch's GPS area (the data layer existed, the UI didn't).
+  `branch_geofence_editor_screen.dart` (opened from a per-branch **"Set GPS area"**
+  action on the branch-management card, amber until configured) sets location ·
+  allowed radius · min accuracy via **Use current location** (reuses `geolocator`,
+  no maps SDK/key) + editable fields, validated by pure `BranchGeofence.validateInput`,
+  saved through `BranchCubit.setGeofence` → the dedicated `setGeofence` path. Until
+  an admin saves one, GPS clock-in stays **safely inert** on that branch
+  (`geofenceReady:false` → "GPS not set up here", clock-in blocked — no invented
+  location). +11 geofence tests. **This closes the config loop.**
+- **Admin attendance dashboard — BUILT (2026-07-15):** owner simplified V1 to
+  **Employee + Admin only** (no separate Manager surface). `admin_attendance_screen.dart`
+  (route `/admin/attendance`, admin sidebar) is the **schedule × attendance join**:
+  a pure, tested `computeAttendanceBoard(roster, records, now, config)` derives each
+  rostered employee's status (**Not started → Late → Absent** by time; Working /
+  Completed / On-leave / Needs-review from records), so `AttendanceAdminCubit` fuses
+  the schedule roster (`getSchedule` + `employeesFor` + `ShiftWindow` + `GetUsersByBranch`
+  names) with the live `watchBranchDay` records + `watchBranchPendingCorrections`
+  queue. Screen: branch picker · **filterable Working/Late/Absent KPIs** · roster rows
+  with GPS badge + clock-in time → **details sheet** (clock-in/out · GPS distance/
+  accuracy/verified · worked/late/overtime) · **Corrections** tab (approve/reject →
+  `DecideCorrection`) · **GPS-area** shortcut to the geofence editor. **Reuse seam:
+  branch-scoped by design** — a future Manager view is the *same* cubit+screen pinned
+  to `user.branchId` with no picker (Firestore rules already enforce own-branch). +5
+  board tests. **V1 attendance UI is complete (Employee + Admin).**
+- **Manager attendance view — DESCOPED for V1** (owner ruling): a Manager surface
+  will later reuse the Admin components with branch-level scope + permissions.
 
 ---
 

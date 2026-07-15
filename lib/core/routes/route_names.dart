@@ -51,6 +51,13 @@ class RouteNames {
   static const String requests = '/requests';
   static const String requestsCreate = '/requests/create';
 
+  /// Employee GPS clock-in/out surface (also reachable by managers who clock).
+  static const String attendance = '/attendance';
+
+  /// Admin attendance dashboard — branch-scoped roster × attendance oversight +
+  /// the correction queue (a future manager view reuses the same screen).
+  static const String adminAttendance = '/admin/attendance';
+
   /// The single-request deep-link pattern (`/request/:requestId`) — a request
   /// notification opens the exact request here, for every role.
   static const String requestDetailPattern = '/request/:requestId';

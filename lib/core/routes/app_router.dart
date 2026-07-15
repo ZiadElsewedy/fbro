@@ -40,6 +40,8 @@ import 'package:drop/features/notifications/presentation/pages/notifications_scr
 import 'package:drop/features/cases/presentation/pages/cases_screen.dart';
 import 'package:drop/features/cases/presentation/pages/create_case_screen.dart';
 import 'package:drop/features/cases/presentation/pages/case_conversation_screen.dart';
+import 'package:drop/features/attendance/presentation/pages/attendance_screen.dart';
+import 'package:drop/features/attendance/presentation/pages/admin_attendance_screen.dart';
 import 'package:drop/features/requests/presentation/pages/requests_screen.dart';
 import 'package:drop/features/requests/presentation/pages/create_request_screen.dart';
 import 'package:drop/features/requests/presentation/pages/request_detail_screen.dart';
@@ -295,6 +297,16 @@ GoRouter createRouter(
                 requestId: state.pathParameters['requestId'] ?? '',
               ),
             ),
+          ),
+          GoRoute(
+            path: RouteNames.adminAttendance,
+            pageBuilder: (context, state) =>
+                _slideTransition(state, const AdminAttendanceScreen()),
+          ),
+          GoRoute(
+            path: RouteNames.attendance,
+            pageBuilder: (context, state) =>
+                _slideTransition(state, const AttendanceScreen()),
           ),
           GoRoute(
             path: RouteNames.profile,

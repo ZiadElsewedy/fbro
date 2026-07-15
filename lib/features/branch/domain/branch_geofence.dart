@@ -41,6 +41,33 @@ class BranchGeofence {
         'minAccuracyMeters': minAccuracyMeters,
       };
 
+  /// Validates raw editor input (already parsed to numbers), returning a
+  /// user-facing error message, or null when the values are a valid geofence.
+  /// Pure — the admin editor + a unit test both use it.
+  static String? validateInput({
+    required double? latitude,
+    required double? longitude,
+    required double? radiusMeters,
+    required double? minAccuracyMeters,
+  }) {
+    if (latitude == null || longitude == null) {
+      return 'Set the branch location first.';
+    }
+    if (latitude < -90 || latitude > 90) {
+      return 'Latitude must be between -90 and 90.';
+    }
+    if (longitude < -180 || longitude > 180) {
+      return 'Longitude must be between -180 and 180.';
+    }
+    if (radiusMeters == null || radiusMeters <= 0) {
+      return 'Allowed radius must be greater than 0 m.';
+    }
+    if (minAccuracyMeters == null || minAccuracyMeters <= 0) {
+      return 'Minimum accuracy must be greater than 0 m.';
+    }
+    return null;
+  }
+
   BranchGeofence copyWith({
     double? latitude,
     double? longitude,

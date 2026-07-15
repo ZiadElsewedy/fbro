@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/errors/failures.dart';
+import 'package:drop/features/branch/domain/branch_geofence.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
 import 'package:drop/features/branch/domain/repositories/branch_repository.dart';
 import 'branch_state.dart';
@@ -68,6 +69,12 @@ class BranchCubit extends Cubit<BranchState> {
 
   Future<void> deleteBranch(BranchEntity branch) =>
       _mutate(() => _repository.deleteBranch(branch.id));
+
+  /// Sets a branch's attendance [geofence] (the admin GPS-area editor). Written
+  /// via the dedicated `setGeofence` path so it never clobbers other branch
+  /// fields; the list refreshes so the employee flow resolves it immediately.
+  Future<void> setGeofence(String branchId, BranchGeofence geofence) =>
+      _mutate(() => _repository.setGeofence(branchId, geofence));
 
   /// Uploads a branch logo/cover (§8 Branch Media), then refreshes the list so
   /// the new media shows everywhere. Returns the download URL (the form sheet

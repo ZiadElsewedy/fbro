@@ -129,6 +129,12 @@ class AppShell extends StatelessWidget {
       label: 'Requests',
       route: RouteNames.requests,
     );
+    const attendance = SidebarItem(
+      icon: Icons.fingerprint_rounded,
+      activeIcon: Icons.fingerprint_rounded,
+      label: 'Attendance',
+      route: RouteNames.attendance,
+    );
 
     switch (role) {
       case UserRole.admin:
@@ -151,6 +157,12 @@ class AppShell extends StatelessWidget {
               activeIcon: Icons.calendar_view_week_rounded,
               label: 'Schedule',
               route: RouteNames.adminSchedule,
+            ),
+            SidebarItem(
+              icon: Icons.fingerprint_rounded,
+              activeIcon: Icons.fingerprint_rounded,
+              label: 'Attendance',
+              route: RouteNames.adminAttendance,
             ),
             communications,
             cases,
@@ -232,6 +244,7 @@ class AppShell extends StatelessWidget {
               label: 'My Schedule',
               route: RouteNames.mySchedule,
             ),
+            attendance,
             cases,
             requests,
             notifications,

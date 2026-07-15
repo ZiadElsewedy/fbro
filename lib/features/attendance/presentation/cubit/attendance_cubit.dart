@@ -66,6 +66,9 @@ class AttendanceCubit extends Cubit<AttendanceState> {
   bool _offline = false;
   bool _syncing = false;
   bool _verifying = false;
+  bool _previewing = false;
+  AttendanceVerification? _previewVerification;
+  LocationError? _previewError;
   StreamSubscription<AttendanceFeed>? _sub;
   Timer? _timer;
   bool _busy = false;
@@ -176,7 +179,10 @@ class AttendanceCubit extends Cubit<AttendanceState> {
 
   Future<void> refresh() async {
     final user = _user;
-    if (user != null) await load(user, forceRefresh: true);
+    if (user != null) {
+      await load(user, forceRefresh: true);
+      await previewLocation();
+    }
   }
 
   /// Config seam — delegated to [AttendanceService], the single place that later
@@ -282,7 +288,39 @@ class AttendanceCubit extends Cubit<AttendanceState> {
       offline: _offline,
       verifying: _verifying,
       geofenceReady: ctx?.geofence != null,
+      previewing: _previewing,
+      previewVerification: _previewVerification,
+      previewError: _previewError,
     ));
+  }
+
+  /// Passively read the device location for the **Ready** phase, so the GPS card
+  /// shows "At branch · 22 m" / "Outside · 143 m" / a permission-or-service prompt
+  /// *before* the employee taps Clock In (a fresh fix is still taken on the write).
+  /// A no-op once clocked in or when the branch has no geofence.
+  Future<void> previewLocation() async {
+    final ctx = _ctx;
+    if (isClosed || _busy || _verifying) return;
+    if (ctx?.geofence == null || _activeRecord != null || _todayIsSettled) {
+      _previewVerification = null;
+      _previewError = null;
+      return;
+    }
+    _previewing = true;
+    _emitLoaded();
+    final gps = await _captureVerification(ctx!.geofence);
+    if (isClosed) return;
+    _previewVerification = gps.verification;
+    _previewError = gps.error;
+    _previewing = false;
+    _emitLoaded();
+  }
+
+  /// Today's target record exists and is finished (completed / auto-closed) — the
+  /// Summary phase, where a location preview is irrelevant.
+  bool get _todayIsSettled {
+    final r = _todayTargetRecord;
+    return r != null && !r.isOpen;
   }
 
   // ─── Clock actions ───────────────────────────────────────────────────
@@ -301,6 +339,10 @@ class AttendanceCubit extends Cubit<AttendanceState> {
     final id = ctx.targetRecordId;
     final shift = ctx.shift;
     if (id == null || shift == null) return;
+
+    // The preview gives way to the live verification for the write.
+    _previewVerification = null;
+    _previewError = null;
 
     // ── GPS Validation step ──
     _setVerifying(true);
