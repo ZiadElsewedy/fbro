@@ -4,16 +4,15 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<key>com.apple.security.network.client</key>
+	<key>com.apple.security.files.downloads.read-write</key>
 	<true/>
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
-	<!-- Schedule Final View exports a generated PNG directly to Downloads. -->
-	<key>com.apple.security.files.downloads.read-write</key>
+	<key>com.apple.security.network.client</key>
 	<true/>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.example.fbro</string>
+		<string>$(AppIdentifierPrefix)com.ziad.drop</string>
 	</array>
 </dict>
 </plist>
