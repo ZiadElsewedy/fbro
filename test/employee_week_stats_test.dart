@@ -16,8 +16,7 @@ WeeklyScheduleEntity _sched(
 
 void main() {
   group('computeEmployeeWeekStats', () {
-    test('counts days, morning/night/weekend split, hours and the longest run',
-        () {
+    test('counts days worked, weekend days, hours and the longest run', () {
       // Sun–Tue mornings (08:30–16:30 = 8h each), Thu+Sat nights. Thu & Sat are
       // weekend days (Thu/Fri/Sat); their nights run 16:30→00:30 = 8h.
       final stats = computeEmployeeWeekStats(
@@ -33,8 +32,6 @@ void main() {
       );
 
       expect(stats.workedDays, 5);
-      expect(stats.morningCount, 3);
-      expect(stats.nightCount, 2);
       expect(stats.weekendCount, 2); // Thu + Sat
       expect(stats.longestRun, 3); // Sun·Mon·Tue
       // 3×8h mornings + 2×8h weekend nights = 40h.
@@ -53,7 +50,7 @@ void main() {
         'u1',
       );
 
-      expect(stats.nightCount, 1);
+      expect(stats.workedDays, 1);
       expect(stats.weekendCount, 0);
       expect(stats.totalMinutes, 6 * 60 + 30);
       expect(stats.hoursLabel, '6h 30m');

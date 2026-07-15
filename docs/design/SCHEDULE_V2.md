@@ -29,7 +29,7 @@ Pulled from standing owner rulings — these are non-negotiable framing, not asp
 
 ### Frozen surfaces this plan must NOT touch
 - **Employee mobile "My Week"** (`my_schedule_screen.dart`, premium hero + week cards) — owner-FROZEN. In-language improvements only. **Schedule V2 is the manager/admin desktop+tablet surface.**
-- The **advice-never-gate** stance of Schedule Health — findings are recommendations, never enforcement.
+- The **advice-never-gate** stance of the insight strip — facts are information for the manager's judgment, never enforcement. (This principle outlived Schedule Health, which was **deleted 2026-07-15** — see Pillar 3.)
 
 ---
 
@@ -38,7 +38,7 @@ Pulled from standing owner rulings — these are non-negotiable framing, not asp
 | Brief asks for | Already shipped |
 |---|---|
 | #3 Configurable shift hours | `domain/shift_hours.dart` (`ShiftHours` value object, overnight-aware) + per-week `weekly_schedules/{id}.shiftHours` overrides. Hours are **data**, resolved by `WeeklyScheduleEntity.hoursFor(day, shift)`. |
-| #5/#6 Scheduling engine + health score | `domain/schedule_health.dart` — pure, unit-tested `computeScheduleHealth` → 0–100 `score` + typed `HealthFinding`s (`shortRest`, `alternation`, `longStreak`, `unevenLoad`). |
+| ~~#5/#6 Scheduling engine + health score~~ | ❌ **DELETED 2026-07-15 (owner ruling).** `domain/schedule_health.dart` + `domain/health/` are gone. The insight strip (`presentation/schedule_insights.dart`) is the only staffing signal. |
 | #10 Final view redesign + #20 image export | `pages/schedule_final_view.dart` — branded read-only roster **with real PNG export** (shipped 2026-07-05). |
 | #4 Assignment chip (partial) | `widgets/assignment_chip.dart` — avatar, short name, desktop drag-to-move, chip-onto-chip **swap with live drop preview**, context menu, touch action sheet, conflict/caution dots. |
 | #15 Conflict / move / swap validation | `domain/move_validation.dart`, `swap_validation.dart`, `swap_eligibility.dart`, `swap_policy.dart`. |
@@ -58,7 +58,7 @@ Pulled from standing owner rulings — these are non-negotiable framing, not asp
 | 1 | Adaptive Mac vs iPad layout | Pillar 1 |
 | 2 | Focus mode (collapse sidebar) | Pillar 1 |
 | 4 | Assignment chip craft (bigger, position, initials, cross-day drag, keyboard move) | Pillar 2 |
-| 6 | Health score **breakdown made clickable** (extend the existing engine) | Pillar 3 |
+| ~~6~~ | ~~Health score **breakdown made clickable**~~ | ❌ Pillar 3 **deleted 2026-07-15** |
 | 10 | Final view / export polish (mostly done) | Pillar 5 |
 | 16 | Premium motion | Pillar 6 |
 | 18 | Accessibility | Pillar 6 |
@@ -73,13 +73,13 @@ Pulled from standing owner rulings — these are non-negotiable framing, not asp
 
 | # | Item | Why out | Revisit trigger |
 |---|---|---|---|
-| 5/7 | 9-class **isolated** Rule-Engine + **configurable policy** engine | ⚠️ **Partially lifted (2026-07-09, owner-directed):** the bounded **5-rule analyzer** now ships in Pillar 3 (`domain/health/`). What stays ❌ is the *enterprise* part — background **isolates** and a **configurable per-branch policy** engine (rules stay hard-coded + advisory). | Rules need per-branch config, OR a profiler shows real jank needing isolates. |
+| 5/7 | 9-class **isolated** Rule-Engine + **configurable policy** engine | ❌ **Fully back to NO (2026-07-15).** The 2026-07-09 partial lift (the bounded 5-rule analyzer in `domain/health/`) was **deleted** — the owner ruled the whole quality-scoring layer unnecessary. | An explicit, fresh owner ask. The direction here has now flipped twice; do not infer it from the brief. |
 | 8 | Full metadata audit trail (createdBy/updatedBy/reason/previousEmployee/source) | Jira-grade traceability the owner explicitly rejected on Requests. | A real dispute/accountability need appears. |
 | 9 | Schedule history / snapshots / rollback / compare revisions | Versioning system for a handful of managers. | Managers actually ask to undo a *published* week. |
 | — | Versioning (v1/v2/v3), draft-vs-published, shift locking | Enterprise workflow engine. | Employees see wrong in-progress edits AND that causes real confusion. |
 | 11 | Excel keyboard interaction (arrow/tab/copy/paste/range/fill/undo/redo) | Huge surface, tiny payoff at this scale. | Managers build schedules for >50 people regularly. |
-| 13/14 | Workload heatmaps + AI assignment suggestions | WMS analytics. Pillar 3 already surfaces *who's overloaded* via findings. | Explicit owner ask after Pillar 3 ships. |
-| 17 | Background isolates / "hundreds of employees" | Premature — not DROP's scale. Memoized caching (Pillar 3) is enough. | Profiler shows real jank on a real branch. |
+| 13/14 | Workload heatmaps + AI assignment suggestions | WMS analytics. Doubly settled — the lighter-weight version of this (Pillar 3 findings) was itself deleted 2026-07-15 as unwanted. | Explicit owner ask. |
+| 17 | Background isolates / "hundreds of employees" | Premature — not DROP's scale. | Profiler shows real jank on a real branch. |
 | 19 | Offline edit + pending-ops + conflict-resolution/merge | Distributed-systems complexity. Firestore offline persistence already covers reads. | Managers routinely edit on flaky connections AND lose edits. |
 | 20 | PDF / Print / CSV / Excel export | PNG already ships. Format sprawl. | A concrete "I need CSV for payroll" request. |
 
@@ -102,7 +102,7 @@ Each pillar states **Goal · Architecture · UX · Logic · Risk · Out-of-scope
 
 **Increment status**
 - **✅ 1a — Focus Mode (shipped 2026-07-09):** `app_shell.dart` now stateful; ⌘\ + a sidebar collapse control + a floating restore handle. Only the sidebar *width* animates (clip + `OverflowBox`), so the `Expanded(child)` shell Navigator is never remounted — guarded by `test/focus_mode_test.dart`. It is **app-wide** (collapsing the shell sidebar is global by nature; route-gating it to the schedule would be *more* code for less value). **Persistence is in-session only** — the app has no local-prefs store yet; cross-restart memory needs one small dependency (`shared_preferences`) and an owner OK. Reduced-motion + Semantics done here already.
-- **✅ 1b — Adaptive layout (shipped 2026-07-09):** `manager_schedule_view.dart` splits on `context.isDesktop`. Desktop / iPad-landscape (≥1024) → `Row(grid hero | inspector rail)`; the rail docks the week totals + `ScheduleHealthCard` that used to sit *below* the grid. Touch widths keep the byte-identical stacked `ListView` + bottom-sheet detail. Presentation-only recomposition of existing widgets — insights/health computed once, every edit/validation/save path unchanged.
+- **✅ 1b — Adaptive layout (shipped 2026-07-09):** `manager_schedule_view.dart` splits on `context.isDesktop`. Desktop / iPad-landscape (≥1024) → `Row(grid hero | inspector rail)`; the rail docks the week totals + (at the time) the health card that used to sit *below* the grid. Touch widths keep the byte-identical stacked `ListView` + bottom-sheet detail. Presentation-only recomposition of existing widgets — every edit/validation/save path unchanged. *(The health card is gone as of 2026-07-15; the rail now carries week totals + the team roster only.)*
 - **✅ Inspector drawer (shipped 2026-07-09, owner-directed):** the rail's empty lower area became a real drawer — extracted to `widgets/schedule_inspector_drawer.dart` (stateless, selection lifted → tests in isolation with no cubits). Overview + **team roster** → tap a person → **week detail** (hours from resolved `ShiftHours`, morning/night/weekend split, consecutive-day streak, days off, Sun→Sat glance, wellbeing flags from `health.findings`). Backed by pure `domain/employee_week_stats.dart`. This is the lean read-only slice of brief #12 (metadata panel) — no per-employee analytics engine, no persistence. Tests: `schedule_inspector_drawer_test.dart` (4) + `employee_week_stats_test.dart` (3).
 
 **Pillar 1 is complete.** Next: Pillar 2 (Assignment Craft).
@@ -124,9 +124,40 @@ Each pillar states **Goal · Architecture · UX · Logic · Risk · Out-of-scope
 - **Tests:** `test/assignment_chip_interactions_test.dart` (6). Regression: 60 pass, analyze clean.
 - **Explicitly NOT built (per constraints):** bulk/range selection, Excel keys, AI, quotas, audit — none touched.
 
-**Pillar 2 is complete.** Next: Pillar 3 (Health, Made Legible).
+**Pillar 2 is complete.**
 
-### Pillar 3 — Health Analyzer ✅ (shipped 2026-07-09)
+### Pillar 3 — Health Analyzer ❌ **REVERTED / DELETED 2026-07-15 (owner ruling)**
+
+> **This pillar no longer exists in the codebase. Do not re-add it.**
+>
+> **The ruling (2026-07-15):** the schedule was crowded and nobody needed the
+> crowding. The same staffing facts rendered **twice** — the insight strip above
+> the grid, and again below it in `ScheduleOverviewSurface` (health score +
+> category breakdown + findings + legend). The owner's brief: *keep the things at
+> the top — open shifts, one-person shifts, short rest — and drop Schedule Health
+> and the rest.*
+>
+> **Deleted:** the entire `domain/health/` package (analysis · rule · report ·
+> analyzer + the 5 rules), the `domain/schedule_health.dart` facade
+> (`computeScheduleHealth`), `widgets/schedule_overview_surface.dart`, and the
+> tests `schedule_health_test` · `schedule_health_analyzer_test` ·
+> `schedule_overview_surface_test`. The inspector rail also lost its health-derived
+> **Wellbeing** block.
+>
+> **What survives as the only staffing signal:** `presentation/schedule_insights.dart`
+> (`computeScheduleInsights` → open · one-person · short-rest · double-booked ·
+> leave-clash, click-to-filter) + a one-line `_weekSummary`.
+>
+> **Note the arc:** Pillar 3 was itself an owner-directed *expansion* on 2026-07-09
+> (overriding the original "don't build rule classes" scope). It has now been
+> reversed in full. Twice-changed direction — treat any future "schedule quality
+> score" proposal as needing an explicit, fresh owner ask.
+>
+> The original record follows for history.
+
+<details>
+<summary>Historical record — Pillar 3 as shipped 2026-07-09 (now deleted)</summary>
+
 - **Goal:** make Schedule Health the **single source of truth for schedule quality** — a pure, modular domain engine that computes the read and exposes a structured report, with the card as a thin presentation layer over it.
 - **⚠️ Owner-directed scope change:** this pillar was originally scoped *"do **not** rebuild into rule classes — add derived subscores over the existing `computeScheduleHealth`."* The owner **overrode that** on 2026-07-09 with an explicit, prescriptive brief: build a **modular rule-based analyzer** (independent Coverage / Workload / Fairness / Rest / Conflict rules → aggregated report). So the ❌ #5/7 line below is **partially lifted** — the *bounded 5-rule analyzer is now IN*; what stays ❌ is the **enterprise** part (background isolates, a configurable per-branch *policy* engine, 9+ classes). This is a deliberate, recorded reversal.
 - **Architecture (as built):** new `domain/health/` package —
@@ -142,7 +173,9 @@ Each pillar states **Goal · Architecture · UX · Logic · Risk · Out-of-scope
 - **Out-of-scope (still ❌):** grid cell-highlight drilling, heatmaps, AI fixes, one-click auto-fix (#13/#14), isolates (#17), configurable policy engine (#5/7).
 - **Tests:** `schedule_health_analyzer_test.dart` (24 — each rule in isolation, aggregation, OCP custom-rule set, backward compat incl. the silent double-book penalty) + the frozen `schedule_health_test.dart` (6). Full suite **649 pass / 3 pre-existing fail**.
 
-**Pillar 3 is complete.** Next: Pillar 4 (Shift Templates) — still gated behind its own mini-design + owner GO.
+</details>
+
+**Pillar 3 was deleted on 2026-07-15.** Pillar 4 (Shift Templates) shipped and is unaffected.
 
 ### Pillar 4 — Shift Templates (the bounded 🟡) ✅ (shipped 2026-07-09)
 > **Sequencing note:** the owner shipped Final View first and called this "Pillar 5" in the roadmap; it is the doc's Pillar 4. **Design-reviewed + owner-approved ("as proposed") before any code**, per the gate below.

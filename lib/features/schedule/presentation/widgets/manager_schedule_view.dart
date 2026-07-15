@@ -21,7 +21,6 @@ import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/widgets/app_dialog.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
 import 'package:drop/features/schedule/domain/move_validation.dart';
-import 'package:drop/features/schedule/domain/health/schedule_health_analyzer.dart';
 import 'package:drop/features/schedule/domain/schedule_week.dart';
 import 'package:drop/features/schedule/domain/swap_policy.dart';
 import 'package:drop/features/schedule/presentation/cubit/schedule_cubit.dart';
@@ -37,7 +36,6 @@ import 'package:drop/features/schedule/presentation/widgets/chip_action_sheet.da
 import 'package:drop/features/schedule/presentation/widgets/day_details_sheet.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_grid.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
-import 'package:drop/features/schedule/presentation/widgets/schedule_overview_surface.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_inspector_drawer.dart';
 import 'package:drop/features/schedule/presentation/widgets/shift_details_sheet.dart';
 import 'package:drop/features/schedule/presentation/widgets/swap_alert_card.dart'
@@ -590,15 +588,6 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       filter: _filter,
       previousSaturdayNight: prevNight,
     );
-    // The rule-based analyzer (Schedule V2 · Pillar 3) reduces the roster to
-    // one shared analysis and runs the coverage/workload/fairness/rest/conflict
-    // rules over it — computed once per build, alongside the insights.
-    final report = const ScheduleHealthAnalyzer().analyze(
-      schedule,
-      members,
-      nameOf: shortName,
-      previousSaturdayNight: prevNight,
-    );
     // Never leave the grid stuck dim on a stale selection (e.g. the last
     // conflict was just resolved) — an insight with no slots is no filter.
     final activeInsight =
@@ -648,8 +637,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
       ),
     );
 
-    // Touch widths keep the single stacked column — grid, then week summary and
-    // health beneath it; detail opens as bottom sheets on tap.
+    // Touch widths keep the single stacked column — grid, then the week summary
+    // beneath it; detail opens as bottom sheets on tap.
     final stacked = ListView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.pagePadding,
@@ -671,19 +660,16 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
         SizedBox(height: grid.height, child: grid),
         const SizedBox(height: AppSpacing.sm),
         _weekSummary(insights),
-        const SizedBox(height: AppSpacing.md),
-        // The overview surface holds the global health + suggestions + legend.
-        ScheduleOverviewSurface(report: report, insights: insights),
       ],
     );
     if (!context.isDesktop) return stacked;
 
-    // Mac / iPad-landscape (≥1024): the grid is the hero. The GLOBAL schedule
-    // health / insights / legend live in a calm review band BELOW the grid, and
-    // the team inspector is a CONTEXTUAL rail — collapsible, resizable, and
-    // hidden by default on the narrower desktop tier so the grid owns the
-    // screen. Opening it is a deliberate "give me more context" gesture. Pure
-    // recomposition — every edit/save path is unchanged.
+    // Mac / iPad-landscape (≥1024): the grid is the hero. The insight strip
+    // above it carries the only facts worth flagging, and the team inspector is
+    // a CONTEXTUAL rail — collapsible, resizable, and hidden by default on the
+    // narrower desktop tier so the grid owns the screen. Opening it is a
+    // deliberate "give me more context" gesture. Pure recomposition — every
+    // edit/save path is unchanged.
     final railOpen = _inspectorOpen(context);
     final railWidth = _InspectorPrefs.width;
     return Row(
@@ -708,9 +694,8 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
                 const SizedBox(height: AppSpacing.md),
               ],
               SizedBox(height: grid.height, child: grid),
-              const SizedBox(height: AppSpacing.xl),
-              // The calm review band fills the space under the grid.
-              ScheduleOverviewSurface(report: report, insights: insights),
+              const SizedBox(height: AppSpacing.sm),
+              _weekSummary(insights),
             ],
           ),
         ),
@@ -733,7 +718,6 @@ class _ManagerScheduleViewState extends State<ManagerScheduleView> {
                 child: ScheduleInspectorDrawer(
                   schedule: schedule,
                   members: members,
-                  report: report,
                   insights: insights,
                   selectedUid: _selectedUid,
                   onSelect: (uid) => setState(() => _selectedUid = uid),

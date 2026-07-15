@@ -12,6 +12,47 @@ and [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Removed (2026-07-15 — Schedule trim: Schedule Health + the below-grid overview surface are gone)
+
+**Owner ruling:** the schedule was crowded and nobody needed the crowding. The
+same staffing facts were rendering **twice** — once in the insight strip above
+the grid, and again in a 558-line below-grid surface that also carried a health
+score, a category breakdown, findings and a legend. The strip is enough.
+
+- **Deleted (14 files):** the whole `lib/features/schedule/domain/health/`
+  package (`schedule_analysis` · `schedule_health_analyzer` ·
+  `schedule_health_report` · `schedule_rule` + the five rules
+  `coverage`/`workload`/`fairness`/`rest`/`conflict`), the backward-compatible
+  facade `domain/schedule_health.dart` (`computeScheduleHealth`), the
+  presentation surface `widgets/schedule_overview_surface.dart`, and the three
+  tests `schedule_health_test` · `schedule_health_analyzer_test` ·
+  `schedule_overview_surface_test`. This reverses **Schedule V2 · Pillar 3**
+  in full — see `docs/design/SCHEDULE_V2.md`.
+- **Kept — the insight strip is now the only staffing signal:**
+  `presentation/schedule_insights.dart` (`computeScheduleInsights` → open ·
+  one-person · short-rest · double-booked · leave-clash, click-to-filter) plus
+  the one-line `_weekSummary` caption. `schedule_insights_test` untouched.
+- **Inspector rail (`schedule_inspector_drawer.dart`):** dropped the
+  `report` parameter, the health-derived **Wellbeing** findings block, the
+  per-person **Morning / Night** split rows and the **Week at a glance** M/N
+  strip (`_weekGlance`/`_glanceMark`/`_warning` deleted). A person's week now
+  reads: weekly hours · days worked · weekend days · consecutive days · days
+  off. Owner ruling: *how many days* someone works is the operational fact;
+  *which shift types they string together* is noise the grid already shows.
+- **`domain/employee_week_stats.dart`:** removed the now-dead `morningCount`,
+  `nightCount` and `byDay` fields (no consumers left after the strip went).
+- **`manager_schedule_view.dart`:** removed the `ScheduleHealthAnalyzer.analyze`
+  call and both `ScheduleOverviewSurface` render sites. **Desktop gains the
+  `_weekSummary` line** it previously only got via the surface — so the "how
+  many people are scheduled" fact survives on every width (the inspector rail
+  that also carries it is hidden by default on the 1024–1600 tier).
+- **Untouched:** the grid, every edit / drag / swap / validation / save path,
+  shift templates, `hoursFor` resolution, Final View. Presentation + dead-code
+  removal only — no schema, rules, function, route or DI change.
+- **Verified:** `flutter analyze` clean on the touched code;
+  `flutter test` → **876 pass**. (2 failures in `splash_centering_test.dart`
+  are **pre-existing** — reproduced on a clean stash of HEAD, unrelated.)
+
 ### Changed (2026-07-15 — Attendance Phase 3 (engine): GPS-verified clock-in/out · Break removed · Community removed)
 
 Phase 3 scope adjustment + GPS engine. **This entry covers the data/logic engine

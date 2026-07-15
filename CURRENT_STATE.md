@@ -680,11 +680,10 @@ brief) with the visual language, architecture and interactions untouched:
   & assigned** fact chips (click-to-highlight, per-chip amber dot + tooltip);
   a compact **week summary** line (morning/night/leave/open/people totals)
   sits under the grid.
-- **Schedule Health** (`domain/schedule_health.dart`, pure + unit-tested):
-  weekly pattern analysis per person (grouped shift runs = healthy; flags
-  morning↔night ping-pong, short rests, 6–7-day runs, uneven team load) →
-  Healthy/Fair/Strained + recommendations in a collapsed expandable card.
-  **Advisory only — never blocks anything.**
+- ~~**Schedule Health**~~ — **REMOVED 2026-07-15** (owner ruling). The engine
+  (`domain/health/` + the `domain/schedule_health.dart` facade) and its
+  below-grid `ScheduleOverviewSurface` are deleted. The insight strip above the
+  grid is the only staffing signal now. **Do not re-add.**
 - **Final View is a real presentation mode** (`presentation` flag through
   grid/cell/chip): no dashed placeholders / hover / drag / editing indicators /
   empty-state icons; all names shown (no "+N more"), leave + notes included,
@@ -701,7 +700,7 @@ brief) with the visual language, architecture and interactions untouched:
 - **Cross-week short rest (same day):** `ScheduleCubit` loads last week's
   Saturday-night crew (parallel, best-effort; cubit context
   `previousSaturdayNight`) so Saturday night → Sunday morning is flagged by
-  insights + health and in the Final View.
+  the insight strip and in the Final View.
 
 Verification: full suite **463 pass / 2 pre-existing splash failures**
 (verified on clean tree). `flutter analyze`: 0 new.
