@@ -8,6 +8,7 @@ class AppConstants {
   static const String recurringTaskTemplatesCollection = 'recurringTaskTemplates';
   static const String branchesCollection = 'branches';
   static const String weeklySchedulesCollection = 'weekly_schedules';
+  static const String shiftTemplatesCollection = 'shift_templates';
   static const String shiftSwapsCollection = 'shift_swaps';
   static const String broadcastsCollection = 'broadcasts';
   static const String notificationsCollection = 'notifications';
@@ -36,6 +37,12 @@ class AppConstants {
   /// approved resolution is applied to the parent `attendance/{id}` record — and
   /// the audit event written — **server-side** by `onAttendanceCorrectionWritten`.
   static const String attendanceCorrectionsCollection = 'attendance_corrections';
+
+  /// Immutable Event Tracking + Audit Log. One append-only document per important
+  /// business action (`audit_logs/{id}`) — who did what, to which entity, when,
+  /// from where. Never edited; never hard-deleted (admin soft-delete only). All
+  /// writes flow through the central `EventTrackingService`.
+  static const String auditLogsCollection = 'audit_logs';
 
   // ─── Communications Center — Phase 2 ──────────────────────────
   static const String broadcastTemplatesCollection = 'broadcastTemplates';

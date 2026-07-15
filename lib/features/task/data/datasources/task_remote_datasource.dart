@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:drop/core/constants/app_constants.dart';
 import 'package:drop/core/enums/attachment_type.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/errors/exceptions.dart';
+import 'package:drop/core/media/media_upload_service.dart';
 import 'package:drop/features/task/data/models/recurring_task_template_model.dart';
 import 'package:drop/features/task/data/models/task_model.dart';
 import 'package:drop/features/task/data/models/task_template_model.dart';
+import 'package:drop/features/task/domain/entities/activity_entry.dart';
 import 'package:drop/features/task/domain/entities/task_attachment.dart';
 
 abstract class TaskRemoteDataSource {
@@ -36,6 +37,22 @@ abstract class TaskRemoteDataSource {
   /// task materialized this way sorts correctly forever after.
   Future<TaskModel?> createTaskWithId(TaskModel task);
   Future<void> updateTask(TaskModel task);
+
+  /// Atomically moves a task through its lifecycle inside a Firestore
+  /// transaction — the ONLY consistent way to change status or append to the
+  /// activity log. Re-reads the doc, and if [expectedFrom] is non-empty and the
+  /// current `status` isn't in it, throws [ConflictException] (someone moved the
+  /// task first). Otherwise it appends [appendLog] to the **server's** current
+  /// `activityLog` (never a stale client array), merges [patch] (DateTime values
+  /// auto-encoded), and bumps `version`. Pass an empty [expectedFrom] for a pure
+  /// log append with no status precondition (notes / work-event milestones).
+  Future<void> transitionTask({
+    required String taskId,
+    required Set<String> expectedFrom,
+    required Map<String, Object?> patch,
+    required List<ActivityEntry> appendLog,
+  });
+
   Future<void> deleteTask(String taskId);
   Future<void> assignTask({
     required String taskId,
@@ -46,6 +63,7 @@ abstract class TaskRemoteDataSource {
   /// Uploads one media file to `tasks/{taskId}/attachments/{id}.<ext>` (unique
   /// id, never overwrites) and returns the resolved [TaskAttachment]. Reports
   /// byte progress via [onProgress] (transferred, total) for the loading overlay.
+  /// Pass an [UploadCanceller] to make the upload abortable.
   Future<TaskAttachment> uploadAttachment({
     required String taskId,
     required File file,
@@ -53,6 +71,7 @@ abstract class TaskRemoteDataSource {
     required String uploadedBy,
     String? uploadedByName,
     int? durationMs,
+    UploadCanceller? canceller,
     void Function(int transferred, int total)? onProgress,
   });
 
@@ -72,9 +91,9 @@ abstract class TaskRemoteDataSource {
 
 class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
   final FirebaseFirestore _firestore;
-  final FirebaseStorage _storage;
+  final MediaUploadService _media;
 
-  TaskRemoteDataSourceImpl(this._firestore, this._storage);
+  TaskRemoteDataSourceImpl(this._firestore, this._media);
 
   CollectionReference<Map<String, dynamic>> get _tasks =>
       _firestore.collection(AppConstants.tasksCollection);
@@ -189,29 +208,108 @@ class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
   Future<TaskModel?> createTaskWithId(TaskModel task) async {
     try {
       final docRef = _tasks.doc(task.id);
-      if ((await docRef.get()).exists) return null;
-      await docRef.set({
-        ...task.toMap(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+      // Atomic create-if-absent: the existence check and the write are one
+      // transaction, so two concurrent callers (a reopen→re-approve replay, a
+      // retried spawn, the Cloud Function racing the client materializer) all
+      // converge on a single document instead of racing the old read-then-set.
+      // Returns null when the deterministic id already exists (a benign no-op).
+      final created = await _firestore.runTransaction<bool>((txn) async {
+        final snap = await txn.get(docRef);
+        if (snap.exists) return false;
+        txn.set(docRef, {
+          ...task.toMap(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return true;
       });
-      return task;
+      return created ? task : null;
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to create task.');
     }
   }
 
+  // Fields whose authority is the transactional transition path
+  // ([transitionTask]). A plain content update (edit / checklist tick / work-data
+  // patch) must NEVER write them from a possibly-stale client snapshot, or it
+  // could clobber the activity log or regress a lifecycle field it never meant to
+  // touch. Stripping them makes [updateTask] a pure content write; every
+  // lifecycle move + log append goes through [transitionTask] instead.
+  static const Set<String> _transitionOwnedFields = {
+    'activityLog', 'version', 'status',
+    'startedAt', 'submittedAt',
+    'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt',
+    'reviewNotes', 'rejectionReason', 'revisionNumber', 'requiresRework',
+    'archivedAt',
+  };
+
   @override
   Future<void> updateTask(TaskModel task) async {
     try {
+      final content = task.toMap()
+        ..removeWhere((k, _) => _transitionOwnedFields.contains(k));
       await _tasks.doc(task.id).set({
-        ...task.toMap(),
+        ...content,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to update task.');
     }
   }
+
+  @override
+  Future<void> transitionTask({
+    required String taskId,
+    required Set<String> expectedFrom,
+    required Map<String, Object?> patch,
+    required List<ActivityEntry> appendLog,
+  }) async {
+    try {
+      await _firestore.runTransaction((txn) async {
+        final ref = _tasks.doc(taskId);
+        final snap = await txn.get(ref);
+        if (!snap.exists || snap.data() == null) {
+          throw const ConflictException(
+              'This task no longer exists — it may have been removed.');
+        }
+        final data = snap.data()!;
+        final status = data['status'] as String? ?? 'pending';
+        if (expectedFrom.isNotEmpty && !expectedFrom.contains(status)) {
+          // Someone changed the task between the client's read and this write.
+          throw const ConflictException(
+              'This task was just updated by someone else. It has been refreshed.');
+        }
+        // Append to the SERVER's current log (the fix for the lost-update race)
+        // and bump the concurrency counter from the server's current value.
+        final serverLog =
+            (data['activityLog'] as List?)?.toList() ?? <dynamic>[];
+        final version = (data['version'] as num?)?.toInt() ?? 0;
+        txn.set(
+          ref,
+          {
+            for (final e in patch.entries) e.key: _encodeTransitionValue(e.value),
+            'activityLog': [
+              ...serverLog,
+              ...TaskModel.encodeActivityLog(appendLog),
+            ],
+            'version': version + 1,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      });
+    } on ConflictException {
+      rethrow;
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to update task.');
+    }
+  }
+
+  // Firestore can't store a raw DateTime; encode patch values on the boundary
+  // (scalars pass through untouched, incl. an explicit null used to clear a
+  // field like approvedBy on reopen).
+  static Object? _encodeTransitionValue(Object? v) =>
+      v is DateTime ? Timestamp.fromDate(v) : v;
 
   @override
   Future<void> deleteTask(String taskId) async {
@@ -242,11 +340,6 @@ class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
     }
   }
 
-  /// Hard ceiling so a misconfigured/disabled Storage bucket or a dropped
-  /// connection fails cleanly instead of hanging the submit flow indefinitely.
-  /// Videos can be large, so the window is generous.
-  static const _uploadTimeout = Duration(seconds: 180);
-
   @override
   Future<TaskAttachment> uploadAttachment({
     required String taskId,
@@ -255,109 +348,28 @@ class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
     required String uploadedBy,
     String? uploadedByName,
     int? durationMs,
+    UploadCanceller? canceller,
     void Function(int transferred, int total)? onProgress,
   }) async {
-    // Unique id per upload → files are never overwritten (each attachment is
-    // preserved). A fresh Firestore push id is a guaranteed-unique 20-char id.
-    final id = _tasks.doc().id;
-    final ext = _extensionFor(file.path, type);
-    final upload = _storage
-        .ref('${AppConstants.tasksCollection}/$taskId/attachments/$id.$ext')
-        .putFile(file, SettableMetadata(contentType: _contentType(ext, type)));
-    // Live byte progress for the shared loading overlay.
-    final sub = upload.snapshotEvents
-        .listen((s) => onProgress?.call(s.bytesTransferred, s.totalBytes));
-    try {
-      final snapshot = await upload.timeout(
-        _uploadTimeout,
-        onTimeout: () {
-          upload.cancel();
-          throw const ServerException(
-              'Upload timed out. Check your connection and try again.');
-        },
-      );
-      final url =
-          await snapshot.ref.getDownloadURL().timeout(const Duration(seconds: 30));
-      return TaskAttachment(
-        id: id,
-        url: url,
-        type: type,
-        uploadedAt: DateTime.now(),
-        uploadedBy: uploadedBy,
-        uploadedByName: uploadedByName,
-        durationMs: durationMs,
-      );
-    } on TimeoutException {
-      throw const ServerException(
-          'Upload timed out. Check your connection and try again.');
-    } on FirebaseException catch (e) {
-      throw ServerException(_storageError(e));
-    } finally {
-      await sub.cancel();
-    }
-  }
-
-  /// Lower-case file extension, falling back to a sensible default per [type].
-  static String _extensionFor(String path, AttachmentType type) {
-    final dot = path.lastIndexOf('.');
-    if (dot != -1 && dot < path.length - 1) {
-      final ext = path.substring(dot + 1).toLowerCase();
-      if (ext.isNotEmpty && ext.length <= 5) return ext;
-    }
-    return type.isVideo ? 'mp4' : 'jpg';
-  }
-
-  /// MIME type from extension (falls back to a generic image/video type).
-  static String _contentType(String ext, AttachmentType type) {
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'webp':
-        return 'image/webp';
-      case 'heic':
-        return 'image/heic';
-      case 'gif':
-        return 'image/gif';
-      case 'mp4':
-        return 'video/mp4';
-      case 'mov':
-        return 'video/quicktime';
-      case 'm4v':
-        return 'video/x-m4v';
-      case 'webm':
-        return 'video/webm';
-      default:
-        return type.isVideo ? 'video/mp4' : 'image/jpeg';
-    }
-  }
-
-  /// Translates a Storage [FirebaseException] into an actionable message.
-  ///
-  /// The previous implementation blamed *every* failure on the network, which
-  /// masked the real cause: an `unauthorized` / `object-not-found` error almost
-  /// always means the Storage rules aren't deployed or the bucket isn't enabled
-  /// — not a bad connection. Surfacing the real code is what makes the proof
-  /// pipeline diagnosable in the field.
-  static String _storageError(FirebaseException e) {
-    switch (e.code) {
-      case 'unauthorized':
-      case 'unauthenticated':
-        return 'Upload was blocked by Storage permissions (${e.code}). '
-            'Firebase Storage rules likely need to be deployed.';
-      case 'object-not-found':
-      case 'bucket-not-found':
-      case 'project-not-found':
-        return 'Firebase Storage isn\'t set up for this project (${e.code}). '
-            'Enable Storage in the Firebase console, then retry.';
-      case 'retry-limit-exceeded':
-      case 'canceled':
-        return 'Upload failed — check your connection and try again.';
-      default:
-        return e.message ?? 'Upload failed (${e.code}).';
-    }
+    // The Storage mechanics (unique id → never overwritten, content-type,
+    // cache-control, progress, timeout, error translation) live once in
+    // [MediaUploadService]; this maps its result onto the task's attachment.
+    final media = await _media.upload(
+      basePath: '${AppConstants.tasksCollection}/$taskId/attachments',
+      file: file,
+      type: type,
+      canceller: canceller,
+      onProgress: onProgress,
+    );
+    return TaskAttachment(
+      id: media.id,
+      url: media.url,
+      type: type,
+      uploadedAt: DateTime.now(),
+      uploadedBy: uploadedBy,
+      uploadedByName: uploadedByName,
+      durationMs: durationMs,
+    );
   }
 
   // ─── Task templates ────────────────────────────────────────────

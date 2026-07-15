@@ -40,6 +40,8 @@ class TaskModel {
   final TaskAssignmentType assignmentType;
   final DateTime? instanceDate;
   final String? sourceTemplateId;
+  final String? recurrenceRootId;
+  final String? occurrenceKey;
   final DateTime? startsAt;
   final DateTime? deadline;
   final String? notes;
@@ -59,6 +61,7 @@ class TaskModel {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? archivedAt;
+  final int version;
 
   const TaskModel({
     required this.id,
@@ -79,6 +82,8 @@ class TaskModel {
     this.assignmentType = TaskAssignmentType.individual,
     this.instanceDate,
     this.sourceTemplateId,
+    this.recurrenceRootId,
+    this.occurrenceKey,
     this.startsAt,
     this.deadline,
     this.notes,
@@ -98,6 +103,7 @@ class TaskModel {
     this.createdAt,
     this.updatedAt,
     this.archivedAt,
+    this.version = 0,
   });
 
   factory TaskModel.fromMap(Map<String, dynamic> map, {String? id}) => TaskModel(
@@ -119,6 +125,8 @@ class TaskModel {
         assignmentType: TaskAssignmentType.fromString(map['assignmentType'] as String?),
         instanceDate: map.date('instanceDate'),
         sourceTemplateId: map['sourceTemplateId'] as String?,
+        recurrenceRootId: map['recurrenceRootId'] as String?,
+        occurrenceKey: map['occurrenceKey'] as String?,
         startsAt: map.date('startsAt'),
         deadline: map.date('deadline'),
         notes: map['notes'] as String?,
@@ -138,6 +146,7 @@ class TaskModel {
         createdAt: map.date('createdAt'),
         updatedAt: map.date('updatedAt'),
         archivedAt: map.date('archivedAt'),
+        version: (map['version'] as num?)?.toInt() ?? 0,
       );
 
   factory TaskModel.fromEntity(TaskEntity e) => TaskModel(
@@ -159,6 +168,8 @@ class TaskModel {
         assignmentType: e.assignmentType,
         instanceDate: e.instanceDate,
         sourceTemplateId: e.sourceTemplateId,
+        recurrenceRootId: e.recurrenceRootId,
+        occurrenceKey: e.occurrenceKey,
         startsAt: e.startsAt,
         deadline: e.deadline,
         notes: e.notes,
@@ -178,10 +189,13 @@ class TaskModel {
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
         archivedAt: e.archivedAt,
+        version: e.version,
       );
 
   /// Persisted fields. `createdAt`/`updatedAt` are written by the datasource as
-  /// server timestamps, so they are intentionally not included here. `deadline`
+  /// server timestamps, so they are intentionally not included here. `version`
+  /// is likewise omitted — it is owned by the transactional transition path
+  /// (`transitionTask`), so a plain write can never regress it. `deadline`
   /// is converted to a [Timestamp] when present. `assignedEmployeeId` mirrors
   /// the primary assignee for backward compatibility (rules / statistics).
   Map<String, dynamic> toMap() => {
@@ -204,6 +218,8 @@ class TaskModel {
         'assignmentType': assignmentType.value,
         'instanceDate': instanceDate == null ? null : Timestamp.fromDate(instanceDate!),
         'sourceTemplateId': sourceTemplateId,
+        'recurrenceRootId': recurrenceRootId,
+        'occurrenceKey': occurrenceKey,
         'startsAt': startsAt == null ? null : Timestamp.fromDate(startsAt!),
         'deadline': deadline == null ? null : Timestamp.fromDate(deadline!),
         'notes': notes,
@@ -248,6 +264,8 @@ class TaskModel {
         assignmentType: assignmentType,
         instanceDate: instanceDate,
         sourceTemplateId: sourceTemplateId,
+        recurrenceRootId: recurrenceRootId,
+        occurrenceKey: occurrenceKey,
         startsAt: startsAt,
         deadline: deadline,
         notes: notes,
@@ -267,6 +285,7 @@ class TaskModel {
         createdAt: createdAt,
         updatedAt: updatedAt,
         archivedAt: archivedAt,
+        version: version,
       );
 
   TaskEntity toEntity() => TaskEntity(
@@ -288,6 +307,8 @@ class TaskModel {
         assignmentType: assignmentType,
         instanceDate: instanceDate,
         sourceTemplateId: sourceTemplateId,
+        recurrenceRootId: recurrenceRootId,
+        occurrenceKey: occurrenceKey,
         startsAt: startsAt,
         deadline: deadline,
         notes: notes,
@@ -307,7 +328,16 @@ class TaskModel {
         createdAt: createdAt,
         updatedAt: updatedAt,
         archivedAt: archivedAt,
+        version: version,
       );
+
+  /// Serializes activity entries to their Firestore map form — the single
+  /// encoder, reused by the transactional transition path (which appends to the
+  /// server's current log outside `toMap`). Public so the datasource can encode
+  /// the entries it appends without duplicating the shape.
+  static List<Map<String, dynamic>> encodeActivityLog(
+          List<ActivityEntry> log) =>
+      _activityLogToList(log);
 
   /// Reads `assigneeIds` (array); falls back to the legacy single
   /// `assignedEmployeeId` string for documents written before Phase 9.

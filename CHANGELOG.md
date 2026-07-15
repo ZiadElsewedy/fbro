@@ -141,6 +141,283 @@ clock actions stay instant/optimistic on Firestore offline persistence.
   `functions` (`onAttendanceWritten`, `onAttendanceCorrectionWritten`,
   `autoCloseAttendance`). The client degrades gracefully until deployed (clock
   in/out works; the audit trail + corrections + auto-close activate on deploy).
+### Added / Fixed (2026-07-13 — Automated Task Engine hardening: deterministic recurrence · idempotent generation · Automation Center + history · roster filtering · audit)
+
+Production-hardening pass on the **Automated Task Engine** after a full audit (the
+10-part audit + diagram lives in `docs/design/AUTOMATION_ENGINE.md`). Owner-approved
+**P0 + P1**, calibrated to small-team scale — no parallel automation backend, no
+round-robin assignment engine, no standalone analytics dashboard.
+
+**P0 — the duplicate-task bug (per-task recurrence, "Path B").**
+`TaskCubit._spawnNextRecurrence` created the next instance with a **random
+auto-generated document id**, so its only duplicate protection was the emergent
+approve state machine — **reopen → re-approve legitimately ran the spawn twice and
+wrote two successors** (a random id each time). Fixed by making idempotency
+*intrinsic*: the successor's id is now the **deterministic `rec_{sourceTaskId}`**
+(each task spawns at most one successor, so it keys off the stable current-task id —
+independent of the deadline, which can be null), written through a now-**atomic**
+`TaskRemoteDataSource.createTaskWithId` (Firestore transaction: get → if-exists
+return-null → set). Reopen→re-approve, retries, and concurrent writers all converge
+on one document; a duplicate is a silent no-op. New additive `TaskEntity`/`TaskModel`
+fields **`recurrenceRootId`** (stable lineage id) + **`occurrenceKey`** (successor
+due-date key, for display).
+
+**P0 — the Cloud Function ("Path A", `generateShiftTaskInstances`).** The
+deterministic `rt_{tpl}_{date}` id already prevented duplicate task *documents*, but
+the id check was a non-atomic **read-then-`set`** and the notify step was
+unconditional — an overlapping run / scheduler retry could **re-notify the whole
+roster**. Now uses an **atomic `ref.create()`** (catch `ALREADY_EXISTS` → skip),
+notifies **only on a real create** with **deterministic notification ids**
+(`autoassign_{taskId}_{uid}`), and both scheduled functions
+(`generateShiftTaskInstances`, `runTaskReminders`) run with **`maxInstances: 1` +
+`retryCount: 0` + `timeoutSeconds`** so overlap is structurally impossible.
+
+**P1 — Automation Center (extends `recurringTaskTemplates`, no new backend).** Six
+additive template fields — `updatedBy` (client-written) + the Cloud-Function-owned
+health rollups **`lastRunAt` / `nextRunAt` / `lastStatus` / `lastGeneratedTaskId` /
+`failureCount`** (omitted from `toMap`, like `version`, so a client edit can't
+regress them). The "Manage Recurring Shift Tasks" sheet became the **Automation
+Center**: each routine shows live health (ran-relative · next-run · status · ⚠ N
+failed runs) via the new `_AutomationHealthLine` (monochrome; red only when failing).
+
+**P1 — Automation History (`automationRuns`).** New collection, written by the
+Cloud Function per (template, day) at a **deterministic id** `{templateId}_{dateKey}`
+(idempotent history — a retry overwrites, never appends): `startedAt/finishedAt/
+durationMs`, `executionId`, `status` (completed/skipped/failed), `outcome`
+(created/alreadyExists/noEligibleEmployees/error), `generatedTaskId`,
+`recipientCount`, `failureReason`. `firestore.rules`: read admin, or manager of the
+run's branch; **write server-only** (Admin SDK bypasses). It is operational run
+telemetry, distinct from `audit_logs` (business facts). Kept bounded by a new
+`taskHousekeeping` prune sweep (`automationRunRetentionDays`, default 90).
+
+**P1 — Automatic assignment hardened.** The generator's roster notify now **filters
+out on-leave employees** (`leave[day]`) **and deactivated accounts** (`isActive`),
+and records **`noEligibleEmployees`** as a first-class run outcome instead of failing
+silently (the task is still created).
+
+**P1 — Audit events (reuses Event Tracking, no parallel system).** New
+`AuditEventType`s `task.auto_generated` / `automation.assigned` / `automation.failed`
+(+ `AuditEntityType.automation`); the Cloud Function writes matching `audit_logs`
+docs as the `system` actor, so automation shows in the audit feed.
+
+**Tests.** `task_cubit_test.dart` +3 (deterministic `rec_{sourceId}` id · reopen→
+re-approve targets the same id · lineage-root preserved); `task_model_shift_test.dart`
++3 (lineage round-trip + back-compat). `flutter analyze` clean on touched files;
+suite **805 pass / 2 fail** (the 2 are the pre-existing desktop splash-centering
+geometry tests — unrelated).
+
+**Deploy pending (owner's machine):** `firebase deploy --only
+functions:generateShiftTaskInstances,functions:runTaskReminders,functions:taskHousekeeping`
++ `firestore:rules` (the `automationRuns` block). No data migration — every field
+is additive.
+
+### Added / Fixed (2026-07-11 — Task lifecycle hardening: transactional transitions · optimistic concurrency · shift-review notifications · audit gaps · rules)
+
+Production-hardening pass on Task Management following a full architecture audit
+(no feature changes; calibrated to the small-team scale per the product
+philosophy). Scope: the approved **P0 + P1** findings.
+
+**P0 — data consistency (the concurrent-reviewer race).** Every status transition
+was a read-modify-write that `set(merge:true)`-wrote the **whole** `activityLog`
+array from the client's (possibly stale) snapshot, with the transition legality
+checked only client-side (`_canTransition`). Two reviewers acting on the same task
+within ~1s could lose one's activity-log entry, fire contradictory notifications,
+and (for a recurring task) **double-spawn** the next instance. Fixed with a new
+**`TaskRepository.transitionTask`** — a single Firestore **transaction** that
+re-reads the doc, verifies the current `status` is a legal predecessor (`expectedFrom`;
+raises `ConflictException`/`ConflictFailure` otherwise), appends the new
+`ActivityEntry` to the **server's** current log, merges only the changed fields,
+and bumps a new additive **`version`** optimistic-concurrency counter
+(`TaskEntity.version`, default 0, no migration; owned by the transaction, omitted
+from `TaskModel.toMap` so a stale write can't regress it). `TaskCubit`'s
+`start`/`submitForReview`/`completeAndSubmit`/`approve`/`reject`/`rework`/`reopen`
+and the pure log appends (`addNote`/`logWorkEvent`) now route through it via a new
+`_transition` helper (the `from:` set replaces `_canTransition`, removed). The
+recurrence spawn moved **post-commit**, so only the reviewer that won the
+transaction spawns the next instance. Plain **`updateTask` is now content-only**:
+the datasource strips `_transitionOwnedFields` (status, `activityLog`, review
+fields, `version`, `archivedAt`), so a stale content edit / checklist tick can no
+longer clobber the log or regress a lifecycle field. A lost race surfaces a benign
+"it's been refreshed" notice; the realtime stream then delivers the true state.
+
+**P1-3 — shift-task review notifications.** A `shift`-assigned task has no named
+assignees, so `approve`/`reject`/`rework` (which fell back to `assigneeIds`) never
+notified the employee who did the work. New `TaskCubit._reviewRecipients` resolves
+the rostered employees for the task's shift/day (mirroring assignment) and passes
+them as the notify recipient override.
+
+**P1-4 — audit gaps.** `reopenTask` (undoing a locked, reviewed record — the most
+consequential admin action), `deleteTask`, and `editTask` produced **no** audit
+event; create logged `taskAssigned` even for an unassigned task. Added
+`AuditEventType.taskCreated` / `taskUpdated` / `taskDeleted` / `taskReopened`;
+create now logs `taskCreated`, edit logs `taskUpdated`, `assignEmployees` logs
+`taskAssigned`, delete logs `taskDeleted`, reopen logs `taskReopened`.
+
+**P1-5 — employee write hardening (`firestore.rules`, needs deploy).** The employee
+`tasks/{id}` update branch now also freezes `reviewNotes` / `rejectionReason` /
+`revisionNumber` / `approvedAt` / `rejectedAt` and requires the `activityLog` to
+only **grow** (size non-decreasing) — a crafted client can no longer rewrite the
+verdict or erase a manager's rejection note. Employees' legitimate writes
+(start / submit / checklist / proof) never touch these, so the guard costs nothing.
+
+**Tests.** New `test/task_cubit_test.dart` (10 tests, hand-written fakes): transition
+mechanics + correct `expectedFrom`/patch/append per action, illegal-move short-circuit,
+`ConflictFailure` surfaced-not-crashed, reopen/delete audited, shift-task review
+recipients. Full suite green (only the 2 pre-existing `splash_centering_test`
+geometry failures remain, unrelated). `flutter analyze` clean on all changed files.
+
+**Deploy:** `firebase deploy --only firestore:rules` (P1-5 employee-write tightening).
+No data migration — `version` and the audit-enum additions are additive with safe
+defaults; the transaction is a write-path change only.
+
+### Added / Fixed (2026-07-11 — Media upload FINAL hardening: cancellation · retry · analytics · orphan GC)
+
+The last production-hardening pass before merge (`feature/media-upload-v2`). Lean,
+no feature creep — no offline queue, no pause/resume, no background uploads, no
+reordering. Four priorities:
+
+**Upload cancellation (P1).** New `UploadCanceller` + `UploadCancelledException`
+(`core/media/media_upload_service.dart`), threaded through the task upload chain
+exactly like `onProgress` (use case → repo → datasource → service). The submission
+overlay gained a **Cancel** button (interactive over a tap-absorbing barrier; shows
+"Cancelling…" then disappears) wired to new `TaskCubit.cancelSubmission()`. Cancel
+aborts every active Firebase `UploadTask`; the submission unwinds through
+`UploadCancelledException` and restores the UI **quietly** (no error), keeping the
+picked media and never leaving the cubit in a submitting state. Cancel is **hidden
+during `finalizing`** so the Firestore write always finishes (uploaded evidence is
+never orphaned mid-commit). Idempotent and crash-safe across every edge (cancel
+during preparing / uploading / finalizing / already-done / double-tap).
+
+**Retry improvements (P2).** A per-submission `_uploadedCache` (file path → result,
+scoped to one task) means a retry after a partial failure/cancel re-uploads **only
+what didn't already succeed** — a Firestore-fail-after-upload retry re-uploads
+nothing. Cleared on success or a task change; kept across a failure/cancel so the
+retry benefits. No job scheduler, no offline queue.
+
+**Upload analytics (P3).** Four new `AuditEventType`s (`media.upload_started` /
+`_completed` / `_failed` / `_cancelled`) recorded through the **existing**
+`EventTrackingService` seam (reusing `_trackTask`), targeting the task entity so
+they sit in its audit history. Metadata: `fileCount · imageCount · videoCount ·
+totalBytes · durationMs` (a `Stopwatch`) · `uploadedCount` (on failure/cancel) ·
+`compressionRatio` (compressed/original, from a new `PickedAttachment.originalBytes`
+captured at video-compress time). Best-effort; never blocks the submit.
+
+**Storage integrity / orphan GC (P4).** The Admin SDK **bypasses** the create-only
+Storage rules, so server-side cleanup is possible. Added an **opt-in** third sweep
+to the existing `taskHousekeeping` Cloud Function: it reconciles each task's
+`attachments/` folder against the URLs the doc references and deletes the
+unreferenced, **past-grace** objects. Safeguards: OFF unless
+`config/taskRetention.gcOrphanAttachments: true`; a `gcGraceHours` window (default
+48h) so in-flight/retryable uploads are untouched; **skips a task entirely if any
+referenced URL can't be parsed** (never deletes on incomplete info); newest-first +
+`RUN_CAP` bounded; logs every deletion. **Needs a functions deploy** (and the config
+flag) to activate.
+
+**Tests:** new `upload_canceller_test.dart` (state machine + exception type).
+`flutter analyze` clean on touched files; full suite unchanged (only the 2
+pre-existing splash-centering failures). **Deploy:** functions (for the GC).
+
+### Added / Fixed / Refactored (2026-07-11 — Media upload hardening: shared service + image editor + video compression)
+
+Focused high-ROI pass on the media pipeline (`feature/media-upload-v2`, branched
+off the notifications work). The pipeline was already mature (shared picker,
+state-driven progress overlay, immutable create-only Storage, gallery + fullscreen
+viewer) — this **hardens and enriches** it, not a rewrite.
+
+**Refactored — one upload seam (kills triplication).**
+- NEW `lib/core/media/media_upload_service.dart` (`MediaUploadService`) is the
+  single Storage-upload path. The `uploadAttachment` + `_extensionFor` +
+  `_contentType` + `_storageError` + 180s-timeout block that was copied verbatim
+  across the **task / case / request** datasources now lives here once; all three
+  delegate. Behaviour preserved, plus a long `Cache-Control` (`public, max-age=604800`)
+  on every object → fewer repeat Firebase downloads on the review/gallery surfaces
+  (media is immutable, so it caches hard).
+- NEW `lib/core/media/picked_attachment.dart` — `PickedAttachment` moved out of
+  `task_cubit` into `core` (cases/requests no longer import a task cubit for it).
+- NEW `lib/core/utils/concurrent.dart` (`mapPooled`) — task submission uploads with
+  a **concurrency cap of 3** (not unbounded `Future.wait`) so a multi-video submit
+  can't saturate a mobile connection; progress uses a **fixed denominator** (summed
+  file sizes) so the bar stays smooth.
+
+**Added — image editor before upload.**
+- NEW `lib/core/media/media_processing.dart` `editImage` wraps `image_cropper`
+  (crop / rotate / flip / aspect presets / reset), themed monochrome. Edited bytes
+  replace the original (original never uploaded); the re-encode strips EXIF. Wired
+  into `AttachmentPickerField`: opens automatically after a camera capture, and every
+  image thumbnail gets a **tap-to-edit** affordance (pencil badge).
+- Mobile only — gated on new `supportsImageEditing` (platform_capabilities); macOS
+  desktop/web upload unedited (image_cropper has no desktop impl). AndroidManifest
+  declares the uCrop activity.
+
+**Added — client-side video compression.**
+- `media_processing.compressVideo` (`video_compress`) transcodes a picked video to a
+  medium-quality file **before** upload behind a cancellable progress dialog — the
+  biggest Storage/egress saving. A failure falls back to the original (a pick is
+  never lost); an explicit cancel aborts adding it. Gated on `supportsVideoCompression`.
+
+**Fixed — performance / cost.**
+- Fullscreen `_VideoPage` no longer `setState`s on every playback tick (~60fps) — it
+  rebuilds only when play/pause flips (the scrubber self-updates). Fullscreen images
+  decode with a `cacheWidth` cap; picker thumbnails decode at 216px.
+- `storage.rules`: the task/case/request **create** rules gained a binding
+  `validMedia()` ceiling (`size < 220MB` + `contentType` is image/video) — client
+  caps aren't binding server-side. Event-hero pick now passes `imageQuality` (strips
+  EXIF + shrinks the only image with no compression step). **Rules need a deploy.**
+
+**Dependencies:** `image_cropper: ^9.0.0`, `video_compress: ^3.1.4` (both mobile-gated).
+
+**Tests:** new `concurrent_test.dart` (mapPooled order / concurrency cap / first-error
+stop / clamp). `flutter analyze` clean on touched files; full suite unchanged (only the
+2 pre-existing splash-centering failures).
+
+**Deferred (fast P2 follow-up):** upload-cancel on the submission overlay · per-file
+retry queue · reorder / explicit replace · a11y Semantics + 44px hit targets ·
+pause-video-on-swipe · `cached_network_image` disk cache · gallery-video duration cap.
+**Owner-machine deploy:** `storage.rules`; optional Storage orphan-GC function (a
+partial-upload failure can orphan already-uploaded blobs — documented, not built).
+
+### Fixed / Added (2026-07-10 — Notifications V2: pilot reliability + crash-safe deep links)
+
+Pilot-hardening pass on the notification system (`feature/notifications-v2`).
+The in-app Notification Center (grouping · read/unread · mark-all · archive ·
+pagination) was already built and is **unchanged** here except where a bug fix
+required it. Full technical doc: `docs/design/NOTIFICATIONS_V2.md`.
+
+- **One deep-link resolver, both tap surfaces (NEW `lib/features/notifications/domain/notification_deep_link.dart`).**
+  A pure, role-aware `resolveNotificationRoute(route, payload, role)` now backs
+  BOTH the in-app inbox tile (`NotificationsScreen._deepLink`) and the FCM push
+  handler (`main.dart onMessageTap`), so a task/broadcast/schedule/case/request
+  opens the SAME destination however it's tapped (foreground · background ·
+  cold-start · in-app). Returns `null` = guarded no-op (no safe target); the
+  caller falls back to the inbox. **Navigation never crashes** on a stale /
+  unknown / unauthorized notification. Route strings centralized as
+  `NotificationRoute.*` and referenced by the client producers.
+- **B1 (push data payload) — FIXED.** `onNotificationCreated` (functions) omitted
+  `requestId` and `swapId` from the FCM `data` block, so **request/swap push taps
+  had no target id** — the deep link was lost on a background/cold-start tap. All
+  ids the resolver reads are now forwarded (`taskId · caseId · requestId ·
+  broadcastId · swapId`). **Requires a functions deploy to take effect.**
+- **B2 / B4 (FCM tap routing) — FIXED.** The push tap handler previously routed
+  only `task_details` (everything else dumped you at the inbox); it now uses the
+  shared resolver, so case/request/schedule/broadcast push taps deep-link.
+- **B3 (broadcast deep-link) — FIXED.** `BroadcastDetailScreen` dead-ended on
+  "Broadcast unavailable" when the Communications feed wasn't loaded. Added
+  `BroadcastRepository.getBroadcast(id)` (+ datasource + `BroadcastCubit.fetchById`)
+  and a one-shot self-resolve so a cold notification tap shows the real message.
+- **B5 (foreground push) — FIXED.** `NotificationService.onForeground` now carries
+  the `data` payload; the foreground snackbar gained a tappable **"View"** action
+  that deep-links via the resolver (previously a text-only dead end).
+- **Android push config.** `AndroidManifest.xml` now declares `POST_NOTIFICATIONS`
+  (the Android 13+ runtime permission, without which every push is silently
+  dropped) and `INTERNET`.
+- **Tests.** New `notification_deep_link_test.dart` (resolver mapping for every
+  route/type + missing-id fallbacks + guarded no-op) and `notification_cubit_test.dart`
+  (read/unread count · archived-excluded · action delegation · pagination · reset).
+  Updated the tap-flow probe to assert the B3 fix, and corrected a stale
+  category-pills assertion (the enum has `Requests`). All notification tests pass.
+- **iOS push (deferred).** Still unconfigured (no entitlements / `aps-environment`
+  / background mode). Documented in the checklist; needs Xcode signing + an APNs
+  key. Not touched in this Android-first pass.
 
 ### Added (2026-07-08 — Community Hub / DROP Events: the flagship event workspace)
 

@@ -38,4 +38,40 @@ void main() {
       expect(TaskModel.fromEntity(e).toEntity().shift, ScheduleShift.night);
     });
   });
+
+  // Recurrence lineage (Automated Task Engine) — the deterministic-successor
+  // fields written by `_spawnNextRecurrence`. Additive + nullable: absent on
+  // every pre-existing / non-recurring task.
+  group('TaskModel recurrence lineage serialization', () {
+    test('writes recurrenceRootId + occurrenceKey', () {
+      final map = const TaskModel(
+        id: 'rec_t1',
+        title: 't',
+        recurrenceRootId: 't1',
+        occurrenceKey: '2026-01-11',
+      ).toMap();
+      expect(map['recurrenceRootId'], 't1');
+      expect(map['occurrenceKey'], '2026-01-11');
+    });
+
+    test('absent on a plain task (back-compat)', () {
+      expect(TaskModel.fromMap(const {}).recurrenceRootId, isNull);
+      expect(TaskModel.fromMap(const {}).occurrenceKey, isNull);
+      final map = const TaskModel(id: '1', title: 't').toMap();
+      expect(map['recurrenceRootId'], isNull);
+      expect(map['occurrenceKey'], isNull);
+    });
+
+    test('round-trips through the entity boundary', () {
+      const e = TaskEntity(
+        id: 'rec_t1',
+        title: 't',
+        recurrenceRootId: 't1',
+        occurrenceKey: '2026-01-11',
+      );
+      final back = TaskModel.fromEntity(e).toEntity();
+      expect(back.recurrenceRootId, 't1');
+      expect(back.occurrenceKey, '2026-01-11');
+    });
+  });
 }

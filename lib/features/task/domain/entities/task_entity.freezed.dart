@@ -91,6 +91,21 @@ mixin _$TaskEntity {
   /// one-off tasks and for every task predating recurring shift templates.
   String? get sourceTemplateId => throw _privateConstructorUsedError;
 
+  /// Stable lineage id for a **per-task recurrence** chain (Path B). Set on
+  /// every auto-spawned successor to the id of the chain's *root* task (the
+  /// first, manually-created one), so an admin can group / query a whole
+  /// recurring lineage. Null on a one-off task and on the root itself until it
+  /// spawns. Additive — no migration. See `TaskCubit._spawnNextRecurrence`.
+  String? get recurrenceRootId => throw _privateConstructorUsedError;
+
+  /// The occurrence this auto-spawned task is *for* — the successor's due-date
+  /// key (`yyyy-MM-dd`), stored for display/debugging in the Automation Center.
+  /// Distinct from the **document id**, which is the deterministic idempotency
+  /// key `rec_{sourceTaskId}` (each task spawns at most one successor, so the
+  /// successor keys off the current task id and never off a possibly-null
+  /// deadline). Null for non-recurring tasks. Additive — no migration.
+  String? get occurrenceKey => throw _privateConstructorUsedError;
+
   /// When the task is scheduled to **start** (Task Scheduling V2). Pre-filled
   /// from the assigned shift's hours as a *smart default* the manager can
   /// override; null on tasks predating scheduling (unknown start). Additive —
@@ -159,6 +174,14 @@ mixin _$TaskEntity {
   /// statistics and deep-links keep working.
   DateTime? get archivedAt => throw _privateConstructorUsedError;
 
+  /// Optimistic-concurrency counter, bumped by the server-authoritative
+  /// transition path (`TaskRepository.transitionTask`) on every lifecycle move.
+  /// A plain content edit never writes it. Additive — missing on any doc
+  /// predating it → 0 (no migration). Not persisted by `TaskModel.toMap` (the
+  /// transaction owns it, exactly like `createdAt`/`updatedAt`), so a stale
+  /// client edit can never regress it. Read-only to the UI.
+  int get version => throw _privateConstructorUsedError;
+
   /// Create a copy of TaskEntity
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -192,6 +215,8 @@ abstract class $TaskEntityCopyWith<$Res> {
     TaskAssignmentType assignmentType,
     DateTime? instanceDate,
     String? sourceTemplateId,
+    String? recurrenceRootId,
+    String? occurrenceKey,
     DateTime? startsAt,
     DateTime? deadline,
     String? notes,
@@ -211,6 +236,7 @@ abstract class $TaskEntityCopyWith<$Res> {
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? archivedAt,
+    int version,
   });
 
   $RecurrenceConfigCopyWith<$Res>? get recurrence;
@@ -249,6 +275,8 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
     Object? assignmentType = null,
     Object? instanceDate = freezed,
     Object? sourceTemplateId = freezed,
+    Object? recurrenceRootId = freezed,
+    Object? occurrenceKey = freezed,
     Object? startsAt = freezed,
     Object? deadline = freezed,
     Object? notes = freezed,
@@ -268,6 +296,7 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
     Object? archivedAt = freezed,
+    Object? version = null,
   }) {
     return _then(
       _value.copyWith(
@@ -342,6 +371,14 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
             sourceTemplateId: freezed == sourceTemplateId
                 ? _value.sourceTemplateId
                 : sourceTemplateId // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            recurrenceRootId: freezed == recurrenceRootId
+                ? _value.recurrenceRootId
+                : recurrenceRootId // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            occurrenceKey: freezed == occurrenceKey
+                ? _value.occurrenceKey
+                : occurrenceKey // ignore: cast_nullable_to_non_nullable
                       as String?,
             startsAt: freezed == startsAt
                 ? _value.startsAt
@@ -419,6 +456,10 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
                 ? _value.archivedAt
                 : archivedAt // ignore: cast_nullable_to_non_nullable
                       as DateTime?,
+            version: null == version
+                ? _value.version
+                : version // ignore: cast_nullable_to_non_nullable
+                      as int,
           )
           as $Val,
     );
@@ -467,6 +508,8 @@ abstract class _$$TaskEntityImplCopyWith<$Res>
     TaskAssignmentType assignmentType,
     DateTime? instanceDate,
     String? sourceTemplateId,
+    String? recurrenceRootId,
+    String? occurrenceKey,
     DateTime? startsAt,
     DateTime? deadline,
     String? notes,
@@ -486,6 +529,7 @@ abstract class _$$TaskEntityImplCopyWith<$Res>
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? archivedAt,
+    int version,
   });
 
   @override
@@ -524,6 +568,8 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
     Object? assignmentType = null,
     Object? instanceDate = freezed,
     Object? sourceTemplateId = freezed,
+    Object? recurrenceRootId = freezed,
+    Object? occurrenceKey = freezed,
     Object? startsAt = freezed,
     Object? deadline = freezed,
     Object? notes = freezed,
@@ -543,6 +589,7 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
     Object? archivedAt = freezed,
+    Object? version = null,
   }) {
     return _then(
       _$TaskEntityImpl(
@@ -617,6 +664,14 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
         sourceTemplateId: freezed == sourceTemplateId
             ? _value.sourceTemplateId
             : sourceTemplateId // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        recurrenceRootId: freezed == recurrenceRootId
+            ? _value.recurrenceRootId
+            : recurrenceRootId // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        occurrenceKey: freezed == occurrenceKey
+            ? _value.occurrenceKey
+            : occurrenceKey // ignore: cast_nullable_to_non_nullable
                   as String?,
         startsAt: freezed == startsAt
             ? _value.startsAt
@@ -694,6 +749,10 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
             ? _value.archivedAt
             : archivedAt // ignore: cast_nullable_to_non_nullable
                   as DateTime?,
+        version: null == version
+            ? _value.version
+            : version // ignore: cast_nullable_to_non_nullable
+                  as int,
       ),
     );
   }
@@ -721,6 +780,8 @@ class _$TaskEntityImpl extends _TaskEntity {
     this.assignmentType = TaskAssignmentType.individual,
     this.instanceDate,
     this.sourceTemplateId,
+    this.recurrenceRootId,
+    this.occurrenceKey,
     this.startsAt,
     this.deadline,
     this.notes,
@@ -740,6 +801,7 @@ class _$TaskEntityImpl extends _TaskEntity {
     this.createdAt,
     this.updatedAt,
     this.archivedAt,
+    this.version = 0,
   }) : _assigneeIds = assigneeIds,
        _checklist = checklist,
        _referenceAttachments = referenceAttachments,
@@ -885,6 +947,23 @@ class _$TaskEntityImpl extends _TaskEntity {
   @override
   final String? sourceTemplateId;
 
+  /// Stable lineage id for a **per-task recurrence** chain (Path B). Set on
+  /// every auto-spawned successor to the id of the chain's *root* task (the
+  /// first, manually-created one), so an admin can group / query a whole
+  /// recurring lineage. Null on a one-off task and on the root itself until it
+  /// spawns. Additive — no migration. See `TaskCubit._spawnNextRecurrence`.
+  @override
+  final String? recurrenceRootId;
+
+  /// The occurrence this auto-spawned task is *for* — the successor's due-date
+  /// key (`yyyy-MM-dd`), stored for display/debugging in the Automation Center.
+  /// Distinct from the **document id**, which is the deterministic idempotency
+  /// key `rec_{sourceTaskId}` (each task spawns at most one successor, so the
+  /// successor keys off the current task id and never off a possibly-null
+  /// deadline). Null for non-recurring tasks. Additive — no migration.
+  @override
+  final String? occurrenceKey;
+
   /// When the task is scheduled to **start** (Task Scheduling V2). Pre-filled
   /// from the assigned shift's hours as a *smart default* the manager can
   /// override; null on tasks predating scheduling (unknown start). Additive —
@@ -983,9 +1062,19 @@ class _$TaskEntityImpl extends _TaskEntity {
   @override
   final DateTime? archivedAt;
 
+  /// Optimistic-concurrency counter, bumped by the server-authoritative
+  /// transition path (`TaskRepository.transitionTask`) on every lifecycle move.
+  /// A plain content edit never writes it. Additive — missing on any doc
+  /// predating it → 0 (no migration). Not persisted by `TaskModel.toMap` (the
+  /// transaction owns it, exactly like `createdAt`/`updatedAt`), so a stale
+  /// client edit can never regress it. Read-only to the UI.
+  @override
+  @JsonKey()
+  final int version;
+
   @override
   String toString() {
-    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, workType: $workType, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, referenceAttachments: $referenceAttachments, data: $data, createdBy: $createdBy, assignedShiftId: $assignedShiftId, shift: $shift, assignmentType: $assignmentType, instanceDate: $instanceDate, sourceTemplateId: $sourceTemplateId, startsAt: $startsAt, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, revisionNumber: $revisionNumber, requiresRework: $requiresRework, rejectionReason: $rejectionReason, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt, archivedAt: $archivedAt)';
+    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, workType: $workType, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, referenceAttachments: $referenceAttachments, data: $data, createdBy: $createdBy, assignedShiftId: $assignedShiftId, shift: $shift, assignmentType: $assignmentType, instanceDate: $instanceDate, sourceTemplateId: $sourceTemplateId, recurrenceRootId: $recurrenceRootId, occurrenceKey: $occurrenceKey, startsAt: $startsAt, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, revisionNumber: $revisionNumber, requiresRework: $requiresRework, rejectionReason: $rejectionReason, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt, archivedAt: $archivedAt, version: $version)';
   }
 
   @override
@@ -1029,6 +1118,10 @@ class _$TaskEntityImpl extends _TaskEntity {
                 other.instanceDate == instanceDate) &&
             (identical(other.sourceTemplateId, sourceTemplateId) ||
                 other.sourceTemplateId == sourceTemplateId) &&
+            (identical(other.recurrenceRootId, recurrenceRootId) ||
+                other.recurrenceRootId == recurrenceRootId) &&
+            (identical(other.occurrenceKey, occurrenceKey) ||
+                other.occurrenceKey == occurrenceKey) &&
             (identical(other.startsAt, startsAt) ||
                 other.startsAt == startsAt) &&
             (identical(other.deadline, deadline) ||
@@ -1067,7 +1160,8 @@ class _$TaskEntityImpl extends _TaskEntity {
             (identical(other.updatedAt, updatedAt) ||
                 other.updatedAt == updatedAt) &&
             (identical(other.archivedAt, archivedAt) ||
-                other.archivedAt == archivedAt));
+                other.archivedAt == archivedAt) &&
+            (identical(other.version, version) || other.version == version));
   }
 
   @override
@@ -1091,6 +1185,8 @@ class _$TaskEntityImpl extends _TaskEntity {
     assignmentType,
     instanceDate,
     sourceTemplateId,
+    recurrenceRootId,
+    occurrenceKey,
     startsAt,
     deadline,
     notes,
@@ -1110,6 +1206,7 @@ class _$TaskEntityImpl extends _TaskEntity {
     createdAt,
     updatedAt,
     archivedAt,
+    version,
   ]);
 
   /// Create a copy of TaskEntity
@@ -1141,6 +1238,8 @@ abstract class _TaskEntity extends TaskEntity {
     final TaskAssignmentType assignmentType,
     final DateTime? instanceDate,
     final String? sourceTemplateId,
+    final String? recurrenceRootId,
+    final String? occurrenceKey,
     final DateTime? startsAt,
     final DateTime? deadline,
     final String? notes,
@@ -1160,6 +1259,7 @@ abstract class _TaskEntity extends TaskEntity {
     final DateTime? createdAt,
     final DateTime? updatedAt,
     final DateTime? archivedAt,
+    final int version,
   }) = _$TaskEntityImpl;
   const _TaskEntity._() : super._();
 
@@ -1254,6 +1354,23 @@ abstract class _TaskEntity extends TaskEntity {
   @override
   String? get sourceTemplateId;
 
+  /// Stable lineage id for a **per-task recurrence** chain (Path B). Set on
+  /// every auto-spawned successor to the id of the chain's *root* task (the
+  /// first, manually-created one), so an admin can group / query a whole
+  /// recurring lineage. Null on a one-off task and on the root itself until it
+  /// spawns. Additive — no migration. See `TaskCubit._spawnNextRecurrence`.
+  @override
+  String? get recurrenceRootId;
+
+  /// The occurrence this auto-spawned task is *for* — the successor's due-date
+  /// key (`yyyy-MM-dd`), stored for display/debugging in the Automation Center.
+  /// Distinct from the **document id**, which is the deterministic idempotency
+  /// key `rec_{sourceTaskId}` (each task spawns at most one successor, so the
+  /// successor keys off the current task id and never off a possibly-null
+  /// deadline). Null for non-recurring tasks. Additive — no migration.
+  @override
+  String? get occurrenceKey;
+
   /// When the task is scheduled to **start** (Task Scheduling V2). Pre-filled
   /// from the assigned shift's hours as a *smart default* the manager can
   /// override; null on tasks predating scheduling (unknown start). Additive —
@@ -1337,6 +1454,15 @@ abstract class _TaskEntity extends TaskEntity {
   /// statistics and deep-links keep working.
   @override
   DateTime? get archivedAt;
+
+  /// Optimistic-concurrency counter, bumped by the server-authoritative
+  /// transition path (`TaskRepository.transitionTask`) on every lifecycle move.
+  /// A plain content edit never writes it. Additive — missing on any doc
+  /// predating it → 0 (no migration). Not persisted by `TaskModel.toMap` (the
+  /// transaction owns it, exactly like `createdAt`/`updatedAt`), so a stale
+  /// client edit can never regress it. Read-only to the UI.
+  @override
+  int get version;
 
   /// Create a copy of TaskEntity
   /// with the given fields replaced by the non-null parameter values.

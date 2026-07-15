@@ -15,6 +15,16 @@
 **Version:** 1.0.0+1 · **Branch:** `feature/attendance-management` (DROP — monochrome premium desktop UX)
 **Last updated:** 2026-07-14 (Attendance Phase 2 — corrections + server-authoritative audit/auto-close)
 **Version:** 1.0.0+1 · **Branch:** `feature/attendance-management` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-13 (Automated Task Engine hardening — deterministic recurrence · idempotent generation · Automation Center + history · roster filtering · audit)
+**Version:** 1.0.0+1 · **Branch:** `feature/media-upload-v2` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-11 (Task lifecycle hardening — transactional transitions · optimistic concurrency · shift-review notifications · audit · rules)
+**Version:** 1.0.0+1 · **Branch:** `feature/media-upload-v2` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-11 (Media upload FINAL hardening — cancellation · retry · analytics · orphan GC)
+**Version:** 1.0.0+1 · **Branch:** `feature/media-upload-v2` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-10 (Notifications V2 — pilot reliability + crash-safe deep links)
+**Version:** 1.0.0+1 · **Branch:** `feature/notifications-v2` (DROP — monochrome premium desktop UX)
+**Last updated:** 2026-07-08 (Community Hub / DROP Events — flagship event workspace)
+**Version:** 1.0.0+1 · **Branch:** `claude/community-hub-events-pzjvbp` (DROP — monochrome premium desktop UX)
 **Last updated:** 2026-07-08 (Requests closed out: analyzer clean + tests green)
 **Version:** 1.0.0+1 · **Branch:** `feature/ui-tasks` (DROP — monochrome premium desktop UX)
 **Last updated:** 2026-07-08 (Work Details design system + Create Work sheet UX)
@@ -151,6 +161,157 @@ production-ready data foundation on top of the approved Phase 1 clock-in/out sli
   (the repo streams `watchBranchPendingCorrections` / `watchRecordCorrections`
   and `DecideCorrection` are built + tested, awaiting their review cubit), admin
   dashboards, and per-branch `attendanceConfig`.
+## ✅ Automated Task Engine hardening — deterministic recurrence · idempotent generation · Automation Center + history · audit (2026-07-13)
+
+Production-hardening pass on the automation engine after a full audit (the 10-part
+audit + architecture diagram lives in `docs/design/AUTOMATION_ENGINE.md`).
+Owner-approved **P0 + P1**, small-team-calibrated (no parallel automation backend,
+no round-robin assignment engine, no standalone analytics dashboard).
+
+- **P0 — the duplicate-task bug.** Per-task recurrence (`_spawnNextRecurrence`) used a
+  **random auto document id**, so **reopen → re-approve double-spawned** the next task.
+  Now the successor id is the deterministic **`rec_{sourceTaskId}`** (each task spawns
+  exactly one successor → key off the stable source id, independent of a possibly-null
+  deadline), written through a now-**atomic** `createTaskWithId` (transaction). New
+  additive `TaskEntity`/`TaskModel` `recurrenceRootId` + `occurrenceKey`.
+- **P0 — the Cloud Function.** `generateShiftTaskInstances` `get→set` → **atomic
+  `ref.create()`** (catch `ALREADY_EXISTS`); notify **only on real create** with
+  **deterministic notif ids**; `maxInstances:1` + `retryCount:0` + `timeoutSeconds` on
+  both scheduled functions → no overlap, no double-notify.
+- **P1 — Automation Center.** `recurringTaskTemplates` gains `updatedBy` + CF-owned
+  health rollups (`lastRunAt`/`nextRunAt`/`lastStatus`/`lastGeneratedTaskId`/
+  `failureCount`, omitted from `toMap`). The Manage sheet became the **Automation
+  Center** (per-routine live health line).
+- **P1 — Automation History.** New **`automationRuns/{templateId}_{dateKey}`**
+  (deterministic id = idempotent history): duration · executionId · status · outcome ·
+  generatedTaskId · recipientCount · failureReason. Rules: read admin / branch-manager;
+  **write server-only**. Bounded by a new `taskHousekeeping` prune
+  (`automationRunRetentionDays`, default 90).
+- **P1 — assignment + audit.** Roster notify now filters **on-leave + deactivated**
+  employees and records **`noEligibleEmployees`**; new `AuditEventType`s
+  `task.auto_generated`/`automation.assigned`/`automation.failed` (+ `automation`
+  entity) written to `audit_logs` by the CF (system actor).
+- **Tests:** `task_cubit_test.dart` +3 (determinism · reopen→re-approve · lineage),
+  `task_model_shift_test.dart` +3 (round-trip). Analyzer clean on touched files; suite
+  **805 pass / 2 pre-existing splash-centering failures**.
+- **Deploy pending:** `firebase deploy --only
+  functions:generateShiftTaskInstances,functions:runTaskReminders,functions:taskHousekeeping`
+  + `firestore:rules` (`automationRuns`). No data migration.
+
+---
+
+## ✅ Task lifecycle hardening — transactional transitions · concurrency · notifications · audit · rules (2026-07-11)
+
+Production-hardening pass after a full Task-module architecture audit (P0 + P1
+scope; no feature changes, calibrated to small-team scale). The module was already
+mature — this closes the one structural correctness gap plus a few integrity/functional gaps.
+
+- **P0 — transactional transitions.** Every status move now flows through NEW
+  **`TaskRepository.transitionTask`** (a Firestore **transaction**): re-reads the doc,
+  verifies the current `status` is a legal predecessor, appends the `ActivityEntry`
+  to the **server's** current `activityLog`, merges only the changed fields, bumps a
+  new additive **`version`** counter. Replaces the old read-modify-write that wrote
+  the whole log from a stale client snapshot with only a client-side `_canTransition`
+  check — the concurrent-reviewer race (lost log entry · contradictory notifications ·
+  **phantom recurrence double-spawn**) is closed. Recurrence spawn moved post-commit;
+  plain `updateTask` is now content-only (`_transitionOwnedFields` stripped). A lost
+  race → benign "refreshed" notice, then the stream delivers truth.
+- **P1-3 — shift-task review notifications.** `approve`/`reject`/`rework` on a
+  shift-assigned task (no named assignees) now resolve recipients from the roster
+  (`_reviewRecipients`) — the employee who did the work finally hears the outcome.
+- **P1-4 — audit gaps closed.** New `AuditEventType.taskCreated`/`taskUpdated`/
+  `taskDeleted`/`taskReopened`; create/edit/assign/delete/reopen each log exactly one
+  event (reopen — undoing a locked record — was previously untracked).
+- **P1-5 — employee rules (needs deploy).** `firestore.rules` employee `tasks/{id}`
+  branch now also freezes `reviewNotes`/`rejectionReason`/`revisionNumber`/
+  `approvedAt`/`rejectedAt` and requires `activityLog` to only grow — a crafted
+  client can't rewrite the verdict or erase history.
+- **Tests:** NEW `test/task_cubit_test.dart` (10, hand-written fakes). Suite green
+  (only the 2 pre-existing `splash_centering` geometry failures remain); analyzer clean.
+- **Deploy pending:** `firebase deploy --only firestore:rules` (P1-5). No data migration.
+
+## ✅ Media upload hardening — shared service · image editor · video compression (2026-07-11)
+
+Focused high-ROI pass on the media pipeline (`feature/media-upload-v2`). The pipeline
+was already mature (shared picker · state-driven progress overlay · immutable
+create-only Storage · gallery + fullscreen viewer) — this **hardens + enriches** it,
+no rewrite.
+
+- **One upload seam.** NEW `core/media/media_upload_service.dart` — the triplicated
+  task/case/request Storage-upload block now lives here once (all three delegate),
+  plus a long `Cache-Control` on every object. `PickedAttachment` moved to
+  `core/media`; new `core/utils/concurrent.dart` `mapPooled` caps submission uploads
+  at 3-in-flight with a smooth fixed-denominator progress bar.
+- **Image editor (mobile).** NEW `core/media/media_processing.dart` `editImage`
+  (`image_cropper`: crop/rotate/flip/aspect, monochrome) runs after a camera capture
+  and via a tap-to-edit affordance on each image thumbnail; edited bytes replace the
+  original. Gated on `supportsImageEditing` (desktop/web upload unedited).
+  AndroidManifest declares the uCrop activity.
+- **Video compression (mobile).** `compressVideo` (`video_compress`) transcodes before
+  upload behind a cancellable progress dialog; fails safe to the original. Gated on
+  `supportsVideoCompression`.
+- **Perf/cost fixes.** Killed the fullscreen video per-tick rebuild storm; `cacheWidth`
+  caps on fullscreen + thumbnail decode; `storage.rules` gained a binding `validMedia()`
+  size/type ceiling on the create paths; event-hero pick strips EXIF via `imageQuality`.
+- **Deps:** `image_cropper`, `video_compress` (mobile-gated). **Tests:** new
+  `concurrent_test.dart`; analyzer clean; suite unchanged (2 pre-existing splash
+  failures only).
+- **Final hardening pass (2026-07-11, last before merge):**
+  - **Upload cancellation** — `UploadCanceller`/`UploadCancelledException`
+    (`core/media`), threaded task use case→repo→datasource→service like
+    `onProgress`; overlay **Cancel** button → `TaskCubit.cancelSubmission()`;
+    aborts every active `UploadTask`, restores UI quietly, keeps media, hidden
+    during `finalizing` (so the doc write finishes). Crash-safe/idempotent.
+  - **Retry** — `_uploadedCache` (file path → result, per task) re-uploads only
+    what didn't already succeed (a Firestore-fail retry re-uploads nothing);
+    cleared on success/task change.
+  - **Analytics** — 4 new `AuditEventType`s (`media.upload_started/completed/
+    failed/cancelled`) via the existing `EventTrackingService` seam; metadata =
+    counts · bytes · `durationMs` · `compressionRatio` (from new
+    `PickedAttachment.originalBytes`).
+  - **Orphan GC** — opt-in 3rd sweep in `taskHousekeeping` (Admin SDK bypasses the
+    create-only rules); reconciles a task's `attachments/` vs referenced URLs,
+    deletes unreferenced past-grace objects; OFF unless
+    `config/taskRetention.gcOrphanAttachments`, `gcGraceHours`=48, skips a task on
+    any unparseable URL. **Needs functions deploy + the config flag.**
+  - Tests: `upload_canceller_test`. **Constraints kept:** no offline queue /
+    pause-resume / background uploads / reordering.
+- **Still deferred (P2):** reorder/replace · a11y Semantics + 44px targets ·
+  pause-video-on-swipe · `cached_network_image` disk cache · gallery-video duration
+  cap. **Owner deploy:** `storage.rules` + `functions` (orphan GC).
+
+---
+
+## ✅ Notifications V2 — pilot reliability + crash-safe deep links (2026-07-10)
+
+Pilot-hardening pass (`feature/notifications-v2`). The in-app Notification Center
+was already mature (grouping · read/unread · mark-all · archive · pagination) and
+is **unchanged** except where a bug fix required it. This pass unified deep-link
+routing and closed real reliability bugs. Full technical doc:
+`docs/design/NOTIFICATIONS_V2.md`.
+
+- **One deep-link resolver, both tap surfaces.** New pure, role-aware
+  `resolveNotificationRoute` (`lib/features/notifications/domain/notification_deep_link.dart`)
+  backs BOTH the in-app inbox tile and the FCM push handler, so every notification
+  opens the same destination however it's tapped (foreground · background ·
+  cold-start · in-app). `null` = guarded no-op → caller falls back to the inbox;
+  **navigation never crashes** on a stale/unknown/unauthorized notification.
+- **Bugs fixed:** **B1** — the FCM `data` block (functions `onNotificationCreated`)
+  omitted `requestId`/`swapId`, breaking request/swap push deep-links (**needs a
+  functions deploy**); **B2/B4** — the push tap handler routed only `task_details`,
+  now uses the shared resolver; **B3** — broadcast deep-link dead-ended on
+  "Broadcast unavailable" (added `BroadcastRepository.getBroadcast` + a one-shot
+  self-resolve in the detail screen); **B5** — the foreground snackbar is now
+  actionable ("View" deep-links via the resolver).
+- **Android:** `AndroidManifest.xml` declares `POST_NOTIFICATIONS` (Android 13+
+  runtime permission — without it, pushes are silently dropped) + `INTERNET`.
+- **Tests:** new `notification_deep_link_test.dart` + `notification_cubit_test.dart`;
+  updated the tap-flow probe for the B3 fix; corrected a stale category-pills
+  assertion. `flutter analyze` clean on touched files; full suite **747 pass, 2
+  fail** (the 2 are the pre-existing desktop splash-framing tests — unrelated).
+- ⚠️ **Deferred (needs your machine):** deploy Cloud Functions for B1; **iOS push
+  is still unconfigured** (no entitlements / `aps-environment` / background mode) —
+  needs Xcode signing + an APNs key. See §6 of the design doc.
 
 ---
 
@@ -3460,9 +3621,13 @@ writes are denied by the rules.
   task transitions — `firestore.rules` enforce *who* may write a swap, not the
   exact order. Hardening the transition matrix server-side is a follow-up.
 - **Task workflow is live** (Phase 4) but a few deliberate simplifications remain:
-  - **Status transitions are validated client-side** (`TaskCubit._canTransition`),
-    not in `firestore.rules` — the rules enforce *who* can write, not the exact
-    flow order. Hardening the transition matrix server-side is a follow-up.
+  - **Status transitions are server-authoritative** as of 2026-07-11 (P0
+    hardening): each move runs inside a Firestore **transaction**
+    (`TaskRepository.transitionTask`) that re-reads the doc and verifies the
+    predecessor `status` before committing, so the transition matrix is enforced
+    even though `firestore.rules` still only gate *who* may write. The old
+    client-only `TaskCubit._canTransition` is gone (its predecessor sets moved
+    into `_transition`'s `from:` arg).
   - ~~Assignee uid → name isn't resolved on the card~~ **DONE (Phase 9)** — the
     `TaskCubit` resolves a per-branch user **directory** so cards show real
     avatars · names · roles (multi-assignee shown as an avatar stack + count).
@@ -3512,10 +3677,10 @@ writes are denied by the rules.
 2. **Bootstrap first admin** — in the Firebase console set `role: admin` and
    `isActive: true` on the founder's account; then verify admin provisioning →
    forced password change → profile completion → role dispatch end to end.
-3. **Firestore rules for `activityLog`/`recurrence`** — the new fields written by `TaskCubit` are covered by the existing employee self-update path. Confirm the limited-employee rule allows writing `activityLog` (array union) without allowing `recurrence` changes. Harden if needed.
+3. **Firestore rules for `activityLog`/`recurrence`** — the employee self-update path was **hardened 2026-07-11 (P1-5)**: it now freezes the review fields (`reviewNotes`/`rejectionReason`/`revisionNumber`/`approvedAt`/`rejectedAt`) and requires `activityLog` to only grow (size non-decreasing), so an employee can advance status + append history but never rewrite the verdict. **Needs a rules deploy.**
 4. **Recurring tasks: server-side spawn** — the current `_spawnNextRecurrence` runs client-side on approve. A Cloud Function on `tasks/{taskId}` write (status==approved + frequency!=none) would be more reliable for offline/concurrent approval cases.
 5. **Deploy the notification engine** — the 7 Cloud Functions (`sendBroadcast`, `onNotificationCreated`, `runTaskReminders`, `runBroadcastSchedules`, `broadcastHousekeeping`, `onNotificationRead`, `onBroadcastOpened`) are written + tested but **not deployed**; `firebase deploy --only functions,firestore:rules,firestore:indexes` (Blaze plan) + native FCM setup (APNs key + Push/Background-Modes capability on iOS) are required before any push fires. Until then in-app notifications work but push is inert.
-6. **Task workflow hardening** — enforce status transitions in `firestore.rules` (who can write each status value), not only client-side in `TaskCubit._canTransition`.
+6. ~~**Task workflow hardening** — enforce status transitions server-side~~ **DONE (2026-07-11, P0)** — transitions now run in a Firestore transaction (`TaskRepository.transitionTask`) that verifies the predecessor status + appends to the server's log + bumps `version`; a stale/concurrent move raises `ConflictFailure`. (Optional future: also encode the predecessor matrix in `firestore.rules` for defence-in-depth — the transaction already guarantees it.)
 7. **Stats optimization** (if data grows) — move dashboard counts to Firestore `count()` aggregate queries with composite indexes.
 8. Add a Cloud Function to clean up `users/{uid}` Firestore document on account deletion.
-9. Add cubit/widget tests, starting with `TaskCubit` transition rules, `RecurrenceConfig.nextOccurrence`, `ActivityEntry` serialisation, and the router redirect.
+9. Add cubit/widget tests — **`TaskCubit` transition rules now covered** by `test/task_cubit_test.dart` (2026-07-11: transaction mechanics, illegal-move guard, `ConflictFailure` handling, shift-review recipients, reopen/delete audit). Still open: `RecurrenceConfig.nextOccurrence`, `ActivityEntry` serialisation, and the router redirect.

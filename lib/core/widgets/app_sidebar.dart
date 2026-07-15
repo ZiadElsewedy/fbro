@@ -39,6 +39,7 @@ class AppSidebar extends StatelessWidget {
     required this.location,
     required this.onSelect,
     this.footer,
+    this.onCollapse,
   });
 
   final List<SidebarSection> sections;
@@ -48,6 +49,10 @@ class AppSidebar extends StatelessWidget {
 
   final ValueChanged<String> onSelect;
   final Widget? footer;
+
+  /// When set, a subtle collapse control appears in the header — tapping it
+  /// hides the sidebar (focus mode). Null hides the control entirely.
+  final VoidCallback? onCollapse;
 
   /// The route of the best-matching destination for [location] — the longest
   /// route that is a prefix of (or equal to) the current location.
@@ -102,6 +107,13 @@ class AppSidebar extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (onCollapse != null) ...[
+                    const Spacer(),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 1),
+                      child: _SidebarCollapseButton(onTap: onCollapse!),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -241,6 +253,56 @@ class _SidebarRowState extends State<_SidebarRow> {
                     ),
                   ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The header collapse control — hides the sidebar into focus mode. Monochrome,
+/// hover-lit; the ⌘\ shortcut is surfaced in its tooltip.
+class _SidebarCollapseButton extends StatefulWidget {
+  const _SidebarCollapseButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_SidebarCollapseButton> createState() => _SidebarCollapseButtonState();
+}
+
+class _SidebarCollapseButtonState extends State<_SidebarCollapseButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Hide sidebar',
+      child: Tooltip(
+        message: 'Hide sidebar   ⌘\\',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _hovered ? const Color(0x12FFFFFF) : AppColors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.menu_open_rounded,
+                size: 18,
+                color: _hovered ? AppColors.textPrimary : AppColors.textTertiary,
+              ),
             ),
           ),
         ),

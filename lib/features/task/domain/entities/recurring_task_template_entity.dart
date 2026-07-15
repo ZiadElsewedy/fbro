@@ -40,8 +40,26 @@ class RecurringTaskTemplateEntity with _$RecurringTaskTemplateEntity {
     /// untouched either way.
     @Default(true) bool active,
     String? createdBy,
+    /// uid of whoever last edited this routine (client-written on update).
+    String? updatedBy,
     DateTime? createdAt,
     DateTime? updatedAt,
+    // ─── Automation health (Automation Center) ──────────────────────────
+    // Cloud-Function-owned rollups, written by `generateShiftTaskInstances` via
+    // the Admin SDK and **read-only** to the client (never in `toMap`, like a
+    // task's `version`). They let the Automation Center show a routine's health
+    // without reading Cloud Logging — see docs/design/AUTOMATION_ENGINE.md.
+    /// Last time the generator attempted this routine.
+    DateTime? lastRunAt,
+    /// Next scheduled generation (computed by the function; advisory).
+    DateTime? nextRunAt,
+    /// Outcome of the last run: `completed` / `skipped` / `failed`
+    /// (null = never run).
+    String? lastStatus,
+    /// The task id the last successful run generated.
+    String? lastGeneratedTaskId,
+    /// Consecutive generation failures; reset to 0 on a successful run.
+    @Default(0) int failureCount,
   }) = _RecurringTaskTemplateEntity;
 
   /// Builds the instance-level checklist (all items uncompleted) for a newly

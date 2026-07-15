@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:drop/core/media/media_upload_service.dart';
 import 'package:drop/core/services/case_seen_store.dart';
 import 'package:drop/core/services/notification_service.dart';
 import 'package:drop/features/auth/data/datasources/auth_remote_datasource.dart';
@@ -47,10 +48,14 @@ import 'package:drop/features/statistics/data/repositories/statistics_repository
 import 'package:drop/features/statistics/domain/repositories/statistics_repository.dart';
 import 'package:drop/features/statistics/presentation/cubit/statistics_cubit.dart';
 import 'package:drop/features/schedule/data/datasources/schedule_remote_datasource.dart';
+import 'package:drop/features/schedule/data/datasources/shift_template_remote_datasource.dart';
 import 'package:drop/features/schedule/data/repositories/schedule_repository_impl.dart';
+import 'package:drop/features/schedule/data/repositories/shift_template_repository_impl.dart';
 import 'package:drop/features/schedule/domain/repositories/schedule_repository.dart';
+import 'package:drop/features/schedule/domain/repositories/shift_template_repository.dart';
 import 'package:drop/features/schedule/presentation/cubit/schedule_cubit.dart';
 import 'package:drop/features/schedule/presentation/cubit/shift_swap_cubit.dart';
+import 'package:drop/features/schedule/presentation/cubit/shift_template_cubit.dart';
 import 'package:drop/features/operations/presentation/cubit/branch_operations_cubit.dart';
 import 'package:drop/features/communications/data/datasources/broadcast_remote_datasource.dart';
 import 'package:drop/features/communications/data/repositories/broadcast_repository_impl.dart';
@@ -101,6 +106,10 @@ import 'package:drop/features/attendance/domain/usecases/decide_correction.dart'
 import 'package:drop/features/attendance/domain/usecases/request_correction.dart';
 import 'package:drop/features/attendance/presentation/cubit/attendance_admin_cubit.dart';
 import 'package:drop/features/attendance/presentation/cubit/attendance_cubit.dart';
+import 'package:drop/features/audit/data/datasources/audit_remote_datasource.dart';
+import 'package:drop/features/audit/data/repositories/audit_repository_impl.dart';
+import 'package:drop/features/audit/domain/repositories/audit_repository.dart';
+import 'package:drop/features/audit/domain/services/event_tracking_service.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart' show UserEntity;
 
 class AppDependencies {
@@ -119,6 +128,12 @@ class AppDependencies {
 
   // ─── Weekly schedule + shift swaps (Phase 7) ────────────────
   static late final ScheduleCubit scheduleCubit;
+
+  /// Shift templates (Schedule V2 · Pillar 5). The repository is shared; the
+  /// manager cubit is created on demand by the template sheet.
+  static late final ShiftTemplateRepository shiftTemplateRepository;
+  static ShiftTemplateCubit createShiftTemplateCubit() =>
+      ShiftTemplateCubit(shiftTemplateRepository);
   static late final ShiftSwapCubit shiftSwapCubit;
 
   // ─── Branch Operations cockpit (task→operations redesign) ───
@@ -187,6 +202,7 @@ class AppDependencies {
         uploadAttachment: _uploadRequestAttachment,
         user: user,
         requestId: requestId,
+        eventTracking: eventTracking,
       );
 
   /// Attendance (clock in/out) — the employee-facing cubit (singleton, app-wide).
@@ -199,6 +215,15 @@ class AppDependencies {
   /// Phase 3 task foundation, activated by the Phase 4 [taskCubit] + use cases.
   static late final TaskRepository taskRepository;
 
+  // ─── Event Tracking + Audit Log (immutable audit trail) ─────
+  /// The single write seam every feature calls to record an audited business
+  /// action. Passed into the producing cubits (TaskCubit, Requests) below.
+  static late final EventTrackingService eventTracking;
+
+  /// Read side of the audit trail (kept for a future audit-log admin view). The
+  /// repository is the only thing that touches the `audit_logs` collection.
+  static late final AuditRepository auditRepository;
+
   static void init() {
     final authRemoteDataSource = AuthRemoteDataSourceImpl(FirebaseAuth.instance);
     final userRemoteDataSource = UserRemoteDataSourceImpl(FirebaseFirestore.instance);
@@ -206,9 +231,13 @@ class AppDependencies {
       FirebaseFirestore.instance,
       FirebaseStorage.instance,
     );
+    // Single seam for all media (image/video) uploads to Storage — task
+    // evidence and case + request attachments all route through it (adds
+    // cache-control metadata + central error translation in one place).
+    final mediaUploadService = MediaUploadService(FirebaseStorage.instance);
     final taskRemoteDataSource = TaskRemoteDataSourceImpl(
       FirebaseFirestore.instance,
-      FirebaseStorage.instance,
+      mediaUploadService,
     );
 
     final AuthRepository authRepository =
@@ -233,6 +262,15 @@ class AppDependencies {
       NotificationRemoteDataSourceImpl(
           FirebaseFirestore.instance, FirebaseFunctions.instance),
     );
+
+    // Event Tracking + Audit Log is built early too — its single write seam
+    // ([eventTracking]) is injected into the producing cubits (TaskCubit +
+    // Requests) below. All audit writes flow through the service; nothing else
+    // touches the `audit_logs` collection.
+    auditRepository = AuditRepositoryImpl(
+      AuditRemoteDataSourceImpl(FirebaseFirestore.instance),
+    );
+    eventTracking = EventTrackingService(auditRepository);
 
     authCubit = AuthCubit(
       repository: authRepository,
@@ -267,6 +305,12 @@ class AppDependencies {
       ),
     );
 
+    // Shift templates (Schedule V2 · Pillar 5) — reused by scheduleCubit (to
+    // snapshot new weeks + apply scoped hours edits) and the template manager.
+    shiftTemplateRepository = ShiftTemplateRepositoryImpl(
+      ShiftTemplateRemoteDataSourceImpl(FirebaseFirestore.instance),
+    );
+
     taskCubit = TaskCubit(
       repository: taskRepository,
       branchRepository: branchRepository,
@@ -278,6 +322,7 @@ class AppDependencies {
       uploadTaskAttachment: UploadTaskAttachment(taskRepository),
       getUsersByBranch: GetUsersByBranch(authRepository),
       notifyTaskEvent: NotifyTaskEvent(notificationRepository),
+      eventTracking: eventTracking,
     );
 
     // ─── Case Management (private conversation until resolution) ─────────
@@ -289,7 +334,7 @@ class AppDependencies {
     final CaseRepository caseRepository = CaseRepositoryImpl(
       CaseRemoteDataSourceImpl(
         FirebaseFirestore.instance,
-        FirebaseStorage.instance,
+        mediaUploadService,
       ),
     );
     _caseRepository = caseRepository;
@@ -315,7 +360,7 @@ class AppDependencies {
     final RequestRepository requestRepository = RequestRepositoryImpl(
       RequestRemoteDataSourceImpl(
         FirebaseFirestore.instance,
-        FirebaseStorage.instance,
+        mediaUploadService,
       ),
     );
     _requestRepository = requestRepository;
@@ -327,6 +372,7 @@ class AppDependencies {
       branchRepository: branchRepository,
       createRequest: CreateRequest(requestRepository),
       uploadAttachment: _uploadRequestAttachment,
+      eventTracking: eventTracking,
     );
 
     // ─── Attendance (clock in/out + corrections) ────────────────────────
@@ -386,8 +432,11 @@ class AppDependencies {
 
     // ─── Weekly schedule + shift swaps (Phase 7) ──────────────
     // (scheduleRepository built earlier, above, so TaskCubit could use it.)
-    scheduleCubit =
-        ScheduleCubit(scheduleRepository, GetUsersByBranch(authRepository));
+    scheduleCubit = ScheduleCubit(
+      scheduleRepository,
+      GetUsersByBranch(authRepository),
+      shiftTemplateRepository,
+    );
     shiftSwapCubit = ShiftSwapCubit(
       scheduleRepository,
       NotifySwapEvent(notificationRepository),

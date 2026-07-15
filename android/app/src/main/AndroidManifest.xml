@@ -2,6 +2,13 @@
     <!-- GPS-verified attendance clock in/out. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- FCM push delivery. INTERNET is required to reach FCM; POST_NOTIFICATIONS
+         is the Android 13+ (API 33) runtime permission WITHOUT WHICH no push is
+         ever shown — `FirebaseMessaging.requestPermission()` surfaces the OS
+         prompt, but the permission must be declared here or the grant is a
+         no-op and every notification is silently dropped. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="DROP"
         android:name="${applicationName}"
@@ -33,6 +40,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- image_cropper (uCrop) — the crop / rotate / flip editor activity.
+             Required by the plugin on Android; the AppCompat light no-action-bar
+             theme is the plugin's documented requirement (uCrop extends
+             AppCompatActivity). -->
+        <activity
+            android:name="com.yalantis.ucrop.UCropActivity"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

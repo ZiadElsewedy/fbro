@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/core/responsive/breakpoints.dart';
@@ -46,6 +47,7 @@ class AssignmentChip extends StatefulWidget {
     this.onSwapDrop,
     this.onOpenActions,
     this.onSwapWith,
+    this.onKeyboardMove,
   });
 
   final UserEntity user;
@@ -86,12 +88,77 @@ class AssignmentChip extends StatefulWidget {
   /// people who don't discover chip-onto-chip drag.
   final VoidCallback? onSwapWith;
 
+  /// Desktop keyboard move: the focused chip received an arrow key and should
+  /// move this person into the adjacent slot [toDay]/[toShift]. Routed through
+  /// the exact same validated move path drag uses — no new write path.
+  final void Function(ScheduleDay toDay, ScheduleShift toShift)? onKeyboardMove;
+
   @override
   State<AssignmentChip> createState() => _AssignmentChipState();
 }
 
 class _AssignmentChipState extends State<AssignmentChip> {
   bool _hovered = false;
+  bool _focused = false;
+
+  /// Arrow keys move the focused person into the adjacent slot, reusing the
+  /// exact validated move path drag uses (via [AssignmentChip.onKeyboardMove]).
+  /// Left/Right hop days on the same shift; Up/Down flip Morning↔Night on the
+  /// same day. An edge (no such slot) quietly consumes the key with no move.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (widget.onKeyboardMove == null || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final days = ScheduleDay.values;
+    final idx = widget.day.index;
+    ScheduleDay? toDay;
+    ScheduleShift? toShift;
+    final k = event.logicalKey;
+    if (k == LogicalKeyboardKey.arrowLeft) {
+      if (idx > 0) {
+        toDay = days[idx - 1];
+        toShift = widget.shift;
+      }
+    } else if (k == LogicalKeyboardKey.arrowRight) {
+      if (idx < days.length - 1) {
+        toDay = days[idx + 1];
+        toShift = widget.shift;
+      }
+    } else if (k == LogicalKeyboardKey.arrowUp) {
+      if (widget.shift == ScheduleShift.night) {
+        toDay = widget.day;
+        toShift = ScheduleShift.morning;
+      }
+    } else if (k == LogicalKeyboardKey.arrowDown) {
+      if (widget.shift == ScheduleShift.morning) {
+        toDay = widget.day;
+        toShift = ScheduleShift.night;
+      }
+    } else {
+      return KeyEventResult.ignored;
+    }
+    if (toDay != null && toShift != null) {
+      widget.onKeyboardMove!(toDay, toShift);
+    }
+    // Consume the arrow either way so it never doubles as scroll / focus-move.
+    return KeyEventResult.handled;
+  }
+
+  /// A one-shot scale-in when this chip first mounts — i.e. when a person lands
+  /// in a slot (chips are keyed by uid, so a person who merely stays put keeps
+  /// their element and never re-animates). Scale only (no opacity) so the chip
+  /// is always hit-testable mid-animation. Honours "reduce motion".
+  Widget _entrance(Widget child) {
+    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      builder: (context, t, child) =>
+          Transform.scale(scale: 0.9 + 0.1 * t, child: child),
+      child: child,
+    );
+  }
 
   void _showMenu(Offset globalPosition) {
     final opposite = widget.shift.opposite;
@@ -123,26 +190,34 @@ class _AssignmentChipState extends State<AssignmentChip> {
     );
   }
 
-  Widget _visual(
-      {required bool hovered, bool dragging = false, bool swapTarget = false}) {
+  Widget _visual({
+    required bool hovered,
+    bool dragging = false,
+    bool swapTarget = false,
+    bool focused = false,
+  }) {
+    final position = widget.user.position?.trim();
+    final hasPosition = position != null && position.isNotEmpty;
+    final lifted = hovered || dragging || swapTarget || focused;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
-      padding: const EdgeInsets.fromLTRB(3, 3, 8, 3),
+      // Roomier than before → a larger, easier-to-grab drag / tap target.
+      padding: const EdgeInsets.fromLTRB(3, 4, 10, 4),
       decoration: BoxDecoration(
-        color: hovered || dragging || swapTarget
-            ? const Color(0xFF232327)
-            : AppColors.darkSurfaceElevated,
+        color: lifted ? const Color(0xFF232327) : AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(99),
         border: Border.all(
           color: swapTarget
               ? AppColors.primary
               : widget.conflicted
                   ? AppColors.error.withAlpha(190)
-                  : hovered
-                      ? AppColors.accentBorder
-                      : AppColors.darkBorder,
-          width: swapTarget ? 1.4 : 1,
+                  : focused
+                      ? AppColors.primary
+                      : hovered
+                          ? AppColors.accentBorder
+                          : AppColors.darkBorder,
+          width: swapTarget || focused ? 1.4 : 1,
         ),
         boxShadow: dragging
             ? [
@@ -152,23 +227,50 @@ class _AssignmentChipState extends State<AssignmentChip> {
                   offset: const Offset(0, 5),
                 ),
               ]
-            : null,
+            : (hovered || focused)
+                // A whisper of lift on hover / keyboard focus — premium, quiet.
+                ? [
+                    BoxShadow(
+                      color: AppColors.black.withAlpha(60),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          UserAvatar.fromUser(widget.user, size: 17),
-          const SizedBox(width: 5),
+          UserAvatar.fromUser(widget.user, size: 18),
+          const SizedBox(width: 6),
           Flexible(
-            child: Text(
-              shortName(widget.user),
+            // Name leads; the position (e.g. "Cashier") trails in a quieter
+            // tone and is the first thing to ellipsize when space is tight, so
+            // the chip stays ONE line and never outgrows the grid cell.
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: shortName(widget.user),
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      height: 1,
+                    ),
+                  ),
+                  if (hasPosition)
+                    TextSpan(
+                      text: '  $position',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textTertiary,
+                        fontWeight: FontWeight.w500,
+                        height: 1,
+                      ),
+                    ),
+                ],
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w600,
-                height: 1,
-              ),
             ),
           ),
           // Hovering a dragged person over this chip → "drop to switch" cue.
@@ -226,7 +328,11 @@ class _AssignmentChipState extends State<AssignmentChip> {
                     ? widget.onOpenActions!()
                     : _showMenu(d.globalPosition)
                 : null,
-            child: _visual(hovered: _hovered, swapTarget: swapTarget),
+            child: _visual(
+              hovered: _hovered,
+              swapTarget: swapTarget,
+              focused: _focused,
+            ),
           ),
         );
 
@@ -248,8 +354,24 @@ class _AssignmentChipState extends State<AssignmentChip> {
       );
     }
 
-    // Name the amber dot on hover — the cue itself stays tiny.
-    if (widget.cautionNote != null && !widget.conflicted) {
+    // Desktop hover reveals the full name + position (the chip shows a short
+    // name); a soft caution is appended. Touch is left EXACTLY as it was — a
+    // caution-only tooltip — so long-press still belongs to the action sheet.
+    if (isDesktop) {
+      final position = widget.user.position?.trim();
+      final tip = [
+        (position != null && position.isNotEmpty)
+            ? '${userDisplayName(widget.user)} · $position'
+            : userDisplayName(widget.user),
+        if (widget.cautionNote != null && !widget.conflicted)
+          widget.cautionNote!,
+      ].join('\n');
+      chip = Tooltip(
+        message: tip,
+        waitDuration: const Duration(milliseconds: 400),
+        child: chip,
+      );
+    } else if (widget.cautionNote != null && !widget.conflicted) {
       chip = Tooltip(
         message: widget.cautionNote!,
         waitDuration: const Duration(milliseconds: 400),
@@ -275,6 +397,16 @@ class _AssignmentChipState extends State<AssignmentChip> {
         child: chip,
       );
     }
-    return chip;
+
+    // Keyboard move: Tab focuses the chip, arrows move the person (desktop).
+    if (widget.canEdit && isDesktop && widget.onKeyboardMove != null) {
+      chip = Focus(
+        onFocusChange: (f) => setState(() => _focused = f),
+        onKeyEvent: _onKey,
+        child: chip,
+      );
+    }
+
+    return _entrance(chip);
   }
 }
