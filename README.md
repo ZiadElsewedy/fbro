@@ -1,24 +1,33 @@
 # DROP
 
-**DROP — Operations Management System.** A role-based branch/shift operations
-app (admin · manager · employee) for running daily branch work: task assignment
-and review with proof, weekly scheduling and shift swaps, branch administration,
-and live operations dashboards.
+**DROP — Operations Management System.** A role-based branch/shift operations app
+(admin · manager · employee) for running daily branch work: task assignment and
+review with proof, attendance, weekly scheduling and shift swaps, approvals, branch
+administration, and live operations dashboards.
 
-> Fully branded as **DROP**: the Dart package identifier is `drop` (every import
-> is `package:drop/…`) and all platform display names read **DROP** /
-> **DROP OPERATIONS**. The Firebase-registered bundle identifier
-> `com.example.fbro` is intentionally retained — changing it requires
-> re-registering the apps in the Firebase console (see CURRENT_STATE.md).
+iOS · Android · macOS. Flutter + Firebase.
+
+> The Dart package identifier is `drop` (every import is `package:drop/…`) and all
+> platform display names read **DROP** / **DROP OPERATIONS**. The repo folder and the
+> Firebase-registered bundle id `com.example.fbro` are intentionally retained —
+> changing the bundle id requires re-registering the apps in the Firebase console.
 
 ## Documentation
 
-The source of truth lives in three repo-root docs, kept in sync with the code:
+Each document has **one** responsibility. Start at PROJECT_CONTEXT; follow a link
+only when the task needs it.
 
-- [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) — architecture, conventions, the
-  documentation self-check.
-- [`CURRENT_STATE.md`](CURRENT_STATE.md) — what's built and where it lives.
-- [`CHANGELOG.md`](CHANGELOG.md) — dated history of changes.
+| Document | Answers |
+| --- | --- |
+| [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) | **How is this built?** Architecture, module map, coding standards, UI philosophy |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | **Where are we today?** Branches, what's done, known issues, priorities |
+| [CHANGELOG.md](CHANGELOG.md) | **What happened when?** |
+| [docs/design/](docs/design/) | **How does *this feature* work?** One spec per feature |
+| [docs/decisions/](docs/decisions/) | **Why, and don't re-litigate.** Architecture Decision Records |
+| [docs/QA.md](docs/QA.md) | **How do we verify a release?** |
+
+**If the code and a doc disagree, the code wins** — verify against the code, then fix
+the doc in the same task.
 
 ## Getting started
 
@@ -27,9 +36,26 @@ flutter pub get
 flutter run
 ```
 
-Firebase (Auth, Firestore, Storage, FCM) backs the app. After changing security
-rules, deploy them:
+```bash
+flutter analyze     # expect: 1 pre-existing info
+flutter test        # expect: 878 pass, 2 fail (known — see CURRENT_STATE)
+```
+
+After changing `freezed` entities or states:
 
 ```bash
-firebase deploy --only firestore:rules,storage
+dart run build_runner build --delete-conflicting-outputs
 ```
+
+## Firebase
+
+Auth · Firestore · Storage · Cloud Messaging · Cloud Functions back the app. The
+backend contract is [docs/design/DATA_MODEL.md](docs/design/DATA_MODEL.md).
+
+```bash
+firebase deploy --only functions,firestore:rules,firestore:indexes,storage
+```
+
+⚠️ **Rules, indexes, and functions are currently undeployed**, so a growing share of
+the app is inert in production and fails at *runtime* rather than at compile time.
+See [CURRENT_STATE.md](CURRENT_STATE.md) before shipping.

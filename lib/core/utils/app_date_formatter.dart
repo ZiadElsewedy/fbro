@@ -9,7 +9,7 @@
 /// produces, and only the styles the app actually shows are exposed here.
 ///
 /// Out of scope (intentionally not routed through here — see
-/// `docs/performance`/sprint notes): 24-hour shift-window times
+/// `docs/design/PERFORMANCE.md`): 24-hour shift-window times
 /// (`ShiftHours.format`), machine `yyyy-MM-dd` keys/filenames/persisted values,
 /// and elapsed-[Duration] labels (video length, "Waiting 3d", "Synced 3m ago").
 class AppDateFormatter {
