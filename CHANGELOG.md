@@ -16,6 +16,13 @@ released — DROP ships from branches and has no version tags.
 
 ## Unreleased
 
+### 2026-07-16
+
+- **Task create speed-up.** Added and refined Schedule quick deadline presets
+  (`Tomorrow`, `2 days`, `Week`) that start at creation time and set the due
+  window without opening the date/time pickers; the presets now use a compact
+  duration rail with an animated thumb and animated duration line.
+
 ### 2026-07-15
 
 - **Documentation restructured.** The doc set had reached 16,669 lines across 23

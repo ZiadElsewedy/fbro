@@ -84,6 +84,12 @@ deployed.
 `startsAt` + `dueAt` (the due side is the existing `deadline`, aliased). Both
 additive — no migration.
 
+Create-mode quick deadline presets (`Tomorrow` / `2 days` / `Week`) sit on a
+compact duration rail and set `startsAt` to the current creation time and `dueAt`
+to +1/+2/+7 days. They are deadline presets, not shift suggestions, so
+outside-shift-hours warnings do not apply to those windows. Picking one moves the
+rail thumb and animates the duration rail under the Start/Due rows.
+
 **`TaskSchedulePhase` is derived, not persisted** — Scheduled / Active / Due-soon /
 Overdue / Done, computed from the times + lifecycle in pure
 `domain/task_schedule.dart`. It is **not** a new `TaskStatus`; do not add one.
