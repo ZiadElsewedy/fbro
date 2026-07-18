@@ -683,12 +683,18 @@ const SWAP_SHIFTS = ["morning", "night"];
 function swapOppositeShift(s) {
   return s === "night" ? "morning" : "night";
 }
-// Minutes past midnight: morning 08:30–16:30, night 16:30–23:00 (mirrors
-// ScheduleShift.timeRange / SwapEligibility / SwapValidation).
-function swapShiftMinutes(s) {
-  return s === "night"
-    ? { start: 16 * 60 + 30, end: 23 * 60 }
-    : { start: 8 * 60 + 30, end: 16 * 60 + 30 };
+// Minutes past the slot day's midnight, mirroring ShiftHours.standard /
+// SwapEligibility / SwapValidation: morning 08:30–16:30; weekday night
+// 15:00–23:00; weekend night (Thu/Fri/Sat) 16:00–00:00 (end 1440 = next-day
+// midnight). Day-aware because weekday and weekend nights now differ.
+function swapIsWeekendDay(day) {
+  return day === "thursday" || day === "friday" || day === "saturday";
+}
+function swapShiftMinutes(s, day) {
+  if (s !== "night") return { start: 8 * 60 + 30, end: 16 * 60 + 30 };
+  return swapIsWeekendDay(day)
+    ? { start: 16 * 60, end: 24 * 60 }
+    : { start: 15 * 60, end: 23 * 60 };
 }
 function swapAssignedUids(assignments, day, shift) {
   const d = assignments && assignments[day];
@@ -704,7 +710,7 @@ function swapMinGapMinutes(assignments, uid) {
     const di = SWAP_DAY_INDEX[day];
     for (const sh of SWAP_SHIFTS) {
       if (swapAssignedUids(assignments, day, sh).includes(uid)) {
-        const m = swapShiftMinutes(sh);
+        const m = swapShiftMinutes(sh, day);
         intervals.push([di * 1440 + m.start, di * 1440 + m.end]);
       }
     }
@@ -819,7 +825,7 @@ exports.approveSwap = onCall(async (request) => {
   const slotStartMs =
     weekStartMs +
     (SWAP_DAY_INDEX[day] || 0) * 24 * 60 * 60 * 1000 +
-    swapShiftMinutes(shift).start * 60 * 1000;
+    swapShiftMinutes(shift, day).start * 60 * 1000;
   if (slotStartMs <= Date.now()) {
     throw new HttpsError(
       "failed-precondition",

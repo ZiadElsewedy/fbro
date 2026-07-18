@@ -342,17 +342,25 @@ service cloud.firestore {
         : d == 'saturday' ? 6
         : 0; // sunday / unknown
     }
-    // Shift start, minutes past midnight (mirrors SwapEligibility / timeRange):
-    // morning 08:30, night 16:30.
-    function swapShiftMinutes(s) {
-      return s == 'night' ? (16 * 60 + 30) : (8 * 60 + 30);
+    // Shift start, minutes past midnight (mirrors ShiftHours.standard /
+    // SwapEligibility): morning 08:30; weekday night 15:00; weekend night
+    // (Thu/Fri/Sat) 16:00.
+    function swapIsWeekendDay(d) {
+      return d == 'thursday' || d == 'friday' || d == 'saturday';
+    }
+    function swapShiftMinutes(s, d) {
+      return s == 'night'
+          ? (swapIsWeekendDay(d) ? (16 * 60) : (15 * 60))
+          : (8 * 60 + 30);
     }
     // The slot's start instant must be strictly after the request time. weekStart
     // is the week's Sunday 00:00 (a Timestamp).
     function swapSlotInFuture(data) {
       return data.weekStart
           + duration.value(swapDayOffset(data.get('day', 'sunday')), 'd')
-          + duration.value(swapShiftMinutes(data.get('shift', 'morning')), 'm')
+          + duration.value(
+              swapShiftMinutes(data.get('shift', 'morning'), data.get('day', 'sunday')),
+              'm')
         > request.time;
     }
     match /shift_swaps/{swapId} {

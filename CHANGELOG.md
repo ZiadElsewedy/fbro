@@ -35,10 +35,21 @@ released — DROP ships from branches and has no version tags.
   weekend "till HH:MM" header tag is now data-driven from the resolved night hours
   (shows for any night that crosses midnight) instead of a hardcoded "till 00:30".
   `ScheduleShift` display strings (`timeRange`/`timeRangeOn`/`startMinutes`/
-  `endMinutesOn`) realigned to the new defaults. Tests updated; suite 956 pass / 2
-  known splash fails. **Deliberately left (flagged):** the swap-eligibility /
-  `firestore.rules` / `approveSwap` night-start contract still hardcodes 16:30 — a
-  three-way synced backstop that must change together and is on the pending deploy.
+  `endMinutesOn`) realigned to the new defaults.
+- **Shift-swap timing contract synchronized to the new defaults (all four
+  layers).** The swap "is this slot still in the future" / rest-gap contract
+  previously hardcoded a night start of 16:30 in four synced places; all now read
+  the day-aware default (weekday night **15:00**, weekend night **16:00**, end
+  **00:00** = `1440`): client `SwapEligibility.slotStart` +
+  `SwapValidation.shiftMinutes` derive from `ShiftHours.standard` (now day-aware);
+  `firestore.rules` `swapShiftMinutes(s, d)` gained a `swapIsWeekendDay` split;
+  `functions/index.js` `swapShiftMinutes(s, day)` mirrors it at both call sites
+  (`approveSwap` future check + rest-gap). No legacy 16:30/00:30 shift-timing
+  literals remain (the surviving 16:30 is the unchanged morning **end**). Schedule
+  is now the single source of truth across Schedule, Attendance, Shift Swap, and
+  backend validation. Tests updated; suite **957 pass / 2** known splash fails;
+  Cloud Functions **28 pass**. **`firestore.rules` + `functions` still need the
+  standing deploy** for the server side to take effect.
 
 - **Schedule creation `permission-denied` diagnosed — deployment drift, not an
   admin-role bug.** Read-only verification of the active production Firestore
