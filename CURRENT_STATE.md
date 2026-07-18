@@ -11,8 +11,8 @@
 | --- | --- |
 | **Branch** | `feature/attendance-management` |
 | **Build** | `flutter analyze`: 1 info, no errors/warnings (pre-existing test style) |
-| **Tests** | **949 pass · 2 fail** across 142 files (~18s) — the 2 fails are the pre-existing splash-centering cases; see [Known issues](#known-issues). Cloud Functions: **23 pass** (`cd functions && node --test`) |
-| **Blocking release** | Firebase deploy (rules · indexes · functions) · recurring-template manager read isolation · iOS push unconfigured · attendance on-device QA |
+| **Tests** | **954 pass · 2 fail** across 142 files (~17s) — the 2 fails are the pre-existing splash-centering cases; see [Known issues](#known-issues). Cloud Functions: **28 pass** (`cd functions && node --test`) |
+| **Blocking release** | Firebase deploy (rules · indexes · functions; live `shift_templates` rule missing) · recurring-template manager read isolation · iOS push unconfigured · attendance on-device QA |
 | **Platforms** | iOS · Android · macOS |
 
 DROP is **feature-complete for its intended scope** and gated on deployment and QA,
@@ -134,6 +134,16 @@ splash layout regressed or `kSplashOpticalLift` changed without the test followi
 **Pre-existing and unrelated to any current work** — but it means `flutter test` is
 not green, so a real regression could hide behind it. Worth fixing or deleting.
 
+### Deployed-rules drift
+
+The active production Firestore ruleset was verified read-only on 2026-07-18. It
+contains `weekly_schedules` but **no `match /shift_templates` block**. The Create
+Schedule flow reads the branch's templates before writing the weekly schedule, so
+that prerequisite query is default-denied for every client role — including admin —
+and the schedule write is never reached. The correct local rule exists in
+`firestore.rules`; deployment is still pending. This is deployment drift, not an
+admin-role or schedule-payload defect.
+
 ### Access-control gap
 
 The Automation UI queries `recurringTaskTemplates` by its supplied branch, but the
@@ -181,14 +191,14 @@ handled as a separate backend/security task before the rules deploy.
 
 ### 🚨 Deploy (the critical path)
 
-Nothing below works in production until it is deployed. Each has been "pending" for
-a while; treat this list as **believed-pending and worth verifying against the
-console** before assuming.
+Nothing below works in production until it is deployed. The missing live
+`shift_templates` rule was confirmed on 2026-07-18; treat the remaining targets as
+**believed-pending and worth verifying against the console** before assuming.
 
 | Target | Carries | Blocks |
 | --- | --- | --- |
 | `functions` | 22 functions incl. `onAttendanceWritten`, `onAttendanceCorrectionWritten`, `autoCloseAttendance`, `generateShiftTaskInstances`, **`onRecurringTemplateWritten`** (new — automation lifecycle audit), `onCase*`, `onRequest*`, `sendBroadcast`, `claimFcmToken` | Attendance audit · automation · cases · requests · **all push** |
-| `firestore:rules` | Task review-field freeze + non-decreasing `activityLog`; attendance + corrections; cases; requests | Task hardening (P0/P1), attendance, cases |
+| `firestore:rules` | `shift_templates`; Task review-field freeze + non-decreasing `activityLog`; attendance + corrections; cases; requests | **Schedule creation/configurable hours** · Task hardening (P0/P1) · attendance · cases |
 | `firestore:indexes` | `tasks` composite (`branchId`+`assignmentType`+`shift`); **`automationRuns` `(branchId,templateId,startedAt)` + `(branchId,status,startedAt)`** | Employee shift-task stream (`failed-precondition` without it) · automation run history |
 | `storage` | `validMedia()` + orphan GC | Media hardening |
 
@@ -247,9 +257,13 @@ unknowingly reversed:
    logs), cumulative health counters on the template, a server-derived
    `onRecurringTemplateWritten` lifecycle-audit function, and a thin client read
    layer (`AutomationRunEntity`/model/repo, paginated) — the foundation for a
-   future Details screen (no screen built). **Gated on the standing
-   functions/rules/indexes deploy.** Tier 2 envelope (per-run I/O counters,
-   replay engine, analytics surface) deliberately declined.
+   future Details screen (no screen built). Extended 2026-07-18 with an
+   **immutable execution snapshot** (definition/schedule/branch/recipients frozen
+   at run time → old history never changes) and a **deterministic correlation id**
+   (`AUT-{yyyymmdd}-{hash}`) stamped on the run, generated task, notifications and
+   audit for cross-resource traceability (`getAutomationRunByCorrelationId`).
+   **Gated on the standing functions/rules/indexes deploy.** Tier 2 envelope
+   (per-run I/O counters, replay engine, analytics surface) deliberately declined.
 
 ---
 
@@ -259,7 +273,8 @@ If you change status, gaps, or priorities, update this file **in the same task**
 
 ```bash
 flutter analyze                          # expect: 1 info, 0 errors/warnings
-flutter test                             # expect: 940 pass, 2 fail (splash)
+flutter test                             # expect: 954 pass, 2 fail (splash)
+(cd functions && node --test)            # expect: 28 pass
 grep -c "static const String" lib/core/routes/route_names.dart   # expect: 43
 ls lib/features | wc -l                  # expect: 17
 ```

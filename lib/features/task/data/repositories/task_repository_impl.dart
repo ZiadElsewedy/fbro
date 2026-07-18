@@ -322,4 +322,19 @@ class TaskRepositoryImpl implements TaskRepository {
       throw ServerFailure(e.message);
     }
   }
+
+  @override
+  Future<AutomationRunEntity?> getAutomationRunByCorrelationId(
+    String correlationId, {
+    required String branchId,
+  }) async {
+    try {
+      return await _remote.getAutomationRunByCorrelationId(
+        correlationId,
+        branchId: branchId,
+      );
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
 }

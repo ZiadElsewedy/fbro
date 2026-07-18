@@ -141,4 +141,12 @@ abstract class TaskRepository {
     int limit,
     DateTime? before,
   });
+
+  /// The automation run a [correlationId] belongs to (traceability from a
+  /// generated task / notification / audit entry back to its execution), or null
+  /// if none. Read-only.
+  Future<AutomationRunEntity?> getAutomationRunByCorrelationId(
+    String correlationId, {
+    required String branchId,
+  });
 }

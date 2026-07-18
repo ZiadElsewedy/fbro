@@ -99,6 +99,13 @@ abstract class TaskRemoteDataSource {
     int limit,
     DateTime? before,
   });
+
+  /// The run a resource's [correlationId] belongs to (traceability: task /
+  /// notification / audit → run). Two equality filters need no composite index.
+  Future<AutomationRunEntity?> getAutomationRunByCorrelationId(
+    String correlationId, {
+    required String branchId,
+  });
 }
 
 class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
@@ -468,6 +475,25 @@ class TaskRemoteDataSourceImpl implements TaskRemoteDataSource {
           .toList();
     } on FirebaseException catch (e) {
       throw ServerException(e.message ?? 'Failed to load automation history.');
+    }
+  }
+
+  @override
+  Future<AutomationRunEntity?> getAutomationRunByCorrelationId(
+    String correlationId, {
+    required String branchId,
+  }) async {
+    try {
+      final snap = await _automationRuns
+          .where('branchId', isEqualTo: branchId)
+          .where('correlationId', isEqualTo: correlationId)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      final d = snap.docs.first;
+      return AutomationRunModel.fromMap(d.data(), id: d.id);
+    } on FirebaseException catch (e) {
+      throw ServerException(e.message ?? 'Failed to load the automation run.');
     }
   }
 

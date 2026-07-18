@@ -160,6 +160,77 @@ void main() {
       expect(run.error, isNull);
     });
 
+    test('parses the correlation id and immutable execution snapshot', () {
+      final run = AutomationRunModel.fromMap({
+        'templateId': 'tpl-1',
+        'correlationId': 'AUT-20260718-A3F9C1',
+        'status': 'completed',
+        'outcome': 'created',
+        'snapshot': {
+          'automation': {'id': 'tpl-1', 'name': 'Open Store', 'version': 4},
+          'template': {
+            'id': 'tpl-1',
+            'name': 'Open Store',
+            'version': 4,
+            'checklistCount': 3,
+            'priority': 'high',
+            'proofRequired': false,
+          },
+          'schedule': {
+            'type': 'weekly',
+            'days': ['saturday'],
+            'shift': 'morning',
+            'branchId': 'branch-1',
+            'timezone': 'UTC',
+          },
+          'target': {'branchId': 'branch-1', 'branchName': 'Downtown'},
+          'recipients': [
+            {
+              'uid': 'u1',
+              'displayName': 'Alice',
+              'role': 'employee',
+              'assignedShift': 'morning',
+            },
+            {
+              'uid': 'u2',
+              'displayName': 'Bob',
+              'role': 'manager',
+              'assignedShift': 'morning',
+            },
+          ],
+          'recipientCount': 2,
+        },
+      }, id: 'tpl-1_2026-07-18');
+
+      expect(run.correlationId, 'AUT-20260718-A3F9C1');
+      final s = run.snapshot;
+      expect(s, isNotNull);
+      expect(s!.automationName, 'Open Store');
+      expect(s.automationVersion, 4);
+      expect(s.checklistCount, 3);
+      expect(s.priority, 'high');
+      expect(s.scheduleType, 'weekly');
+      expect(s.days, ['saturday']);
+      expect(s.shift, ScheduleShift.morning);
+      expect(s.timezone, 'UTC');
+      expect(s.branchName, 'Downtown');
+      expect(s.recipientCount, 2);
+      expect(s.recipients.first.uid, 'u1');
+      expect(s.recipients.first.displayName, 'Alice');
+      expect(s.recipients.first.role, 'employee');
+      expect(s.recipients.first.assignedShift, ScheduleShift.morning);
+    });
+
+    test('a run with no snapshot (skipped/failed) leaves snapshot null', () {
+      final run = AutomationRunModel.fromMap({
+        'templateId': 'tpl-1',
+        'status': 'skipped',
+        'outcome': 'alreadyExists',
+      });
+      expect(run.snapshot, isNull);
+      expect(run.correlationId, '');
+    });
+
     test('an unmatched target records matched:false explicitly', () {
       final run = AutomationRunModel.fromMap({
         'templateId': 'tpl-4',

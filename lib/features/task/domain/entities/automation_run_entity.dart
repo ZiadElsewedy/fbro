@@ -153,6 +153,73 @@ class AutomationRunLogEntry {
   final Map<String, dynamic>? meta;
 }
 
+/// One recipient as captured at execution time — lightweight and immutable, so
+/// an old run stays accurate even if the employee later leaves, is renamed, or
+/// changes branch/shift. Never a full user document.
+class RecipientSnapshot {
+  const RecipientSnapshot({
+    required this.uid,
+    this.displayName = '',
+    this.role,
+    this.assignedShift,
+  });
+
+  final String uid;
+  final String displayName;
+  final String? role;
+  final ScheduleShift? assignedShift;
+}
+
+/// The immutable **execution snapshot** embedded in a run — exactly what existed
+/// at execution time (definition identity/version, task blueprint, schedule,
+/// branch id+name, and lightweight recipients). Read this — never the live
+/// definition — when displaying a past run, so history never changes when
+/// templates, branches, employees, schedules, or checklists change.
+class AutomationRunSnapshot {
+  const AutomationRunSnapshot({
+    this.automationId = '',
+    this.automationName = '',
+    this.automationVersion = 1,
+    this.templateId = '',
+    this.templateName = '',
+    this.templateVersion = 1,
+    this.checklistCount = 0,
+    this.priority = 'normal',
+    this.proofRequired = false,
+    this.scheduleType = 'daily',
+    this.days = const [],
+    this.shift,
+    this.timezone = 'UTC',
+    this.branchId = '',
+    this.branchName,
+    this.recipients = const [],
+    this.recipientCount = 0,
+  });
+
+  // Automation + template identity (immutable at run time)
+  final String automationId;
+  final String automationName;
+  final int automationVersion;
+  final String templateId;
+  final String templateName;
+  final int templateVersion;
+  final int checklistCount;
+  final String priority;
+  final bool proofRequired;
+
+  // Schedule
+  final String scheduleType;
+  final List<String> days;
+  final ScheduleShift? shift;
+  final String timezone;
+
+  // Target + recipients
+  final String branchId;
+  final String? branchName;
+  final List<RecipientSnapshot> recipients;
+  final int recipientCount;
+}
+
 /// A single automation **execution** — distinct from the automation definition
 /// (`RecurringTaskTemplateEntity`). Read-only observability written by the
 /// `generateShiftTaskInstances` Cloud Function (ADR-011); the client never
@@ -167,6 +234,7 @@ class AutomationRunEntity {
     this.branchId = '',
     this.dateKey = '',
     this.executionId = '',
+    this.correlationId = '',
     this.startedAt,
     this.finishedAt,
     this.durationMs = 0,
@@ -185,6 +253,7 @@ class AutomationRunEntity {
     this.notification = const AutomationRunNotification(),
     this.error,
     this.logs = const [],
+    this.snapshot,
   });
 
   // Identity
@@ -195,6 +264,10 @@ class AutomationRunEntity {
   final String branchId;
   final String dateKey;
   final String executionId;
+
+  /// The deterministic execution correlation id (`AUT-{yyyymmdd}-{hash}`) shared
+  /// with the generated task, its notifications, and its audit entries.
+  final String correlationId;
 
   // Execution
   final DateTime? startedAt;
@@ -219,6 +292,11 @@ class AutomationRunEntity {
   final AutomationRunNotification notification;
   final AutomationRunError? error;
   final List<AutomationRunLogEntry> logs;
+
+  /// Immutable point-in-time snapshot of the definition/branch/recipients (§Execution
+  /// Snapshot). Present on runs that generated a task; null on skipped/failed runs
+  /// (fall back to the top-level identity fields, which are also immutable).
+  final AutomationRunSnapshot? snapshot;
 
   bool get didFail => status == AutomationRunStatus.failed;
 }

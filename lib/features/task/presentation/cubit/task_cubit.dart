@@ -1310,6 +1310,17 @@ class TaskCubit extends Cubit<TaskState> {
         before: before,
       );
 
+  /// Traceability: the automation run a generated task / notification / audit
+  /// entry belongs to, looked up by its shared [correlationId] (null if none).
+  Future<AutomationRunEntity?> automationRunByCorrelationId(
+    String correlationId, {
+    required String branchId,
+  }) =>
+      _repository.getAutomationRunByCorrelationId(
+        correlationId,
+        branchId: branchId,
+      );
+
   /// Creates *today's* instance of [template] at the same deterministic id
   /// (`rt_{templateId}_{yyyy-MM-dd}`, UTC) the `generateShiftTaskInstances`
   /// Cloud Function uses, so the two can never double-create the same day's

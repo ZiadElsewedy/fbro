@@ -19,6 +19,7 @@ class AutomationRunModel {
       branchId: _str(map['branchId']),
       dateKey: _str(map['dateKey']),
       executionId: _str(map['executionId']),
+      correlationId: _str(map['correlationId']),
       startedAt: _date(map['startedAt']),
       finishedAt: _date(map['finishedAt']),
       durationMs: _int(map['durationMs']),
@@ -37,6 +38,7 @@ class AutomationRunModel {
       notification: _notification(map['notification']),
       error: _error(map['error']),
       logs: _logs(map['logs']),
+      snapshot: _snapshot(map['snapshot']),
     );
   }
 
@@ -93,6 +95,47 @@ class AutomationRunModel {
       retryable: raw['retryable'] == true,
       recovered: raw['recovered'] == true,
     );
+  }
+
+  static AutomationRunSnapshot? _snapshot(Object? raw) {
+    if (raw is! Map) return null;
+    final automation = raw['automation'] is Map ? raw['automation'] as Map : const {};
+    final template = raw['template'] is Map ? raw['template'] as Map : const {};
+    final schedule = raw['schedule'] is Map ? raw['schedule'] as Map : const {};
+    final target = raw['target'] is Map ? raw['target'] as Map : const {};
+    return AutomationRunSnapshot(
+      automationId: _str(automation['id']),
+      automationName: _str(automation['name']),
+      automationVersion: _int(automation['version'], 1),
+      templateId: _str(template['id'], _str(automation['id'])),
+      templateName: _str(template['name'], _str(automation['name'])),
+      templateVersion: _int(template['version'], 1),
+      checklistCount: _int(template['checklistCount']),
+      priority: _str(template['priority'], 'normal'),
+      proofRequired: template['proofRequired'] == true,
+      scheduleType: _str(schedule['type'], 'daily'),
+      days: _strList(schedule['days']),
+      shift: _shift(schedule['shift']),
+      timezone: _str(schedule['timezone'], 'UTC'),
+      branchId: _str(target['branchId'], _str(schedule['branchId'])),
+      branchName: target['branchName'] is String
+          ? target['branchName'] as String
+          : null,
+      recipients: _recipients(raw['recipients']),
+      recipientCount: _int(raw['recipientCount']),
+    );
+  }
+
+  static List<RecipientSnapshot> _recipients(Object? raw) {
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((m) {
+      return RecipientSnapshot(
+        uid: _str(m['uid']),
+        displayName: _str(m['displayName']),
+        role: m['role'] is String ? m['role'] as String : null,
+        assignedShift: _shift(m['assignedShift']),
+      );
+    }).toList();
   }
 
   static List<AutomationRunLogEntry> _logs(Object? raw) {

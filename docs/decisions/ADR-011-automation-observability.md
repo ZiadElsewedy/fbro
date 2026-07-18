@@ -78,6 +78,26 @@ as ADR-009 requires, and scopes the reversal narrowly:
 - If a future need for genuine analytics appears, it needs its **own** ADR — this
   one does not authorize it.
 
+## Addendum (2026-07-18) — execution snapshot + correlation id
+
+Two extensions within this ADR's scope (still Tier 1, no generation-logic change):
+
+- **Execution snapshot** — each run embeds an immutable `snapshot` (automation +
+  template identity/version, schedule, branch id+name, lightweight recipients:
+  `uid · displayName · role · assignedShift`). Displaying an old run reads the
+  snapshot, **never** the live definition, so history stays accurate after the
+  template/branch/employees/schedule/checklist change. Written **only on the
+  `created` outcome** (creation is once-per-run-id, so it can't be overwritten by
+  a later skip/failure). Cost: one branch read; no full user/branch documents are
+  copied. Assembled by the pure `buildExecutionSnapshot`.
+- **Correlation id** — `AUT-{yyyymmdd}-{6-hex sha1(templateId)}`, **deterministic**
+  (retry re-computes the same id), stamped on every resource the run produces
+  (run · generated task · notifications · execution audit) so any one traces to
+  the whole execution. A sequence counter was rejected (needs a counter doc; not
+  idempotent under retries). Distinct from the per-*invocation* `executionId`.
+  Client lookup `getAutomationRunByCorrelationId` uses two equality filters → no
+  new composite index.
+
 ## Alternatives considered
 
 - **Logs as a subcollection** (`automationRuns/{id}/logs/{n}`) — rejected: a run

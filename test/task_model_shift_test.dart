@@ -74,4 +74,38 @@ void main() {
       expect(back.occurrenceKey, '2026-01-11');
     });
   });
+
+  // The automation-execution correlation id links a generated task back to its
+  // run / notifications / audit (§Correlation ID). Additive + nullable, so it is
+  // absent on every non-automation task.
+  group('TaskModel correlationId serialization', () {
+    test('writes and reads the correlation id', () {
+      final map = const TaskModel(
+        id: 'rt_tpl_2026-07-18',
+        title: 't',
+        correlationId: 'AUT-20260718-A3F9C1',
+      ).toMap();
+      expect(map['correlationId'], 'AUT-20260718-A3F9C1');
+      expect(
+        TaskModel.fromMap(map).correlationId,
+        'AUT-20260718-A3F9C1',
+      );
+    });
+
+    test('absent on a plain task (back-compat)', () {
+      expect(TaskModel.fromMap(const {}).correlationId, isNull);
+      expect(const TaskModel(id: '1', title: 't').toMap()['correlationId'],
+          isNull);
+    });
+
+    test('round-trips through the entity boundary', () {
+      const e = TaskEntity(
+        id: 'rt_tpl_2026-07-18',
+        title: 't',
+        correlationId: 'AUT-20260718-A3F9C1',
+      );
+      final back = TaskModel.fromEntity(e).toEntity();
+      expect(back.correlationId, 'AUT-20260718-A3F9C1');
+    });
+  });
 }

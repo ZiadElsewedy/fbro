@@ -18,6 +18,32 @@ released — DROP ships from branches and has no version tags.
 
 ### 2026-07-18
 
+- **Schedule creation `permission-denied` diagnosed — deployment drift, not an
+  admin-role bug.** Read-only verification of the active production Firestore
+  ruleset found `weekly_schedules` deployed but no `shift_templates` match. Create
+  Schedule reads the branch template set first, so Firestore default-denies that
+  prerequisite for every role and never reaches the weekly-schedule write. The
+  correct local rule already exists; no product code or production deployment was
+  changed. Documentation self-check refreshed the live baseline to 1 analyzer info,
+  954 passing / 2 known splash failures, and 28 passing Cloud Functions tests.
+
+- **Automation execution snapshot + correlation id ([ADR-011](docs/decisions/ADR-011-automation-observability.md) extension).**
+  Made every run historically accurate forever and traceable across resources —
+  no generation-logic change, only enriched metadata. Each run now embeds an
+  **immutable `snapshot`** (automation/template identity+version, schedule, branch
+  id+name, lightweight recipients: `uid·displayName·role·assignedShift`) so a past
+  run renders from the snapshot, never the live definition — old history is
+  unaffected when templates/branches/employees/schedules/checklists change.
+  Written on the `created` outcome only (once per run id → never overwritten); one
+  branch read, no full user/branch docs copied. Added a **deterministic
+  correlation id** `AUT-{yyyymmdd}-{hash}` stamped on the run, the generated
+  `tasks/{id}`, its notifications, and its execution audit events — trace any one
+  back to the whole execution; retry-safe (no counter). Client: `snapshot` +
+  `correlationId` on the run model/entity, `correlationId` on `TaskEntity`, and
+  `getAutomationRunByCorrelationId` (no new index — two equality filters). Pure
+  `buildExecutionSnapshot` + `correlationId` helpers (+5 node tests → 28). +5
+  Flutter tests. **Deploy pending** (functions).
+
 - **Automation observability backend — Tier 1 ([ADR-011](docs/decisions/ADR-011-automation-observability.md)).**
   Made every automation execution fully observable without rewriting the engine.
   `generateShiftTaskInstances` now writes a rich **execution record** to

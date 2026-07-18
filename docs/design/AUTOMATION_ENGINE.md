@@ -133,6 +133,7 @@ overwrites the run row, never appends a duplicate). As of
 automationRuns/{templateId}_{dateKey}
   # Identity
   templateId, automationName, version, branchId, dateKey, executionId
+  correlationId          # AUT-{yyyymmdd}-{hash} — deterministic, shared by task/notif/audit
   # Execution
   startedAt, finishedAt, durationMs, trigger, retryCount, status, outcome
   # Schedule
@@ -150,9 +151,43 @@ automationRuns/{templateId}_{dateKey}
   error: { stage, code, message, retryable, recovered } | null
   # Chronological timeline (EMBEDDED, bounded ~7–12 steps)
   logs: [ { at, stage, severity, message, meta } ]
+  # Immutable execution snapshot (written on `created` only — see below)
+  snapshot: {
+    automation: { id, name, version },
+    template:   { id, name, version, checklistCount, priority, proofRequired },
+    schedule:   { type, days[], shift, branchId, timezone },
+    target:     { branchId, branchName },
+    recipients: [ { uid, displayName, role, assignedShift } ], recipientCount
+  }
   # Back-compat flat fields (pre-ADR-011 readers / retention)
   generatedTaskId, recipientCount, failureReason
 ```
+
+### Execution snapshot + correlation id (ADR-011 extension, 2026-07-18)
+
+**Snapshot** — an **immutable point-in-time copy** of the definition, schedule,
+branch, and lightweight recipients, so an old run renders correctly *forever*
+even after the template/branch/employees/schedule/checklist change. Only
+immutable primitives are stored (never full user/branch docs — just `uid ·
+displayName · role · assignedShift` per recipient). Written **on the `created`
+outcome only**: creation happens at most once per deterministic run id, so the
+snapshot is immutable by construction — a later skip/failure never overwrites it,
+and recipients are already resolved on that path. Cost: **one** extra read (the
+branch doc, for `branchName`); everything else is in hand. Skipped/failed runs
+carry no snapshot — the client falls back to the top-level identity fields
+(also immutable at write time). Assembled by the pure `buildExecutionSnapshot`.
+
+**Correlation id** — `AUT-{yyyymmdd}-{6-hex sha1(templateId)}`, **deterministic**
+per (template, day) so a retry re-computes the identical id. Stamped on **every
+resource** the run produces — the run record, the generated `tasks/{id}`
+(`correlationId` field), each notification (top-level + `payload.correlationId`),
+and each execution audit event (`metadata.correlationId`) — so any one traces
+back to the whole execution. Not a sequence (`-000241`): a counter would need a
+doc (extra write + contention) and could not be reproduced idempotently. Distinct
+from `executionId` (the per-*invocation* id, shared across all templates in one
+scheduler tick). Client traceability: `TaskRepository.getAutomationRunByCorrelationId`
+(two equality filters → no composite index); a task also computes its run id
+directly as `{sourceTemplateId}_{isoDate(instanceDate)}`.
 
 The pure, unit-tested shape logic lives in `functions/automation_run.js`
 (`buildValidations` · `classifyError` · `healthDeltas` · `executionDelayMs`); the
@@ -230,13 +265,15 @@ included) and an empty roster failed silently. Now the roster is filtered and th
   `successCount`, `failedCount`, `skippedCount`, `totalDurationMs`,
   `lastSuccessAt`, `lastFailureAt`, `configVersion`). All additive, CF-owned,
   omitted from client `toMap`. Existing rules unchanged.
-- `tasks`: +`recurrenceRootId` / `occurrenceKey` (additive, nullable).
+- `tasks`: +`recurrenceRootId` / `occurrenceKey` / **`correlationId`** (additive,
+  nullable). `correlationId` links a generated task to its run/notifications/audit.
 - `automationRuns/{id}`: enriched execution record (§5) — read: admin, or manager
   of the run's branch; **write: server-only** (`allow write: if false`; the Admin
   SDK bypasses rules).
 - **Composite indexes (ADR-011):** `(branchId, templateId, startedAt desc)` for
   the paginated per-template history; `(branchId, status, startedAt desc)` for a
-  future branch-failure view.
+  future branch-failure view. The correlation-id lookup (`branchId` + `correlationId`,
+  both equality) needs **no** composite index (Firestore zig-zag merge join).
 
 ## 9. Cloud Function summary
 

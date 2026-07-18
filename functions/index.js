@@ -1935,6 +1935,10 @@ exports.generateShiftTaskInstances = onSchedule(
               message: l.message,
               meta: l.meta,
             })),
+            // ── Immutable execution snapshot (written on `created` only, so a
+            // later skip/failure never overwrites it — creation happens at most
+            // once per deterministic run id) ──
+            ...(snapshot ? { snapshot } : {}),
             // ── Back-compat flat fields (pre-ADR-011 readers / retention) ──
             generatedTaskId,
             recipientCount,
@@ -1985,21 +1989,25 @@ exports.generateShiftTaskInstances = onSchedule(
       }
 
       // ── Business audit events (best-effort, reuse the audit trail) ──
+      // Each carries the correlationId so an audit entry traces to its run.
       if (outcome === "created" || outcome === "noEligibleEmployees") {
         await writeAutomationAudit("task.auto_generated", "task", instanceId, branchId, {
           templateId: doc.id,
           title: t.title || "",
           shift,
+          correlationId: runCorrelationId,
         });
         if (recipientCount > 0) {
           await writeAutomationAudit("automation.assigned", "automation", doc.id, branchId, {
             taskId: instanceId,
             recipientCount,
+            correlationId: runCorrelationId,
           });
         }
       } else if (status === "failed") {
         await writeAutomationAudit("automation.failed", "automation", doc.id, branchId, {
           reason: failureReason,
+          correlationId: runCorrelationId,
         });
       }
     }
