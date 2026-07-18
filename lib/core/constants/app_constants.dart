@@ -6,6 +6,12 @@ class AppConstants {
   static const String tasksCollection = 'tasks';
   static const String taskTemplatesCollection = 'task_templates';
   static const String recurringTaskTemplatesCollection = 'recurringTaskTemplates';
+
+  /// Automation execution history (Automated Task Engine observability, ADR-011).
+  /// One document per (template, day) at a deterministic id `{templateId}_{dateKey}`
+  /// → idempotent history. Written ONLY by the `generateShiftTaskInstances` Cloud
+  /// Function (server-authoritative); the client reads it for the run timeline.
+  static const String automationRunsCollection = 'automationRuns';
   static const String branchesCollection = 'branches';
   static const String weeklySchedulesCollection = 'weekly_schedules';
   static const String shiftTemplatesCollection = 'shift_templates';
@@ -24,10 +30,19 @@ class AppConstants {
   static const String requestsCollection = 'requests';
   static const String countersCollection = 'counters';
 
-  /// Community Hub / DROP Events. Each event is a single self-contained document
-  /// (`events/{id}`) with every workspace section embedded inline; the hero image
-  /// lives in Storage at `events/{id}/hero.<ext>`.
-  static const String eventsCollection = 'events';
+  /// Attendance records (clock in/out). One document per (user, day, shift) at a
+  /// deterministic id `{uid}_{yyyyMMdd}_{shift}` (see `attendanceDocId`); the
+  /// append-only audit trail lives in `attendance/{id}/events`, and an optional
+  /// clock-in selfie in Storage at `attendance/{id}/selfie/{id}.<ext>`.
+  static const String attendanceCollection = 'attendance';
+
+  /// Attendance **correction requests** — an employee disputes/fixes a settled
+  /// record (a missing clock-out, a wrong time, an absent flagged in error). A
+  /// first-class approval object at `attendance_corrections/{id}` with a
+  /// `Pending → Approved / Rejected` lifecycle (reuses `RequestStatus`); the
+  /// approved resolution is applied to the parent `attendance/{id}` record — and
+  /// the audit event written — **server-side** by `onAttendanceCorrectionWritten`.
+  static const String attendanceCorrectionsCollection = 'attendance_corrections';
 
   /// Immutable Event Tracking + Audit Log. One append-only document per important
   /// business action (`audit_logs/{id}`) — who did what, to which entity, when,

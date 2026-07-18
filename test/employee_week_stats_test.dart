@@ -16,8 +16,7 @@ WeeklyScheduleEntity _sched(
 
 void main() {
   group('computeEmployeeWeekStats', () {
-    test('counts days, morning/night/weekend split, hours and the longest run',
-        () {
+    test('counts days worked, weekend days, hours and the longest run', () {
       // Sun–Tue mornings (08:30–16:30 = 8h each), Thu+Sat nights. Thu & Sat are
       // weekend days (Thu/Fri/Sat); their nights run 16:30→00:30 = 8h.
       final stats = computeEmployeeWeekStats(
@@ -33,8 +32,6 @@ void main() {
       );
 
       expect(stats.workedDays, 5);
-      expect(stats.morningCount, 3);
-      expect(stats.nightCount, 2);
       expect(stats.weekendCount, 2); // Thu + Sat
       expect(stats.longestRun, 3); // Sun·Mon·Tue
       // 3×8h mornings + 2×8h weekend nights = 40h.
@@ -44,8 +41,8 @@ void main() {
       expect(stats.offDays, contains(ScheduleDay.friday));
     });
 
-    test('a weekday night is 6.5h and shows minutes in the label', () {
-      // Monday is a weekday → night 16:30–23:00 = 6h30m.
+    test('a weekday night is 8h and shows a whole-hour label', () {
+      // Monday is a weekday → night 15:00–23:00 = 8h.
       final stats = computeEmployeeWeekStats(
         _sched({
           ScheduleDay.monday: {ScheduleShift.night: ['u1']},
@@ -53,10 +50,10 @@ void main() {
         'u1',
       );
 
-      expect(stats.nightCount, 1);
+      expect(stats.workedDays, 1);
       expect(stats.weekendCount, 0);
-      expect(stats.totalMinutes, 6 * 60 + 30);
-      expect(stats.hoursLabel, '6h 30m');
+      expect(stats.totalMinutes, 8 * 60);
+      expect(stats.hoursLabel, '8h');
     });
 
     test('an unscheduled person is empty, all seven days off', () {

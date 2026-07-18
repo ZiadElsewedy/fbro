@@ -22,11 +22,15 @@ class _TaskFormSheet extends StatefulWidget {
 
 class _TaskFormSheetState extends State<_TaskFormSheet> {
   late final _title = TextEditingController(
-      text: widget.existing?.title ?? widget.prefill?.title ?? '');
+    text: widget.existing?.title ?? widget.prefill?.title ?? '',
+  );
   late final _desc = TextEditingController(
-      text: widget.existing?.description ?? widget.prefill?.description ?? '');
+    text: widget.existing?.description ?? widget.prefill?.description ?? '',
+  );
   late TaskPriority _priority =
-      widget.existing?.priority ?? widget.prefill?.priority ?? TaskPriority.normal;
+      widget.existing?.priority ??
+      widget.prefill?.priority ??
+      TaskPriority.normal;
 
   /// Work-type selection + its schema-driven field values. The type is chosen on
   /// a new task (locked when editing — a task's kind never changes mid-life);
@@ -46,6 +50,11 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
 
   /// True once the manager edited either time away from the suggestion.
   bool _scheduleCustom = false;
+
+  /// The quick deadline preset currently driving the window, if any. These
+  /// presets are deadline-led, not shift-led, so roster resolving should not
+  /// attach outside-shift warnings to them.
+  Duration? _quickDeadlinePreset;
 
   /// The assignees are rostered on **different** shifts — prompt for a choice
   /// instead of auto-filling.
@@ -84,8 +93,9 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
 
   /// Admin-only branch selection (managers use their own fixed branch).
   late String? _branchId = _initialBranch();
-  late final Future<List<BranchEntity>> _branchesFuture =
-      widget.isAdmin ? widget.cubit.branches() : Future.value(const []);
+  late final Future<List<BranchEntity>> _branchesFuture = widget.isAdmin
+      ? widget.cubit.branches()
+      : Future.value(const []);
 
   /// Assign-on-create: the selected employee uids (seeded from the existing task
   /// when editing) + the branch their list was loaded for, so an admin re-picking
@@ -118,8 +128,9 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
         (widget.isAdmin ? _branchId : widget.defaultBranchId)?.trim() ?? '';
     if (branch == _employeesBranch) return;
     _employeesBranch = branch;
-    _employeesFuture =
-        branch.isEmpty ? null : widget.cubit.branchEmployees(branch);
+    _employeesFuture = branch.isEmpty
+        ? null
+        : widget.cubit.branchEmployees(branch);
   }
 
   void _initChecklist() {
@@ -156,7 +167,9 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
     setState(() {
       _itemControllers.add(TextEditingController());
       _itemRequired.add(true);
-      _itemIds.add('ci_${DateTime.now().millisecondsSinceEpoch}_${_itemControllers.length}');
+      _itemIds.add(
+        'ci_${DateTime.now().millisecondsSinceEpoch}_${_itemControllers.length}',
+      );
       _itemOriginals.add(null);
     });
   }
@@ -182,13 +195,17 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
       final original = _itemOriginals[i];
       if (original != null) {
         // Preserve completed state, update title + required
-        result.add(original.copyWith(title: title, isRequired: _itemRequired[i]));
+        result.add(
+          original.copyWith(title: title, isRequired: _itemRequired[i]),
+        );
       } else {
-        result.add(ChecklistItem(
-          id: _itemIds[i],
-          title: title,
-          isRequired: _itemRequired[i],
-        ));
+        result.add(
+          ChecklistItem(
+            id: _itemIds[i],
+            title: title,
+            isRequired: _itemRequired[i],
+          ),
+        );
       }
     }
     return result;
@@ -200,8 +217,9 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
       setState(() => _error = 'Title is required.');
       return;
     }
-    final branchId =
-        widget.isAdmin ? (_branchId ?? '') : widget.defaultBranchId;
+    final branchId = widget.isAdmin
+        ? (_branchId ?? '')
+        : widget.defaultBranchId;
     if (branchId.isEmpty) {
       setState(() => _error = 'Please select a branch.');
       return;
@@ -225,11 +243,13 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
     // Work-type setup gate — each type validates its own fields (a general task
     // declares none, so this is a no-op for it).
     final workDef = WorkTypeRegistry.instance.byId(_workType);
-    final setup = workDef.validateSetup(WorkDraft(
-      data: _workData,
-      checklistCount: checklist.length,
-      assigneeCount: _assignees.length,
-    ));
+    final setup = workDef.validateSetup(
+      WorkDraft(
+        data: _workData,
+        checklistCount: checklist.length,
+        assigneeCount: _assignees.length,
+      ),
+    );
     if (!setup.ok) {
       setState(() {
         _workFieldErrors = setup.fieldErrors;
@@ -263,9 +283,11 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
           // work type would be silently dropped, so require General here (until
           // templates learn to carry a work type).
           if (_workType != 'general') {
-            setState(() => _error =
-                'Recurring shift templates support General tasks only for now — '
-                'choose "Once", or set the work type to General.');
+            setState(
+              () => _error =
+                  'Recurring shift templates support General tasks only for now — '
+                  'choose "Once", or set the work type to General.',
+            );
             return;
           }
           widget.cubit.createRecurringShiftTemplate(
@@ -277,7 +299,10 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
             checklistItems: [
               for (final c in checklist)
                 ChecklistItemTemplate(
-                    id: c.id, title: c.title, isRequired: c.isRequired),
+                  id: c.id,
+                  title: c.title,
+                  isRequired: c.isRequired,
+                ),
             ],
             repeat: _shiftRepeat,
             weekday: _shiftWeekday,
@@ -357,6 +382,7 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
       setState(() {
         _startsAt = dt;
         _scheduleCustom = true;
+        _quickDeadlinePreset = null;
       });
     }
   }
@@ -367,8 +393,25 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
       setState(() {
         _deadline = dt;
         _scheduleCustom = true;
+        _quickDeadlinePreset = null;
       });
     }
+  }
+
+  DateTime _nowToMinute() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day, now.hour, now.minute);
+  }
+
+  void _applyQuickDeadline(Duration duration) {
+    final start = _nowToMinute();
+    setState(() {
+      _startsAt = start;
+      _deadline = start.add(duration);
+      _scheduleSource = null;
+      _scheduleCustom = true;
+      _quickDeadlinePreset = duration;
+    });
   }
 
   /// The effective branch for schedule lookups (admin picks; manager is fixed).
@@ -384,6 +427,7 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
     _deadline = def.due;
     _scheduleSource = shift;
     _scheduleCustom = false;
+    _quickDeadlinePreset = null;
   }
 
   void _resetToSource() {
@@ -404,8 +448,11 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
     }
     setState(() => _resolvingShift = true);
     final date = _startsAt ?? _deadline ?? DateTime.now();
-    final res = await widget.cubit
-        .resolveAssigneeShift(branchId: branchId, uids: uids, date: date);
+    final res = await widget.cubit.resolveAssigneeShift(
+      branchId: branchId,
+      uids: uids,
+      date: date,
+    );
     if (!mounted) return;
     setState(() {
       _resolvingShift = false;
@@ -413,13 +460,18 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
         case AssigneeShiftFit.unanimous:
           _mixedShifts = false;
           if (_scheduleCustom) {
-            _scheduleSource = res.shift; // keep the manager's times, update banner
+            if (_quickDeadlinePreset == null) {
+              // keep the manager's times, update banner
+              _scheduleSource = res.shift;
+            }
           } else {
             _suggestFromShift(res.shift!);
           }
         case AssigneeShiftFit.mixed:
           _mixedShifts = true;
-          if (!_scheduleCustom) _scheduleSource = null; // ambiguous → user chooses
+          if (!_scheduleCustom) {
+            _scheduleSource = null; // ambiguous → user chooses
+          }
         case AssigneeShiftFit.none:
           _mixedShifts = false;
       }
@@ -451,7 +503,9 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   String? get _scheduleWarning {
     final shift = _scheduleSource;
     final s = _startsAt, d = _deadline;
-    if (shift == null || !_scheduleCustom || s == null || d == null) return null;
+    if (shift == null || !_scheduleCustom || s == null || d == null) {
+      return null;
+    }
     final window = shiftDefaultSchedule(s, shift);
     if (s.isBefore(window.start) || d.isAfter(window.due)) {
       final hours = ShiftHours.standard(ScheduleDay.fromDate(s), shift);
@@ -474,7 +528,10 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
           ? child
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [_SectionLabel(label, icon: icon), child],
+              children: [
+                _SectionLabel(label, icon: icon),
+                child,
+              ],
             );
       return EntranceFade(delay: staggerDelay(step++), child: body);
     }
@@ -484,54 +541,62 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SheetHeader(
-            title: isNew ? 'New Task' : 'Edit Task',
-            subtitle: isNew
-                ? 'Compose the work, then choose who runs it.'
-                : 'Update this task.',
+          EntranceFade(
+            offset: 10,
+            duration: const Duration(milliseconds: 420),
+            child: _SheetHeader(
+              eyebrow: isNew ? 'CREATE · WORKFLOW' : 'EDIT · WORKFLOW',
+              title: isNew ? 'New Task' : 'Edit Task',
+              subtitle: isNew
+                  ? 'Compose the work, then choose who runs it.'
+                  : 'Update this task.',
+            ),
           ),
 
           // ── Overview: the defining choice, then the essentials ──────────
-          section(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Work type — the hero choice; regenerates the type-specific
-              // fields below it. Locked (static card) in edit mode.
-              WorkTypePicker(
-                value: _workType,
-                enabled: isNew,
-                onChanged: (id) => setState(() {
-                  _workType = id;
-                  _workData = {}; // fields differ per type
-                  _workFieldErrors = const {};
-                }),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppTextField(
-                controller: _title,
-                label: 'Title',
-                prefixIcon: Icons.title_rounded,
-                autofocus: true,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              // Type-specific fields (collapses to nothing for a general task).
-              DynamicWorkForm(
-                definition: WorkTypeRegistry.instance.byId(_workType),
-                initialData: _workData,
-                errors: _workFieldErrors,
-                onChanged: (data) => _workData = data,
-              ),
-              AppTextField(
-                controller: _desc,
-                label: 'Description (optional)',
-                prefixIcon: Icons.notes_rounded,
-                maxLines: 4,
-                minLines: 1,
-                keyboardType: TextInputType.multiline,
-                textInputAction: TextInputAction.newline,
-              ),
-            ],
-          )),
+          section(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Work type — the hero choice; regenerates the type-specific
+                // fields below it. Locked (static card) in edit mode.
+                WorkTypePicker(
+                  value: _workType,
+                  enabled: isNew,
+                  onChanged: (id) => setState(() {
+                    _workType = id;
+                    _workData = {}; // fields differ per type
+                    _workFieldErrors = const {};
+                  }),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppTextField(
+                  controller: _title,
+                  label: 'Title',
+                  prefixIcon: Icons.title_rounded,
+                  autofocus: true,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                // Type-specific fields (collapses to nothing for a general task).
+                DynamicWorkForm(
+                  definition: WorkTypeRegistry.instance.byId(_workType),
+                  initialData: _workData,
+                  errors: _workFieldErrors,
+                  onChanged: (data) => _workData = data,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppTextField(
+                  controller: _desc,
+                  label: 'Description (optional)',
+                  prefixIcon: Icons.notes_rounded,
+                  maxLines: 4,
+                  minLines: 1,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                ),
+              ],
+            ),
+          ),
 
           // ── Steps: the checklist builder ────────────────────────────────
           section(
@@ -548,163 +613,179 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
 
           // ── Assignment: branch, mode, and who ───────────────────────────
           section(
-              label: 'Assignment',
-              icon: Icons.group_outlined,
-              child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (widget.isAdmin) ...[
-                _BranchField(
-                  future: _branchesFuture,
-                  value: _branchId,
-                  onChanged: (v) => setState(() {
-                    _branchId = v;
-                    _assignees.clear(); // employees differ per branch
-                    _syncEmployeesFuture();
-                  }),
-                ),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              if (isNew) ...[
-                const _FieldCaption('Assigned to'),
-                const SizedBox(height: AppSpacing.sm),
-                _Segmented<TaskAssignmentType>(
-                  value: _assignmentType,
-                  onChanged: (t) {
-                    setState(() {
-                      _assignmentType = t;
-                      if (t == TaskAssignmentType.shift) _mixedShifts = false;
-                    });
-                    // Switching to individual/team re-resolves the roster.
-                    if (t != TaskAssignmentType.shift) {
+            label: 'Assignment',
+            icon: Icons.group_outlined,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (widget.isAdmin) ...[
+                  _BranchField(
+                    future: _branchesFuture,
+                    value: _branchId,
+                    onChanged: (v) => setState(() {
+                      _branchId = v;
+                      _assignees.clear(); // employees differ per branch
+                      _syncEmployeesFuture();
+                    }),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+                if (isNew) ...[
+                  const _FieldCaption('Assigned to'),
+                  const SizedBox(height: AppSpacing.sm),
+                  _Segmented<TaskAssignmentType>(
+                    value: _assignmentType,
+                    onChanged: (t) {
+                      setState(() {
+                        _assignmentType = t;
+                        if (t == TaskAssignmentType.shift) _mixedShifts = false;
+                      });
+                      // Switching to individual/team re-resolves the roster.
+                      if (t != TaskAssignmentType.shift) {
+                        _resolveAssigneeSchedule();
+                      }
+                    },
+                    segments: [
+                      for (final t in TaskAssignmentType.values)
+                        _Seg(t, t.label, icon: _assignmentIcon(t)),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+                if (shiftMode)
+                  ShiftChipPicker(
+                    value: _shift,
+                    onChanged: (s) => setState(() {
+                      _shift = s;
+                      // Picking a shift pre-fills the schedule as a smart default
+                      // (never a lock — the manager can still edit or reset).
+                      _suggestFromShift(s);
+                    }),
+                  )
+                else
+                  _AssigneeField(
+                    future: _employeesFuture,
+                    selected: _assignees,
+                    onChanged: (next) {
+                      setState(() {
+                        _assignees
+                          ..clear()
+                          ..addAll(next);
+                      });
+                      // Pre-fill the schedule from the assignees' rostered shift.
                       _resolveAssigneeSchedule();
-                    }
-                  },
-                  segments: [
-                    for (final t in TaskAssignmentType.values)
-                      _Seg(t, t.label, icon: _assignmentIcon(t)),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
+                    },
+                  ),
               ],
-              if (shiftMode)
-                ShiftChipPicker(
-                  value: _shift,
-                  onChanged: (s) => setState(() {
-                    _shift = s;
-                    // Picking a shift pre-fills the schedule as a smart default
-                    // (never a lock — the manager can still edit or reset).
-                    _suggestFromShift(s);
-                  }),
-                )
-              else
-                _AssigneeField(
-                  future: _employeesFuture,
-                  selected: _assignees,
-                  onChanged: (next) {
-                    setState(() {
-                      _assignees
-                        ..clear()
-                        ..addAll(next);
-                    });
-                    // Pre-fill the schedule from the assignees' rostered shift.
-                    _resolveAssigneeSchedule();
-                  },
-                ),
-            ],
-          )),
+            ),
+          ),
 
           // ── Schedule: when the work starts and is due ───────────────────
           section(
-              label: 'Schedule',
-              icon: Icons.event_note_outlined,
-              child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_mixedShifts) ...[
-                _MixedShiftChooser(
-                  onPick: (shift) => setState(() {
-                    _suggestFromShift(shift);
-                    _mixedShifts = false;
+            label: 'Schedule',
+            icon: Icons.event_note_outlined,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_mixedShifts) ...[
+                  _MixedShiftChooser(
+                    onPick: (shift) => setState(() {
+                      _suggestFromShift(shift);
+                      _mixedShifts = false;
+                    }),
+                    onCustom: () => setState(() => _mixedShifts = false),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+                _ScheduleField(
+                  start: _startsAt,
+                  due: _deadline,
+                  resolving: _resolvingShift,
+                  onQuickDeadline: isNew ? _applyQuickDeadline : null,
+                  quickDeadlineDuration: _quickDeadlinePreset,
+                  onPickStart: _pickStart,
+                  onPickDue: _pickDue,
+                  onClearStart: () => setState(() {
+                    _startsAt = null;
+                    _scheduleCustom = true;
+                    _quickDeadlinePreset = null;
                   }),
-                  onCustom: () => setState(() => _mixedShifts = false),
+                  onClearDue: () => setState(() {
+                    _deadline = null;
+                    _scheduleCustom = true;
+                    _quickDeadlinePreset = null;
+                  }),
+                  sourceLabel: _scheduleSourceLabel,
+                  custom: _scheduleCustom && _scheduleSource != null,
+                  onReset: _scheduleSource == null ? null : _resetToSource,
+                  warning: _scheduleWarning,
+                  error: _scheduleError,
                 ),
-                const SizedBox(height: AppSpacing.md),
               ],
-              _ScheduleField(
-                start: _startsAt,
-                due: _deadline,
-                resolving: _resolvingShift,
-                onPickStart: _pickStart,
-                onPickDue: _pickDue,
-                onClearStart: () => setState(() {
-                  _startsAt = null;
-                  _scheduleCustom = true;
-                }),
-                onClearDue: () => setState(() {
-                  _deadline = null;
-                  _scheduleCustom = true;
-                }),
-                sourceLabel: _scheduleSourceLabel,
-                custom: _scheduleCustom && _scheduleSource != null,
-                onReset: _scheduleSource == null ? null : _resetToSource,
-                warning: _scheduleWarning,
-                error: _scheduleError,
-              ),
-            ],
-          )),
+            ),
+          ),
 
           // ── Review: how it's prioritised and whether it repeats ─────────
           section(
-              label: 'Review',
-              icon: Icons.fact_check_outlined,
-              child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const _FieldCaption('Priority'),
-              const SizedBox(height: AppSpacing.sm),
-              _Segmented<TaskPriority>(
-                value: _priority,
-                onChanged: (v) => setState(() => _priority = v),
-                segments: const [
-                  _Seg(TaskPriority.low, 'Low',
-                      icon: Icons.arrow_downward_rounded),
-                  _Seg(TaskPriority.normal, 'Normal',
-                      icon: Icons.remove_rounded),
-                  _Seg(TaskPriority.high, 'High',
-                      icon: Icons.priority_high_rounded),
-                ],
-              ),
-              // Recurrence (new tasks only) — shift mode gets its own
-              // Once/Daily/Weekly picker (daily/weekly saves as a recurring
-              // shift-task template rather than a single task).
-              if (isNew) ...[
-                const SizedBox(height: AppSpacing.md),
-                if (shiftMode)
-                  ShiftRepeatPicker(
-                    value: _shiftRepeat,
-                    onChanged: (v) => setState(() => _shiftRepeat = v),
-                    weekday: _shiftWeekday,
-                    onWeekdayChanged: (w) =>
-                        setState(() => _shiftWeekday = w),
-                  )
-                else ...[
-                  const _FieldCaption('Repeats'),
-                  const SizedBox(height: AppSpacing.sm),
-                  _Segmented<RecurrenceFrequency>(
-                    value: _recurrence,
-                    onChanged: (v) => setState(() => _recurrence = v),
-                    segments: const [
-                      _Seg(RecurrenceFrequency.none, 'None'),
-                      _Seg(RecurrenceFrequency.daily, 'Daily'),
-                      _Seg(RecurrenceFrequency.weekly, 'Weekly'),
-                      _Seg(RecurrenceFrequency.monthly, 'Monthly'),
-                    ],
-                  ),
+            label: 'Review',
+            icon: Icons.fact_check_outlined,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _FieldCaption('Priority'),
+                const SizedBox(height: AppSpacing.sm),
+                _Segmented<TaskPriority>(
+                  value: _priority,
+                  onChanged: (v) => setState(() => _priority = v),
+                  segments: const [
+                    _Seg(
+                      TaskPriority.low,
+                      'Low',
+                      icon: Icons.arrow_downward_rounded,
+                    ),
+                    _Seg(
+                      TaskPriority.normal,
+                      'Normal',
+                      icon: Icons.remove_rounded,
+                    ),
+                    _Seg(
+                      TaskPriority.high,
+                      'High',
+                      icon: Icons.priority_high_rounded,
+                    ),
+                  ],
+                ),
+                // Recurrence (new tasks only) — shift mode gets its own
+                // Once/Daily/Weekly picker (daily/weekly saves as a recurring
+                // shift-task template rather than a single task).
+                if (isNew) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  if (shiftMode)
+                    ShiftRepeatPicker(
+                      value: _shiftRepeat,
+                      onChanged: (v) => setState(() => _shiftRepeat = v),
+                      weekday: _shiftWeekday,
+                      onWeekdayChanged: (w) =>
+                          setState(() => _shiftWeekday = w),
+                    )
+                  else ...[
+                    const _FieldCaption('Repeats'),
+                    const SizedBox(height: AppSpacing.sm),
+                    _Segmented<RecurrenceFrequency>(
+                      value: _recurrence,
+                      onChanged: (v) => setState(() => _recurrence = v),
+                      segments: const [
+                        _Seg(RecurrenceFrequency.none, 'None'),
+                        _Seg(RecurrenceFrequency.daily, 'Daily'),
+                        _Seg(RecurrenceFrequency.weekly, 'Weekly'),
+                        _Seg(RecurrenceFrequency.monthly, 'Monthly'),
+                      ],
+                    ),
+                  ],
                 ],
               ],
-            ],
-          )),
+            ),
+          ),
 
           // ── Attachments: "what good looks like" ─────────────────────────
           section(
@@ -714,7 +795,8 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
               attachments: _newRefs,
               allowVideo: false,
               title: 'Reference images',
-              hint: 'Attach photos showing how this should look — the employee '
+              hint:
+                  'Attach photos showing how this should look — the employee '
                   'sees them before starting. Photos are compressed before upload.',
               existing: _existingRefs,
               onRemoveExisting: (a) => setState(() => _existingRefs.remove(a)),
@@ -723,13 +805,24 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
           ),
 
           // ── Validation + submit ─────────────────────────────────────────
-          _FormErrorBanner(message: _error),
-          const SizedBox(height: AppSpacing.xl),
-          AppButton(
-            label: isNew ? 'Create Task' : 'Save Changes',
-            icon: const Icon(Icons.check_rounded,
-                size: 20, color: AppColors.onAccent),
-            onPressed: _save,
+          EntranceFade(
+            delay: staggerDelay(step++),
+            offset: 10,
+            child: Column(
+              children: [
+                _FormErrorBanner(message: _error),
+                const SizedBox(height: AppSpacing.xl),
+                AppButton(
+                  label: isNew ? 'Create Task' : 'Save Changes',
+                  icon: const Icon(
+                    Icons.check_rounded,
+                    size: 20,
+                    color: AppColors.onAccent,
+                  ),
+                  onPressed: _save,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -737,9 +830,8 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   }
 
   static IconData _assignmentIcon(TaskAssignmentType t) => switch (t) {
-        TaskAssignmentType.individual => Icons.person_outline_rounded,
-        TaskAssignmentType.team => Icons.groups_2_outlined,
-        TaskAssignmentType.shift => Icons.schedule_rounded,
-      };
+    TaskAssignmentType.individual => Icons.person_outline_rounded,
+    TaskAssignmentType.team => Icons.groups_2_outlined,
+    TaskAssignmentType.shift => Icons.schedule_rounded,
+  };
 }
-

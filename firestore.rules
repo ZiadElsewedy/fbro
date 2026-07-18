@@ -55,6 +55,12 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/requests/$(requestId)).data;
     }
 
+    // The attendance record's data (userId / branch), used by the `events`
+    // subcollection rules to gate on the parent. Cached per request.
+    function attendanceData(recordId) {
+      return get(/databases/$(database)/documents/attendance/$(recordId)).data;
+    }
+
     // ── Users ──────────────────────────────────────────────────────
     // DROP is ADMIN-PROVISIONED — there is no public registration. Accounts are
     // created server-side by the `createUserAccount` Cloud Function (Admin SDK,
@@ -652,32 +658,107 @@ service cloud.firestore {
       }
     }
 
-    // ── Community Hub / DROP Events (`events/{eventId}`) ───────────
-    // Each event is a single self-contained document with every workspace
-    // section (timeline / team / tasks / inventory / logistics / budget /
-    // communication / outcome) embedded inline, so a section edit is one
-    // whole-document update — governed by a single update rule.
-    //   read   — admin (all) · a branch member (manager OR employee) whose
-    //            branch matches the event. A null-branch event is admin-only.
-    //   create — admin (any branch) · manager (own branch only), stamping
-    //            themselves as `createdBy`.
-    //   update — admin (anything) · own-branch manager. Covers every section
-    //            edit, status change, and the soft-delete (`deletedAt`) stamp.
-    //   delete — never (events are records; removal is a soft-delete update).
-    match /events/{eventId} {
+    // ── Attendance (`attendance/{recordId}`) ──────────────────────
+    // Clock in/out records at a deterministic id `{uid}_{yyyyMMdd}_{shift}`.
+    //   read   — admin (all) · own-branch manager · the record's own employee.
+    //   create — the employee clocks THEIR OWN record (userId == uid), in their
+    //            own branch, and it starts in `inProgress` (never seeded into a
+    //            terminal/review state client-side).
+    //   update — admin (anything) · own-branch manager (review/edit/soft-delete)
+    //            · the owner mutating their own record (clock out / breaks) with
+    //            userId immutable.
+    //   delete — never (records are history; removal is a soft-delete update).
+    match /attendance/{recordId} {
       allow read: if isAdmin()
-        || (selfBranch() != ''
-            && resource.data.get('branchId', '') == selfBranch());
+        || (isManager() && resource.data.get('branchId', '') == selfBranch())
+        || isOwner(resource.data.get('userId', ''));
 
       allow create: if isSignedIn()
-        && request.resource.data.get('createdBy', '') == request.auth.uid
+        && request.resource.data.get('userId', '') == request.auth.uid
+        && request.resource.data.get('status', 'inProgress') == 'inProgress'
         && (isAdmin()
-            || (isManager()
-                && request.resource.data.get('branchId', '') == selfBranch()));
+            || request.resource.data.get('branchId', '') == selfBranch());
 
-      allow update: if isAdmin()
+      allow update: if
+        isAdmin()
         || (isManager()
-            && resource.data.get('branchId', '') == selfBranch());
+            && resource.data.get('branchId', '') == selfBranch())
+        || (isOwner(resource.data.get('userId', ''))
+            && request.resource.data.get('userId', '') ==
+               resource.data.get('userId', ''));
+
+      allow delete: if false;
+
+      // ── Audit trail (`attendance/{id}/events/{id}`) ────────────────
+      // Append-only + immutable, and written ONLY by the Admin SDK (the
+      // attendance Cloud Function derives lifecycle events from record writes,
+      // mirroring `onRequest*`), so NO client can create/mutate an audit event —
+      // it can only READ its own trail. This is what makes "nothing silently
+      // modifies attendance" enforceable.
+      match /events/{eventId} {
+        allow read: if isAdmin()
+          || (isManager()
+              && attendanceData(recordId).get('branchId', '') == selfBranch())
+          || isOwner(attendanceData(recordId).get('userId', ''));
+        allow create, update, delete: if false;
+      }
+    }
+
+    // ── Attendance corrections (`attendance_corrections/{correctionId}`) ──
+    // An employee disputes/fixes their OWN settled record; a manager (own branch)
+    // or admin decides. The approved resolution is applied to the parent record
+    // and the immutable audit event written by the Admin SDK
+    // (`onAttendanceCorrectionWritten`), NEVER a client — so a corrected record
+    // and its trail can't be forged.
+    //   read   — admin (all) · own-branch manager · the correction's own employee.
+    //   create — either (a) the employee FILES for THEIR OWN record (userId ==
+    //            requestedBy == uid), in their own branch, status `pending`; or
+    //            (b) a reviewer's DIRECT action (admin | own-branch manager) —
+    //            an already-`approved` correction they authored (decidedBy == uid)
+    //            for SOMEONE ELSE (never their own attendance). The Cloud Function
+    //            applies (b) immediately; no self-approval is possible either way.
+    //   update — a reviewer decides (admin | own-branch manager) — but NEVER on
+    //            their OWN attendance (no self-approval); userId / attendanceId /
+    //            requestedBy are immutable. (Admin soft-delete stamps `deletedAt`
+    //            via this same update path.)
+    //   delete — never (corrections are history; removal is a soft-delete update).
+    match /attendance_corrections/{correctionId} {
+      allow read: if isAdmin()
+        || (isManager() && resource.data.get('branchId', '') == selfBranch())
+        || isOwner(resource.data.get('userId', ''));
+
+      allow create: if isSignedIn()
+        && (
+          // (a) employee self-files a pending correction for their own record
+          (
+            request.resource.data.get('userId', '') == request.auth.uid
+            && request.resource.data.get('requestedBy', '') == request.auth.uid
+            && request.resource.data.get('status', 'pending') == 'pending'
+            && (isAdmin()
+                || request.resource.data.get('branchId', '') == selfBranch())
+          )
+          // (b) reviewer direct action — approved correction for another user
+          || (
+            (isAdmin()
+             || (isManager()
+                 && request.resource.data.get('branchId', '') == selfBranch()))
+            && request.resource.data.get('status', '') == 'approved'
+            && request.resource.data.get('decidedBy', '') == request.auth.uid
+            && request.auth.uid != request.resource.data.get('userId', '')
+          )
+        );
+
+      allow update: if
+        (isAdmin()
+         || (isManager()
+             && resource.data.get('branchId', '') == selfBranch()))
+        && request.auth.uid != resource.data.get('userId', '')
+        && request.resource.data.get('userId', '') ==
+           resource.data.get('userId', '')
+        && request.resource.data.get('attendanceId', '') ==
+           resource.data.get('attendanceId', '')
+        && request.resource.data.get('requestedBy', '') ==
+           resource.data.get('requestedBy', '');
 
       allow delete: if false;
     }

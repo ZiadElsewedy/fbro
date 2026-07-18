@@ -4,9 +4,7 @@ import 'package:drop/core/enums/schedule_day.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/schedule/domain/entities/weekly_schedule_entity.dart';
-import 'package:drop/features/schedule/domain/health/schedule_health_analyzer.dart';
 import 'package:drop/features/schedule/presentation/schedule_insights.dart';
-import 'package:drop/features/schedule/presentation/widgets/schedule_helpers.dart';
 import 'package:drop/features/schedule/presentation/widgets/schedule_inspector_drawer.dart';
 
 /// Schedule V2 — the Mac inspector drawer. Extracted stateless, so it tests in
@@ -38,8 +36,6 @@ void main() {
   });
   final members = [_user('u1', 'Ziad Elsewedy', position: 'Cashier')];
   final insights = computeScheduleInsights(schedule, members);
-  final report =
-      const ScheduleHealthAnalyzer().analyze(schedule, members, nameOf: shortName);
 
   Future<void> pump(
     WidgetTester tester, {
@@ -54,7 +50,6 @@ void main() {
           child: ScheduleInspectorDrawer(
             schedule: schedule,
             members: members,
-            report: report,
             insights: insights,
             selectedUid: selectedUid,
             onSelect: onSelect,
@@ -71,7 +66,7 @@ void main() {
     await pump(tester, selectedUid: null, onSelect: picked.add);
 
     expect(find.text('THIS WEEK'), findsOneWidget);
-    // Global schedule health moved out of the rail to the below-grid surface.
+    // Schedule Health was removed entirely (owner ruling, 2026-07-15).
     expect(find.text('SCHEDULE HEALTH'), findsNothing);
     expect(find.text('TEAM · TAP FOR DETAIL'), findsOneWidget);
     // The roster row: short name + position.
@@ -89,10 +84,15 @@ void main() {
     // Header uses the full name; the detail lists the week facts.
     expect(find.text('Ziad Elsewedy'), findsOneWidget);
     expect(find.text('Weekly hours'), findsOneWidget);
-    // Two 8h mornings → 16h; morning split 2.
+    // Two 8h mornings → 16h across 2 days worked.
     expect(find.text('16h'), findsOneWidget);
-    expect(find.text('Morning'), findsOneWidget);
-    expect(find.text('WEEK AT A GLANCE'), findsOneWidget);
+    expect(find.text('Days worked'), findsOneWidget);
+    // The morning/night split and the per-day M/N pattern were removed —
+    // *how many days* is the operational fact, the shift pattern is noise the
+    // grid already shows (owner ruling, 2026-07-15).
+    expect(find.text('Morning'), findsNothing);
+    expect(find.text('Night'), findsNothing);
+    expect(find.text('WEEK AT A GLANCE'), findsNothing);
   });
 
   testWidgets('the back control clears the selection', (tester) async {

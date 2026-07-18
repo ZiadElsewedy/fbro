@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- GPS-verified attendance clock in/out. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <!-- FCM push delivery. INTERNET is required to reach FCM; POST_NOTIFICATIONS
          is the Android 13+ (API 33) runtime permission WITHOUT WHICH no push is
          ever shown — `FirebaseMessaging.requestPermission()` surfaces the OS

@@ -19,6 +19,7 @@ import 'package:drop/features/admin/presentation/cubit/admin_users_cubit.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
 import 'package:drop/features/branch/presentation/cubit/branch_cubit.dart';
 import 'package:drop/features/branch/presentation/cubit/branch_state.dart';
+import 'package:drop/features/branch/presentation/pages/branch_geofence_editor_screen.dart';
 import 'package:drop/features/branch/presentation/widgets/branch_form_sheet.dart';
 
 /// Admin → Branches (Phase 9 redesign). Premium branch cards showing the
@@ -258,6 +259,19 @@ class _BranchManagementScreenState extends State<BranchManagementScreen> {
               _btn('Edit', Icons.edit_outlined,
                   () => showBranchFormSheet(
                       context: context, cubit: cubit, existing: branch)),
+              _btn(
+                branch.hasGeofence ? 'GPS area' : 'Set GPS area',
+                branch.hasGeofence
+                    ? Icons.my_location_rounded
+                    : Icons.location_searching_rounded,
+                () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        BranchGeofenceEditorScreen(branch: branch),
+                  ),
+                ),
+                color: branch.hasGeofence ? null : AppColors.warning,
+              ),
               _btn(
                 branch.isActive ? 'Deactivate' : 'Activate',
                 branch.isActive

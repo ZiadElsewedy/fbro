@@ -42,6 +42,7 @@ class TaskModel {
   final String? sourceTemplateId;
   final String? recurrenceRootId;
   final String? occurrenceKey;
+  final String? correlationId;
   final DateTime? startsAt;
   final DateTime? deadline;
   final String? notes;
@@ -84,6 +85,7 @@ class TaskModel {
     this.sourceTemplateId,
     this.recurrenceRootId,
     this.occurrenceKey,
+    this.correlationId,
     this.startsAt,
     this.deadline,
     this.notes,
@@ -127,6 +129,7 @@ class TaskModel {
         sourceTemplateId: map['sourceTemplateId'] as String?,
         recurrenceRootId: map['recurrenceRootId'] as String?,
         occurrenceKey: map['occurrenceKey'] as String?,
+        correlationId: map['correlationId'] as String?,
         startsAt: map.date('startsAt'),
         deadline: map.date('deadline'),
         notes: map['notes'] as String?,
@@ -170,6 +173,7 @@ class TaskModel {
         sourceTemplateId: e.sourceTemplateId,
         recurrenceRootId: e.recurrenceRootId,
         occurrenceKey: e.occurrenceKey,
+        correlationId: e.correlationId,
         startsAt: e.startsAt,
         deadline: e.deadline,
         notes: e.notes,
@@ -220,6 +224,7 @@ class TaskModel {
         'sourceTemplateId': sourceTemplateId,
         'recurrenceRootId': recurrenceRootId,
         'occurrenceKey': occurrenceKey,
+        'correlationId': correlationId,
         'startsAt': startsAt == null ? null : Timestamp.fromDate(startsAt!),
         'deadline': deadline == null ? null : Timestamp.fromDate(deadline!),
         'notes': notes,
@@ -266,6 +271,7 @@ class TaskModel {
         sourceTemplateId: sourceTemplateId,
         recurrenceRootId: recurrenceRootId,
         occurrenceKey: occurrenceKey,
+        correlationId: correlationId,
         startsAt: startsAt,
         deadline: deadline,
         notes: notes,
@@ -309,6 +315,7 @@ class TaskModel {
         sourceTemplateId: sourceTemplateId,
         recurrenceRootId: recurrenceRootId,
         occurrenceKey: occurrenceKey,
+        correlationId: correlationId,
         startsAt: startsAt,
         deadline: deadline,
         notes: notes,

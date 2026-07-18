@@ -47,6 +47,10 @@ dependencies:
   firebase_messaging: ^15.1.3
   cloud_functions: ^5.1.3
 
+  # Location — GPS-verified attendance clock in/out (permission, high-accuracy
+  # position, distance-to-branch). The single geolocation dependency.
+  geolocator: ^13.0.1
+
   # Media
   image_picker: ^1.1.2
   # In-app crop / rotate / flip / aspect editor (mobile only — gated off on

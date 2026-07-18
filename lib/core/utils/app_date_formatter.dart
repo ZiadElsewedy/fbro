@@ -9,7 +9,7 @@
 /// produces, and only the styles the app actually shows are exposed here.
 ///
 /// Out of scope (intentionally not routed through here — see
-/// `docs/performance`/sprint notes): 24-hour shift-window times
+/// `docs/design/PERFORMANCE.md`): 24-hour shift-window times
 /// (`ShiftHours.format`), machine `yyyy-MM-dd` keys/filenames/persisted values,
 /// and elapsed-[Duration] labels (video length, "Waiting 3d", "Synced 3m ago").
 class AppDateFormatter {
@@ -53,6 +53,25 @@ class AppDateFormatter {
   /// Long weekday + day + abbreviated month — e.g. `Monday, 6 Jul`.
   static String weekdayDayMonth(DateTime dt) =>
       '${_weekdaysLong[dt.weekday - 1]}, ${dayMonth(dt)}';
+
+  /// A local execution time with a manager-friendly relative day prefix:
+  /// `Today • 8:30 AM`, `Tomorrow • 4:30 PM`, then an absolute weekday/date.
+  /// [now] is injectable so automation summaries and their tests stay
+  /// deterministic while every caller shares the same wording.
+  static String relativeDayTime(DateTime dt, {DateTime? now}) {
+    final value = dt.toLocal();
+    final current = (now ?? DateTime.now()).toLocal();
+    final today = DateTime(current.year, current.month, current.day);
+    final day = DateTime(value.year, value.month, value.day);
+    final dateLabel = day == today
+        ? 'Today'
+        : day == today.add(const Duration(days: 1))
+        ? 'Tomorrow'
+        : value.year == current.year
+        ? weekdayDayMonth(value)
+        : dayMonthYear(value);
+    return '$dateLabel • ${time(value)}';
+  }
 
   /// Numeric day/month/year with no zero-padding — e.g. `8/7/2026`.
   static String numeric(DateTime dt) => '${dt.day}/${dt.month}/${dt.year}';

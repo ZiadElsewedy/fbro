@@ -29,6 +29,7 @@ import 'package:drop/features/schedule/domain/schedule_week.dart';
 import 'package:drop/features/task/domain/entities/activity_entry.dart';
 import 'package:drop/features/task/domain/entities/checklist_item.dart';
 import 'package:drop/features/task/domain/entities/recurrence_config.dart';
+import 'package:drop/features/task/domain/entities/automation_run_entity.dart';
 import 'package:drop/features/task/domain/entities/recurring_task_template_entity.dart';
 import 'package:drop/features/task/domain/entities/task_attachment.dart';
 import 'package:drop/features/task/domain/entities/task_entity.dart';
@@ -1246,13 +1247,8 @@ class TaskCubit extends Cubit<TaskState> {
 
   // ─── Recurring shift-task templates ────────────────────────────
   Future<List<RecurringTaskTemplateEntity>> recurringTemplates(
-      String branchId) async {
-    try {
-      return await _repository.getRecurringTemplates(branchId);
-    } catch (_) {
-      return const [];
-    }
-  }
+      String branchId) =>
+      _repository.getRecurringTemplates(branchId);
 
   /// Creates a daily/weekly recurring shift-task template, then starts a
   /// best-effort materialization of *today's* instance (if due today) without
@@ -1296,6 +1292,34 @@ class TaskCubit extends Cubit<TaskState> {
 
   Future<void> deleteRecurringTemplate(String templateId) =>
       _repository.deleteRecurringTemplate(templateId);
+
+  /// One page of a recurring template's execution history, newest-first
+  /// (observability, ADR-011). [before] is the pagination cursor (the last
+  /// row's `startedAt`); null loads the first page. Presentation-only read —
+  /// the runs are written server-side by `generateShiftTaskInstances`.
+  Future<List<AutomationRunEntity>> automationRuns(
+    String templateId, {
+    required String branchId,
+    int limit = 20,
+    DateTime? before,
+  }) =>
+      _repository.getAutomationRuns(
+        templateId,
+        branchId: branchId,
+        limit: limit,
+        before: before,
+      );
+
+  /// Traceability: the automation run a generated task / notification / audit
+  /// entry belongs to, looked up by its shared [correlationId] (null if none).
+  Future<AutomationRunEntity?> automationRunByCorrelationId(
+    String correlationId, {
+    required String branchId,
+  }) =>
+      _repository.getAutomationRunByCorrelationId(
+        correlationId,
+        branchId: branchId,
+      );
 
   /// Creates *today's* instance of [template] at the same deterministic id
   /// (`rt_{templateId}_{yyyy-MM-dd}`, UTC) the `generateShiftTaskInstances`

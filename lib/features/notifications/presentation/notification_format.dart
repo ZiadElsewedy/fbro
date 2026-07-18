@@ -48,7 +48,11 @@ NotificationPriority notificationPriority(NotificationType type) =>
       // A new request needs an approver to act; a new comment is the other
       // party's move.
       NotificationType.requestSubmitted ||
-      NotificationType.requestCommented =>
+      NotificationType.requestCommented ||
+      // A filed correction needs a reviewer to act; an auto-closed session needs
+      // the employee to file a fix — both are "your move".
+      NotificationType.attendanceCorrectionFiled ||
+      NotificationType.attendanceAutoClosed =>
         NotificationPriority.high,
       NotificationType.taskApproved ||
       NotificationType.taskReminder ||
@@ -61,7 +65,11 @@ NotificationPriority notificationPriority(NotificationType type) =>
       NotificationType.requestApproved ||
       NotificationType.requestRejected ||
       NotificationType.requestCompleted ||
-      NotificationType.requestCancelled =>
+      NotificationType.requestCancelled ||
+      // A correction decision (approved / rejected) is informational to the
+      // employee.
+      NotificationType.attendanceCorrectionApproved ||
+      NotificationType.attendanceCorrectionRejected =>
         NotificationPriority.normal,
     };
 
@@ -123,8 +131,16 @@ NotificationCategory categoryOf(NotificationType type) => switch (type) {
       NotificationType.requestRejected ||
       NotificationType.requestCompleted ||
       NotificationType.requestCancelled ||
-      NotificationType.requestCommented =>
+      NotificationType.requestCommented ||
+      // An attendance correction IS an approval request about a record — it
+      // rides the Requests filter (no separate pill until attendance ships a
+      // surface); the tile still badges it "Attendance".
+      NotificationType.attendanceCorrectionFiled ||
+      NotificationType.attendanceCorrectionApproved ||
+      NotificationType.attendanceCorrectionRejected =>
         NotificationCategory.requests,
+      // An auto-closed session is the employee's action item.
+      NotificationType.attendanceAutoClosed => NotificationCategory.tasks,
     };
 
 // ─── Time grouping ──────────────────────────────────────────────────

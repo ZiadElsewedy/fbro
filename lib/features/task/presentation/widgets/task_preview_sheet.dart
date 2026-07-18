@@ -18,7 +18,7 @@ import 'package:drop/features/task/presentation/widgets/task_feed_row.dart';
 /// Extracted from the feed's private sheet so the activity feed, the filtered
 /// task lists and the feed rows all present the same surface. Feature-level (it
 /// needs `TaskCubit` for branch names + the quick actions) — the generic
-/// pattern is documented in `docs/design/DESIGN_SYSTEM_V2.md`.
+/// pattern is documented in `docs/design/DESIGN_SYSTEM.md`.
 
 /// Push the full-screen [TaskDetailsScreen] with the app's standard slide/fade
 /// transition, keeping the caller's screen on the stack (Back returns to it).

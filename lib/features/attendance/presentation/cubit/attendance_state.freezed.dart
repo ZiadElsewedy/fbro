@@ -1,0 +1,1274 @@
+// coverage:ignore-file
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// ignore_for_file: type=lint
+// ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
+
+part of 'attendance_state.dart';
+
+// **************************************************************************
+// FreezedGenerator
+// **************************************************************************
+
+T _$identity<T>(T value) => value;
+
+final _privateConstructorUsedError = UnsupportedError(
+  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
+);
+
+/// @nodoc
+mixin _$AttendanceState {
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() initial,
+    required TResult Function() loading,
+    required TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )
+    loaded,
+    required TResult Function(String message) error,
+  }) => throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? initial,
+    TResult? Function()? loading,
+    TResult? Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult? Function(String message)? error,
+  }) => throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? initial,
+    TResult Function()? loading,
+    TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult Function(String message)? error,
+    required TResult orElse(),
+  }) => throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(_Initial value) initial,
+    required TResult Function(_Loading value) loading,
+    required TResult Function(_Loaded value) loaded,
+    required TResult Function(_Error value) error,
+  }) => throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(_Initial value)? initial,
+    TResult? Function(_Loading value)? loading,
+    TResult? Function(_Loaded value)? loaded,
+    TResult? Function(_Error value)? error,
+  }) => throw _privateConstructorUsedError;
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(_Initial value)? initial,
+    TResult Function(_Loading value)? loading,
+    TResult Function(_Loaded value)? loaded,
+    TResult Function(_Error value)? error,
+    required TResult orElse(),
+  }) => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $AttendanceStateCopyWith<$Res> {
+  factory $AttendanceStateCopyWith(
+    AttendanceState value,
+    $Res Function(AttendanceState) then,
+  ) = _$AttendanceStateCopyWithImpl<$Res, AttendanceState>;
+}
+
+/// @nodoc
+class _$AttendanceStateCopyWithImpl<$Res, $Val extends AttendanceState>
+    implements $AttendanceStateCopyWith<$Res> {
+  _$AttendanceStateCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+}
+
+/// @nodoc
+abstract class _$$InitialImplCopyWith<$Res> {
+  factory _$$InitialImplCopyWith(
+    _$InitialImpl value,
+    $Res Function(_$InitialImpl) then,
+  ) = __$$InitialImplCopyWithImpl<$Res>;
+}
+
+/// @nodoc
+class __$$InitialImplCopyWithImpl<$Res>
+    extends _$AttendanceStateCopyWithImpl<$Res, _$InitialImpl>
+    implements _$$InitialImplCopyWith<$Res> {
+  __$$InitialImplCopyWithImpl(
+    _$InitialImpl _value,
+    $Res Function(_$InitialImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+}
+
+/// @nodoc
+
+class _$InitialImpl implements _Initial {
+  const _$InitialImpl();
+
+  @override
+  String toString() {
+    return 'AttendanceState.initial()';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType && other is _$InitialImpl);
+  }
+
+  @override
+  int get hashCode => runtimeType.hashCode;
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() initial,
+    required TResult Function() loading,
+    required TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )
+    loaded,
+    required TResult Function(String message) error,
+  }) {
+    return initial();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? initial,
+    TResult? Function()? loading,
+    TResult? Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult? Function(String message)? error,
+  }) {
+    return initial?.call();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? initial,
+    TResult Function()? loading,
+    TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult Function(String message)? error,
+    required TResult orElse(),
+  }) {
+    if (initial != null) {
+      return initial();
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(_Initial value) initial,
+    required TResult Function(_Loading value) loading,
+    required TResult Function(_Loaded value) loaded,
+    required TResult Function(_Error value) error,
+  }) {
+    return initial(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(_Initial value)? initial,
+    TResult? Function(_Loading value)? loading,
+    TResult? Function(_Loaded value)? loaded,
+    TResult? Function(_Error value)? error,
+  }) {
+    return initial?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(_Initial value)? initial,
+    TResult Function(_Loading value)? loading,
+    TResult Function(_Loaded value)? loaded,
+    TResult Function(_Error value)? error,
+    required TResult orElse(),
+  }) {
+    if (initial != null) {
+      return initial(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class _Initial implements AttendanceState {
+  const factory _Initial() = _$InitialImpl;
+}
+
+/// @nodoc
+abstract class _$$LoadingImplCopyWith<$Res> {
+  factory _$$LoadingImplCopyWith(
+    _$LoadingImpl value,
+    $Res Function(_$LoadingImpl) then,
+  ) = __$$LoadingImplCopyWithImpl<$Res>;
+}
+
+/// @nodoc
+class __$$LoadingImplCopyWithImpl<$Res>
+    extends _$AttendanceStateCopyWithImpl<$Res, _$LoadingImpl>
+    implements _$$LoadingImplCopyWith<$Res> {
+  __$$LoadingImplCopyWithImpl(
+    _$LoadingImpl _value,
+    $Res Function(_$LoadingImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+}
+
+/// @nodoc
+
+class _$LoadingImpl implements _Loading {
+  const _$LoadingImpl();
+
+  @override
+  String toString() {
+    return 'AttendanceState.loading()';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType && other is _$LoadingImpl);
+  }
+
+  @override
+  int get hashCode => runtimeType.hashCode;
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() initial,
+    required TResult Function() loading,
+    required TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )
+    loaded,
+    required TResult Function(String message) error,
+  }) {
+    return loading();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? initial,
+    TResult? Function()? loading,
+    TResult? Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult? Function(String message)? error,
+  }) {
+    return loading?.call();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? initial,
+    TResult Function()? loading,
+    TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult Function(String message)? error,
+    required TResult orElse(),
+  }) {
+    if (loading != null) {
+      return loading();
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(_Initial value) initial,
+    required TResult Function(_Loading value) loading,
+    required TResult Function(_Loaded value) loaded,
+    required TResult Function(_Error value) error,
+  }) {
+    return loading(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(_Initial value)? initial,
+    TResult? Function(_Loading value)? loading,
+    TResult? Function(_Loaded value)? loaded,
+    TResult? Function(_Error value)? error,
+  }) {
+    return loading?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(_Initial value)? initial,
+    TResult Function(_Loading value)? loading,
+    TResult Function(_Loaded value)? loaded,
+    TResult Function(_Error value)? error,
+    required TResult orElse(),
+  }) {
+    if (loading != null) {
+      return loading(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class _Loading implements AttendanceState {
+  const factory _Loading() = _$LoadingImpl;
+}
+
+/// @nodoc
+abstract class _$$LoadedImplCopyWith<$Res> {
+  factory _$$LoadedImplCopyWith(
+    _$LoadedImpl value,
+    $Res Function(_$LoadedImpl) then,
+  ) = __$$LoadedImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({
+    AttendanceEntity? today,
+    AttendanceEntity? session,
+    List<AttendanceEntity> history,
+    ScheduleShift? shift,
+    DateTime? scheduledStart,
+    DateTime? scheduledEnd,
+    LeaveType? leave,
+    AttendanceConfig config,
+    DateTime tick,
+    bool busy,
+    bool syncing,
+    bool offline,
+    bool verifying,
+    bool geofenceReady,
+    bool previewing,
+    AttendanceVerification? previewVerification,
+    LocationError? previewError,
+  });
+
+  $AttendanceEntityCopyWith<$Res>? get today;
+  $AttendanceEntityCopyWith<$Res>? get session;
+}
+
+/// @nodoc
+class __$$LoadedImplCopyWithImpl<$Res>
+    extends _$AttendanceStateCopyWithImpl<$Res, _$LoadedImpl>
+    implements _$$LoadedImplCopyWith<$Res> {
+  __$$LoadedImplCopyWithImpl(
+    _$LoadedImpl _value,
+    $Res Function(_$LoadedImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? today = freezed,
+    Object? session = freezed,
+    Object? history = null,
+    Object? shift = freezed,
+    Object? scheduledStart = freezed,
+    Object? scheduledEnd = freezed,
+    Object? leave = freezed,
+    Object? config = null,
+    Object? tick = null,
+    Object? busy = null,
+    Object? syncing = null,
+    Object? offline = null,
+    Object? verifying = null,
+    Object? geofenceReady = null,
+    Object? previewing = null,
+    Object? previewVerification = freezed,
+    Object? previewError = freezed,
+  }) {
+    return _then(
+      _$LoadedImpl(
+        today: freezed == today
+            ? _value.today
+            : today // ignore: cast_nullable_to_non_nullable
+                  as AttendanceEntity?,
+        session: freezed == session
+            ? _value.session
+            : session // ignore: cast_nullable_to_non_nullable
+                  as AttendanceEntity?,
+        history: null == history
+            ? _value._history
+            : history // ignore: cast_nullable_to_non_nullable
+                  as List<AttendanceEntity>,
+        shift: freezed == shift
+            ? _value.shift
+            : shift // ignore: cast_nullable_to_non_nullable
+                  as ScheduleShift?,
+        scheduledStart: freezed == scheduledStart
+            ? _value.scheduledStart
+            : scheduledStart // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
+        scheduledEnd: freezed == scheduledEnd
+            ? _value.scheduledEnd
+            : scheduledEnd // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
+        leave: freezed == leave
+            ? _value.leave
+            : leave // ignore: cast_nullable_to_non_nullable
+                  as LeaveType?,
+        config: null == config
+            ? _value.config
+            : config // ignore: cast_nullable_to_non_nullable
+                  as AttendanceConfig,
+        tick: null == tick
+            ? _value.tick
+            : tick // ignore: cast_nullable_to_non_nullable
+                  as DateTime,
+        busy: null == busy
+            ? _value.busy
+            : busy // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        syncing: null == syncing
+            ? _value.syncing
+            : syncing // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        offline: null == offline
+            ? _value.offline
+            : offline // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        verifying: null == verifying
+            ? _value.verifying
+            : verifying // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        geofenceReady: null == geofenceReady
+            ? _value.geofenceReady
+            : geofenceReady // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        previewing: null == previewing
+            ? _value.previewing
+            : previewing // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        previewVerification: freezed == previewVerification
+            ? _value.previewVerification
+            : previewVerification // ignore: cast_nullable_to_non_nullable
+                  as AttendanceVerification?,
+        previewError: freezed == previewError
+            ? _value.previewError
+            : previewError // ignore: cast_nullable_to_non_nullable
+                  as LocationError?,
+      ),
+    );
+  }
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @pragma('vm:prefer-inline')
+  $AttendanceEntityCopyWith<$Res>? get today {
+    if (_value.today == null) {
+      return null;
+    }
+
+    return $AttendanceEntityCopyWith<$Res>(_value.today!, (value) {
+      return _then(_value.copyWith(today: value));
+    });
+  }
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @pragma('vm:prefer-inline')
+  $AttendanceEntityCopyWith<$Res>? get session {
+    if (_value.session == null) {
+      return null;
+    }
+
+    return $AttendanceEntityCopyWith<$Res>(_value.session!, (value) {
+      return _then(_value.copyWith(session: value));
+    });
+  }
+}
+
+/// @nodoc
+
+class _$LoadedImpl implements _Loaded {
+  const _$LoadedImpl({
+    this.today,
+    this.session,
+    final List<AttendanceEntity> history = const <AttendanceEntity>[],
+    this.shift,
+    this.scheduledStart,
+    this.scheduledEnd,
+    this.leave,
+    required this.config,
+    required this.tick,
+    this.busy = false,
+    this.syncing = false,
+    this.offline = false,
+    this.verifying = false,
+    this.geofenceReady = false,
+    this.previewing = false,
+    this.previewVerification,
+    this.previewError,
+  }) : _history = history;
+
+  @override
+  final AttendanceEntity? today;
+  @override
+  final AttendanceEntity? session;
+  final List<AttendanceEntity> _history;
+  @override
+  @JsonKey()
+  List<AttendanceEntity> get history {
+    if (_history is EqualUnmodifiableListView) return _history;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_history);
+  }
+
+  @override
+  final ScheduleShift? shift;
+  @override
+  final DateTime? scheduledStart;
+  @override
+  final DateTime? scheduledEnd;
+  @override
+  final LeaveType? leave;
+  @override
+  final AttendanceConfig config;
+  @override
+  final DateTime tick;
+  @override
+  @JsonKey()
+  final bool busy;
+  @override
+  @JsonKey()
+  final bool syncing;
+  @override
+  @JsonKey()
+  final bool offline;
+
+  /// A clock action is currently acquiring + verifying the GPS fix (the "GPS
+  /// Validation" step). Drives the "Checking you're at the branch…" UI.
+  @override
+  @JsonKey()
+  final bool verifying;
+
+  /// Whether the branch has an attendance geofence configured (an admin set
+  /// lat/lng/radius). False → GPS clock-in can't proceed here yet.
+  @override
+  @JsonKey()
+  final bool geofenceReady;
+  // ── Live GPS preview (Ready phase) ──
+  // A passive location read taken while the employee is *deciding* to clock in,
+  // so the GPS card is state-driven before they tap: it shows "At branch · 22 m"
+  // / "Outside · 143 m" / a permission or service prompt. A fresh fix is taken
+  // again on the actual clock-in write.
+  /// True while the preview fix is being acquired ("Checking location…").
+  @override
+  @JsonKey()
+  final bool previewing;
+
+  /// The evaluated preview (distance · within-radius · accuracy), or null before
+  /// the first read / when there's nothing to preview.
+  @override
+  final AttendanceVerification? previewVerification;
+
+  /// The reason the preview couldn't be read (permission / service / no fix).
+  @override
+  final LocationError? previewError;
+
+  @override
+  String toString() {
+    return 'AttendanceState.loaded(today: $today, session: $session, history: $history, shift: $shift, scheduledStart: $scheduledStart, scheduledEnd: $scheduledEnd, leave: $leave, config: $config, tick: $tick, busy: $busy, syncing: $syncing, offline: $offline, verifying: $verifying, geofenceReady: $geofenceReady, previewing: $previewing, previewVerification: $previewVerification, previewError: $previewError)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$LoadedImpl &&
+            (identical(other.today, today) || other.today == today) &&
+            (identical(other.session, session) || other.session == session) &&
+            const DeepCollectionEquality().equals(other._history, _history) &&
+            (identical(other.shift, shift) || other.shift == shift) &&
+            (identical(other.scheduledStart, scheduledStart) ||
+                other.scheduledStart == scheduledStart) &&
+            (identical(other.scheduledEnd, scheduledEnd) ||
+                other.scheduledEnd == scheduledEnd) &&
+            (identical(other.leave, leave) || other.leave == leave) &&
+            (identical(other.config, config) || other.config == config) &&
+            (identical(other.tick, tick) || other.tick == tick) &&
+            (identical(other.busy, busy) || other.busy == busy) &&
+            (identical(other.syncing, syncing) || other.syncing == syncing) &&
+            (identical(other.offline, offline) || other.offline == offline) &&
+            (identical(other.verifying, verifying) ||
+                other.verifying == verifying) &&
+            (identical(other.geofenceReady, geofenceReady) ||
+                other.geofenceReady == geofenceReady) &&
+            (identical(other.previewing, previewing) ||
+                other.previewing == previewing) &&
+            (identical(other.previewVerification, previewVerification) ||
+                other.previewVerification == previewVerification) &&
+            (identical(other.previewError, previewError) ||
+                other.previewError == previewError));
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    runtimeType,
+    today,
+    session,
+    const DeepCollectionEquality().hash(_history),
+    shift,
+    scheduledStart,
+    scheduledEnd,
+    leave,
+    config,
+    tick,
+    busy,
+    syncing,
+    offline,
+    verifying,
+    geofenceReady,
+    previewing,
+    previewVerification,
+    previewError,
+  );
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$LoadedImplCopyWith<_$LoadedImpl> get copyWith =>
+      __$$LoadedImplCopyWithImpl<_$LoadedImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() initial,
+    required TResult Function() loading,
+    required TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )
+    loaded,
+    required TResult Function(String message) error,
+  }) {
+    return loaded(
+      today,
+      session,
+      history,
+      shift,
+      scheduledStart,
+      scheduledEnd,
+      leave,
+      config,
+      tick,
+      busy,
+      syncing,
+      offline,
+      verifying,
+      geofenceReady,
+      previewing,
+      previewVerification,
+      previewError,
+    );
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? initial,
+    TResult? Function()? loading,
+    TResult? Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult? Function(String message)? error,
+  }) {
+    return loaded?.call(
+      today,
+      session,
+      history,
+      shift,
+      scheduledStart,
+      scheduledEnd,
+      leave,
+      config,
+      tick,
+      busy,
+      syncing,
+      offline,
+      verifying,
+      geofenceReady,
+      previewing,
+      previewVerification,
+      previewError,
+    );
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? initial,
+    TResult Function()? loading,
+    TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult Function(String message)? error,
+    required TResult orElse(),
+  }) {
+    if (loaded != null) {
+      return loaded(
+        today,
+        session,
+        history,
+        shift,
+        scheduledStart,
+        scheduledEnd,
+        leave,
+        config,
+        tick,
+        busy,
+        syncing,
+        offline,
+        verifying,
+        geofenceReady,
+        previewing,
+        previewVerification,
+        previewError,
+      );
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(_Initial value) initial,
+    required TResult Function(_Loading value) loading,
+    required TResult Function(_Loaded value) loaded,
+    required TResult Function(_Error value) error,
+  }) {
+    return loaded(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(_Initial value)? initial,
+    TResult? Function(_Loading value)? loading,
+    TResult? Function(_Loaded value)? loaded,
+    TResult? Function(_Error value)? error,
+  }) {
+    return loaded?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(_Initial value)? initial,
+    TResult Function(_Loading value)? loading,
+    TResult Function(_Loaded value)? loaded,
+    TResult Function(_Error value)? error,
+    required TResult orElse(),
+  }) {
+    if (loaded != null) {
+      return loaded(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class _Loaded implements AttendanceState {
+  const factory _Loaded({
+    final AttendanceEntity? today,
+    final AttendanceEntity? session,
+    final List<AttendanceEntity> history,
+    final ScheduleShift? shift,
+    final DateTime? scheduledStart,
+    final DateTime? scheduledEnd,
+    final LeaveType? leave,
+    required final AttendanceConfig config,
+    required final DateTime tick,
+    final bool busy,
+    final bool syncing,
+    final bool offline,
+    final bool verifying,
+    final bool geofenceReady,
+    final bool previewing,
+    final AttendanceVerification? previewVerification,
+    final LocationError? previewError,
+  }) = _$LoadedImpl;
+
+  AttendanceEntity? get today;
+  AttendanceEntity? get session;
+  List<AttendanceEntity> get history;
+  ScheduleShift? get shift;
+  DateTime? get scheduledStart;
+  DateTime? get scheduledEnd;
+  LeaveType? get leave;
+  AttendanceConfig get config;
+  DateTime get tick;
+  bool get busy;
+  bool get syncing;
+  bool get offline;
+
+  /// A clock action is currently acquiring + verifying the GPS fix (the "GPS
+  /// Validation" step). Drives the "Checking you're at the branch…" UI.
+  bool get verifying;
+
+  /// Whether the branch has an attendance geofence configured (an admin set
+  /// lat/lng/radius). False → GPS clock-in can't proceed here yet.
+  bool get geofenceReady; // ── Live GPS preview (Ready phase) ──
+  // A passive location read taken while the employee is *deciding* to clock in,
+  // so the GPS card is state-driven before they tap: it shows "At branch · 22 m"
+  // / "Outside · 143 m" / a permission or service prompt. A fresh fix is taken
+  // again on the actual clock-in write.
+  /// True while the preview fix is being acquired ("Checking location…").
+  bool get previewing;
+
+  /// The evaluated preview (distance · within-radius · accuracy), or null before
+  /// the first read / when there's nothing to preview.
+  AttendanceVerification? get previewVerification;
+
+  /// The reason the preview couldn't be read (permission / service / no fix).
+  LocationError? get previewError;
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$LoadedImplCopyWith<_$LoadedImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$ErrorImplCopyWith<$Res> {
+  factory _$$ErrorImplCopyWith(
+    _$ErrorImpl value,
+    $Res Function(_$ErrorImpl) then,
+  ) = __$$ErrorImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({String message});
+}
+
+/// @nodoc
+class __$$ErrorImplCopyWithImpl<$Res>
+    extends _$AttendanceStateCopyWithImpl<$Res, _$ErrorImpl>
+    implements _$$ErrorImplCopyWith<$Res> {
+  __$$ErrorImplCopyWithImpl(
+    _$ErrorImpl _value,
+    $Res Function(_$ErrorImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({Object? message = null}) {
+    return _then(
+      _$ErrorImpl(
+        null == message
+            ? _value.message
+            : message // ignore: cast_nullable_to_non_nullable
+                  as String,
+      ),
+    );
+  }
+}
+
+/// @nodoc
+
+class _$ErrorImpl implements _Error {
+  const _$ErrorImpl(this.message);
+
+  @override
+  final String message;
+
+  @override
+  String toString() {
+    return 'AttendanceState.error(message: $message)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$ErrorImpl &&
+            (identical(other.message, message) || other.message == message));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, message);
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$ErrorImplCopyWith<_$ErrorImpl> get copyWith =>
+      __$$ErrorImplCopyWithImpl<_$ErrorImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() initial,
+    required TResult Function() loading,
+    required TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )
+    loaded,
+    required TResult Function(String message) error,
+  }) {
+    return error(message);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? initial,
+    TResult? Function()? loading,
+    TResult? Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult? Function(String message)? error,
+  }) {
+    return error?.call(message);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? initial,
+    TResult Function()? loading,
+    TResult Function(
+      AttendanceEntity? today,
+      AttendanceEntity? session,
+      List<AttendanceEntity> history,
+      ScheduleShift? shift,
+      DateTime? scheduledStart,
+      DateTime? scheduledEnd,
+      LeaveType? leave,
+      AttendanceConfig config,
+      DateTime tick,
+      bool busy,
+      bool syncing,
+      bool offline,
+      bool verifying,
+      bool geofenceReady,
+      bool previewing,
+      AttendanceVerification? previewVerification,
+      LocationError? previewError,
+    )?
+    loaded,
+    TResult Function(String message)? error,
+    required TResult orElse(),
+  }) {
+    if (error != null) {
+      return error(message);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(_Initial value) initial,
+    required TResult Function(_Loading value) loading,
+    required TResult Function(_Loaded value) loaded,
+    required TResult Function(_Error value) error,
+  }) {
+    return error(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(_Initial value)? initial,
+    TResult? Function(_Loading value)? loading,
+    TResult? Function(_Loaded value)? loaded,
+    TResult? Function(_Error value)? error,
+  }) {
+    return error?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(_Initial value)? initial,
+    TResult Function(_Loading value)? loading,
+    TResult Function(_Loaded value)? loaded,
+    TResult Function(_Error value)? error,
+    required TResult orElse(),
+  }) {
+    if (error != null) {
+      return error(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class _Error implements AttendanceState {
+  const factory _Error(final String message) = _$ErrorImpl;
+
+  String get message;
+
+  /// Create a copy of AttendanceState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$ErrorImplCopyWith<_$ErrorImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}

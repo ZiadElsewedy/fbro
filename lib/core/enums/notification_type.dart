@@ -50,7 +50,16 @@ enum NotificationType {
   requestRejected, // → the requester
   requestCompleted, // → the requester
   requestCancelled, // → the routed approvers (requester withdrew it)
-  requestCommented; // → the other party (a new comment on the request)
+  requestCommented, // → the other party (a new comment on the request)
+  // ── Attendance (server-side `onAttendanceCorrectionWritten` /
+  //    `autoCloseAttendance`) ──
+  // Produced SERVER-SIDE via the Admin SDK (routing depends on branch/role
+  // lookups; the audit trail is server-authored), so these are deliberately NOT
+  // in the client `sendNotification` whitelist.
+  attendanceCorrectionFiled, // → the routed reviewers (branch manager / admin)
+  attendanceCorrectionApproved, // → the employee (record corrected)
+  attendanceCorrectionRejected, // → the employee (correction declined)
+  attendanceAutoClosed; // → the employee (session auto-closed → needs a fix)
 
   String get value => name;
 

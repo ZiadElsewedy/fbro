@@ -27,7 +27,7 @@
  */
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
@@ -59,6 +59,28 @@ const CONFIG = "config";
 const CASES = "cases";
 const REQUESTS = "requests";
 const COUNTERS = "counters";
+const ATTENDANCE = "attendance";
+const ATTENDANCE_CORRECTIONS = "attendance_corrections";
+
+// Auto-close grace — mirrors AttendanceConfig.defaults.autoCloseGraceMinutes on
+// the client (the single knob until per-branch attendance config lands).
+const ATTENDANCE_AUTO_CLOSE_GRACE_MINUTES = 120;
+
+// Max session cap (R7 safety net) — mirrors AttendanceConfig.defaults.maxSessionMinutes.
+const ATTENDANCE_MAX_SESSION_MINUTES = 16 * 60;
+
+// The pure auto-close decision (unit-tested in test/auto_close.test.js).
+const { isAutoCloseDue } = require("./attendance_auto_close");
+const {
+  SEVERITY,
+  logStep,
+  buildValidations,
+  classifyError,
+  healthDeltas,
+  executionDelayMs,
+  correlationId,
+  buildExecutionSnapshot,
+} = require("./automation_run");
 
 // `branchId` marker for a direct message — never a real branch id and never ''
 // (mirrors BroadcastModel.directBranchMarker), so a DM never appears in a
@@ -1481,8 +1503,10 @@ function isAlreadyExists(err) {
 
 // Resolves the employees who should be NOTIFIED of a generated shift task:
 // rostered on (dayName, shift) MINUS anyone on leave that day MINUS deactivated
-// accounts. An empty result is valid (nobody eligible) — the task is still
-// created; it just notifies no one and the run records `noEligibleEmployees`.
+// accounts. Returns `{ uid, name }` for each eligible recipient (name for the
+// run record's target block). An empty result is valid (nobody eligible) — the
+// task is still created; it just notifies no one and the run records
+// `noEligibleEmployees`.
 async function eligibleRecipients(scheduleData, dayName, shift) {
   const rostered = swapAssignedUids(scheduleData.assignments || {}, dayName, shift);
   if (!rostered.length) return [];
@@ -1494,7 +1518,14 @@ async function eligibleRecipients(scheduleData, dayName, shift) {
   );
   return snaps
     .filter((s) => s.exists && (s.data() || {}).isActive !== false)
-    .map((s) => s.id);
+    .map((s) => {
+      const d = s.data() || {};
+      return {
+        uid: s.id,
+        name: String(d.fullName || d.displayName || d.email || s.id),
+        role: d.role != null ? String(d.role) : null,
+      };
+    });
 }
 
 // Advisory next-run timestamp for a template's rollup (the Automation Center
@@ -1553,12 +1584,17 @@ async function writeAutomationAudit(eventType, entityType, entityId, branchId, m
  */
 exports.generateShiftTaskInstances = onSchedule(
   { schedule: "every 24 hours", maxInstances: 1, retryCount: 0, timeoutSeconds: 300 },
-  async () => {
+  async (event) => {
     const now = new Date();
     const todayKey = isoDate(now);
     const todayDow = isoWeekday(now);
     const dayName = scheduleDayName(now);
     const executionId = require("crypto").randomUUID();
+    // The tick this invocation was scheduled for (for the run's schedule block +
+    // execution-delay metric); falls back to `now` if the platform omits it.
+    const scheduledAt =
+      event && event.scheduleTime ? new Date(event.scheduleTime) : now;
+    const scheduledAtMs = scheduledAt.getTime();
 
     const snap = await db
       .collection(RECURRING_TASK_TEMPLATES)
@@ -1579,8 +1615,14 @@ exports.generateShiftTaskInstances = onSchedule(
       const shift = t.shift === "night" ? "night" : "morning";
       const instanceId = `rt_${doc.id}_${todayKey}`;
       const runId = `${doc.id}_${todayKey}`;
+      // Deterministic correlation id for this execution (§Correlation ID) —
+      // stamped on the run, the generated task, its notifications and its audit
+      // events so any one traces back to the whole run. Derived from (templateId,
+      // dateKey), so a retry re-computes the identical id (idempotent).
+      const runCorrelationId = correlationId(doc.id, todayKey);
       const ref = db.collection(TASKS).doc(instanceId);
       const startedMs = Date.now();
+      const version = Number(t.configVersion) || 1;
 
       // Per-template outcome — always recorded to `automationRuns` and rolled up
       // onto the template, whatever happens.
@@ -1589,6 +1631,29 @@ exports.generateShiftTaskInstances = onSchedule(
       let generatedTaskId = null;
       let recipientCount = 0;
       let failureReason = null;
+
+      // ── Observability accumulators (ADR-011). None of this changes what tasks
+      // or notifications are created — it only records what happened, why, and
+      // when, so an admin can answer every question about a run without logs. ──
+      const logs = []; // chronological execution timeline
+      const step = (severity, message, meta) =>
+        logs.push(logStep(Date.now(), _stageForNow(), severity, message, meta));
+      let currentStage = "start";
+      function _stageForNow() { return currentStage; }
+      const stage = (s) => { currentStage = s; };
+
+      let snapshot = null; // immutable execution snapshot (written on `created`)
+      let scheduleExists = null; // null = not reached
+      let employeesFound = null;
+      const recipients = []; // { uid, name }
+      const notificationIds = [];
+      let notifySent = 0;
+      let notifyFailed = 0;
+      let errorBlock = null;
+      let checklistCount = 0;
+
+      stage("start");
+      step(SEVERITY.info, "Execution started", { executionId });
 
       try {
         const checklist = Array.isArray(t.checklistItems)
@@ -1600,7 +1665,16 @@ exports.generateShiftTaskInstances = onSchedule(
               completedAt: null,
             }))
           : [];
+        checklistCount = checklist.length;
 
+        stage("validate");
+        step(SEVERITY.info, `Schedule window resolved for ${dayName} ${shift}`, {
+          day: dayName,
+          shift,
+          branchId,
+        });
+
+        stage("generate");
         // Atomic create — the ENTIRE duplicate guarantee. `create()` rejects with
         // ALREADY_EXISTS if the deterministic id is already present (an overlapping
         // run / retry / the client materializer beat us), so we never double-create
@@ -1626,6 +1700,7 @@ exports.generateShiftTaskInstances = onSchedule(
               new Date(`${todayKey}T00:00:00.000Z`),
             ),
             sourceTemplateId: doc.id,
+            correlationId: runCorrelationId,
             deadline: null,
             notes: null,
             proofImageUrl: null,
@@ -1655,10 +1730,14 @@ exports.generateShiftTaskInstances = onSchedule(
           });
           generatedTaskId = instanceId;
           created++;
+          step(SEVERITY.info, "Task generated", { taskId: instanceId });
         } catch (createErr) {
           if (isAlreadyExists(createErr)) {
             status = "skipped";
             outcome = "alreadyExists";
+            step(SEVERITY.info, "Skipped — task already generated for today", {
+              taskId: instanceId,
+            });
           } else {
             throw createErr;
           }
@@ -1667,38 +1746,93 @@ exports.generateShiftTaskInstances = onSchedule(
         // Notify eligible rostered employees — ONLY when we actually created the
         // instance this run (so a skipped duplicate never re-notifies).
         if (outcome === "created") {
+          stage("notify");
           try {
             const scheduleId = `${branchId}_${weekStartKey(now)}`;
             const schedSnap = await db.collection(WEEKLY_SCHEDULES).doc(scheduleId).get();
-            const recipients = schedSnap.exists
+            scheduleExists = schedSnap.exists;
+            const resolved = schedSnap.exists
               ? await eligibleRecipients(schedSnap.data(), dayName, shift)
               : [];
+            recipients.push(...resolved);
             recipientCount = recipients.length;
+            employeesFound = recipientCount > 0;
+            step(SEVERITY.info, `Resolved ${recipientCount} eligible employee(s)`, {
+              count: recipientCount,
+            });
+
+            // Capture the immutable execution snapshot (§Execution Snapshot):
+            // exactly what existed now, so this run renders correctly forever
+            // even after the definition/branch/employees/schedule change. One
+            // branch read (for the name); everything else is already in hand.
+            let branchName = null;
+            try {
+              const bSnap = await db.collection(BRANCHES).doc(branchId).get();
+              branchName = bSnap.exists
+                ? String((bSnap.data() || {}).name || "")
+                : null;
+            } catch (_) {
+              // A missing branch name never fails the run — snapshot keeps null.
+            }
+            snapshot = buildExecutionSnapshot({
+              templateId: doc.id,
+              name: t.title || "",
+              version,
+              checklistCount,
+              priority: t.priority || "normal",
+              proofRequired: false,
+              scheduleType: repeat,
+              days: repeat === "weekly" ? [dayName] : [],
+              shift,
+              branchId,
+              branchName,
+              timezone: "UTC",
+              recipients,
+            });
+
             if (recipients.length) {
               const batch = db.batch();
-              for (const uid of recipients) {
+              for (const r of recipients) {
                 // Deterministic id → even a re-entry can't create a second notice.
                 const nref = db
                   .collection(NOTIFICATIONS)
-                  .doc(`autoassign_${instanceId}_${uid}`);
+                  .doc(`autoassign_${instanceId}_${r.uid}`);
+                notificationIds.push(nref.id);
                 batch.set(nref, {
                   id: nref.id,
-                  recipientUid: uid,
+                  recipientUid: r.uid,
                   senderUid: "system",
                   type: "taskAssigned",
                   title: "New Task Assigned",
                   body: t.title || "A new shift task was assigned",
                   readAt: null,
-                  payload: { taskId: instanceId, route: "task_details" },
+                  correlationId: runCorrelationId,
+                  payload: {
+                    taskId: instanceId,
+                    route: "task_details",
+                    correlationId: runCorrelationId,
+                  },
                   createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
               }
               await batch.commit();
+              notifySent = recipients.length;
+              step(SEVERITY.info, `Sent ${notifySent} notification(s)`, {
+                count: notifySent,
+              });
             } else {
               outcome = "noEligibleEmployees";
+              step(SEVERITY.warning, "No eligible employees to notify", {
+                scheduleExists,
+              });
             }
           } catch (notifyErr) {
             // A notify failure does NOT fail the run — the task exists regardless.
+            notifyFailed = recipients.length;
+            errorBlock = classifyError(notifyErr, "notify", { recovered: true });
+            step(SEVERITY.warning, "Notification delivery failed (task kept)", {
+              error: String(notifyErr),
+            });
             logger.warn("shift task notify failed", {
               taskId: instanceId,
               error: String(notifyErr),
@@ -1709,26 +1843,103 @@ exports.generateShiftTaskInstances = onSchedule(
         status = "failed";
         outcome = "error";
         failureReason = String((err && err.message) || err);
+        errorBlock = classifyError(err, currentStage);
+        step(SEVERITY.error, `Execution failed at ${currentStage}`, {
+          error: failureReason,
+        });
         logger.warn("shift task instance generation failed", {
           templateId: doc.id,
           error: failureReason,
         });
       }
 
+      stage("complete");
+      step(
+        status === "failed" ? SEVERITY.error : SEVERITY.info,
+        status === "failed" ? "Execution failed" : "Execution completed",
+        { status, outcome },
+      );
+
       // ── Run telemetry (deterministic id → idempotent history) ──
       const finishedMs = Date.now();
       try {
         await db.collection(AUTOMATION_RUNS).doc(runId).set(
           {
+            // ── Identity ──
             templateId: doc.id,
+            automationName: t.title || "",
+            version,
             branchId,
             dateKey: todayKey,
             executionId,
+            correlationId: runCorrelationId,
+            // ── Execution ──
             startedAt: admin.firestore.Timestamp.fromDate(new Date(startedMs)),
             finishedAt: admin.firestore.Timestamp.fromDate(new Date(finishedMs)),
             durationMs: finishedMs - startedMs,
+            trigger: "schedule",
+            retryCount: 0,
             status,
             outcome,
+            // ── Schedule ──
+            schedule: {
+              scheduledAt: admin.firestore.Timestamp.fromDate(scheduledAt),
+              actualAt: admin.firestore.Timestamp.fromDate(new Date(startedMs)),
+              delayMs: executionDelayMs(scheduledAtMs, startedMs),
+              shift,
+              day: dayName,
+              branchId,
+            },
+            // ── Validation ──
+            validations: buildValidations({
+              templatePresent: true,
+              branchPresent: !!branchId,
+              scheduleExists,
+              employeesFound,
+            }),
+            // ── Target resolution (explicit even when nobody matched) ──
+            target: {
+              uids: recipients.map((r) => r.uid),
+              names: recipients.map((r) => r.name),
+              count: recipientCount,
+              matched: recipientCount > 0,
+              shift,
+              branchId,
+            },
+            // ── Generation ──
+            generation: {
+              templateVersion: version,
+              checklistCount,
+              priority: t.priority || "normal",
+              proofRequired: false,
+            },
+            generated: {
+              taskIds: generatedTaskId ? [generatedTaskId] : [],
+              titles: generatedTaskId ? [t.title || ""] : [],
+              count: generatedTaskId ? 1 : 0,
+              skippedCount: outcome === "alreadyExists" ? 1 : 0,
+            },
+            // ── Notification ──
+            notification: {
+              sent: notifySent,
+              failed: notifyFailed,
+              notificationIds,
+            },
+            // ── Error (null unless the run failed or a step recovered) ──
+            error: errorBlock,
+            // ── Chronological logs (embedded, bounded) ──
+            logs: logs.map((l) => ({
+              at: admin.firestore.Timestamp.fromMillis(l.at),
+              stage: l.stage,
+              severity: l.severity,
+              message: l.message,
+              meta: l.meta,
+            })),
+            // ── Immutable execution snapshot (written on `created` only, so a
+            // later skip/failure never overwrites it — creation happens at most
+            // once per deterministic run id) ──
+            ...(snapshot ? { snapshot } : {}),
+            // ── Back-compat flat fields (pre-ADR-011 readers / retention) ──
             generatedTaskId,
             recipientCount,
             failureReason,
@@ -1739,18 +1950,35 @@ exports.generateShiftTaskInstances = onSchedule(
         logger.warn("automation run write failed", { runId, error: String(runErr) });
       }
 
-      // ── Template rollup (Automation Center health) ──
+      // ── Template rollup + cumulative health counters (Automation Center) ──
       try {
+        const h = healthDeltas(status, finishedMs - startedMs);
         const rollup = {
           lastRunAt: admin.firestore.FieldValue.serverTimestamp(),
           nextRunAt: computeNextRun(repeat, t.weekday, now),
           lastStatus: status,
+          // Cumulative counters — O(1) increments so the health panel is one
+          // read; success rate / avg duration are DERIVED on the client (nothing
+          // derived is stored — the ADR-011 line vs. an analytics pipeline).
+          runCount: admin.firestore.FieldValue.increment(h.runCountDelta),
+          successCount: admin.firestore.FieldValue.increment(h.successCountDelta),
+          failedCount: admin.firestore.FieldValue.increment(h.failedCountDelta),
+          skippedCount: admin.firestore.FieldValue.increment(h.skippedCountDelta),
+          totalDurationMs: admin.firestore.FieldValue.increment(
+            h.totalDurationMsDelta,
+          ),
         };
-        if (status === "failed") {
-          rollup.failureCount = admin.firestore.FieldValue.increment(1);
-        } else {
-          rollup.failureCount = 0;
-          if (generatedTaskId) rollup.lastGeneratedTaskId = generatedTaskId;
+        rollup.failureCount = h.resetConsecutiveFailures
+          ? 0
+          : admin.firestore.FieldValue.increment(1);
+        if (h.markLastSuccess) {
+          rollup.lastSuccessAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+        if (h.markLastFailure) {
+          rollup.lastFailureAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+        if (status !== "failed" && generatedTaskId) {
+          rollup.lastGeneratedTaskId = generatedTaskId;
         }
         await doc.ref.set(rollup, { merge: true });
       } catch (rollupErr) {
@@ -1761,21 +1989,25 @@ exports.generateShiftTaskInstances = onSchedule(
       }
 
       // ── Business audit events (best-effort, reuse the audit trail) ──
+      // Each carries the correlationId so an audit entry traces to its run.
       if (outcome === "created" || outcome === "noEligibleEmployees") {
         await writeAutomationAudit("task.auto_generated", "task", instanceId, branchId, {
           templateId: doc.id,
           title: t.title || "",
           shift,
+          correlationId: runCorrelationId,
         });
         if (recipientCount > 0) {
           await writeAutomationAudit("automation.assigned", "automation", doc.id, branchId, {
             taskId: instanceId,
             recipientCount,
+            correlationId: runCorrelationId,
           });
         }
       } else if (status === "failed") {
         await writeAutomationAudit("automation.failed", "automation", doc.id, branchId, {
           reason: failureReason,
+          correlationId: runCorrelationId,
         });
       }
     }
@@ -1785,6 +2017,149 @@ exports.generateShiftTaskInstances = onSchedule(
       created,
       executionId,
     });
+  },
+);
+
+// The definition fields whose change is a lifecycle event worth auditing (vs. the
+// CF-owned rollup/health fields, whose churn on every generation run must NOT
+// produce audit noise or bump the config version).
+const TEMPLATE_CONFIG_FIELDS = [
+  "title",
+  "description",
+  "priority",
+  "shift",
+  "repeat",
+  "weekday",
+  "active",
+  "checklistItems",
+];
+
+// A stable, comparable snapshot of only the audited config fields.
+function templateConfigSnapshot(data) {
+  const d = data || {};
+  return {
+    title: d.title ?? null,
+    description: d.description ?? null,
+    priority: d.priority ?? null,
+    shift: d.shift ?? null,
+    repeat: d.repeat ?? null,
+    weekday: d.weekday ?? null,
+    active: d.active ?? null,
+    checklistItems: Array.isArray(d.checklistItems)
+      ? d.checklistItems.map((c) => ({
+          id: (c && c.id) || "",
+          title: (c && c.title) || "",
+          isRequired: !c || c.isRequired !== false,
+        }))
+      : [],
+  };
+}
+
+// Field-by-field diff of two config snapshots → [{ field, old, new }].
+function diffTemplateConfig(before, after) {
+  const changes = [];
+  for (const f of TEMPLATE_CONFIG_FIELDS) {
+    const a = before ? before[f] : undefined;
+    const b = after ? after[f] : undefined;
+    if (JSON.stringify(a) !== JSON.stringify(b)) {
+      changes.push({ field: f, old: a ?? null, new: b ?? null });
+    }
+  }
+  return changes;
+}
+
+/**
+ * Server-authoritative lifecycle audit for automation DEFINITIONS (ADR-005 +
+ * ADR-011). Clients mutate `recurringTaskTemplates/{id}` directly (create /
+ * pause-resume / edit / delete via `TaskCubit`) and never write their own audit
+ * trail; this trigger derives the audit event from the before/after diff and
+ * appends it to `audit_logs` as the acting user — so "who paused this, when, and
+ * what changed" is answerable and tamper-evident.
+ *
+ * Idempotent: the audit doc id is derived from the CloudEvent id, so an
+ * at-least-once redelivery overwrites rather than duplicates. The CF-owned
+ * rollup/health fields are excluded from the diff, so a generation run's rollup
+ * write produces NO audit and NO version bump (the loop terminates: this trigger
+ * only writes `configVersion`, which is itself excluded from the diff).
+ */
+exports.onRecurringTemplateWritten = onDocumentWritten(
+  `${RECURRING_TASK_TEMPLATES}/{templateId}`,
+  async (event) => {
+    const templateId = event.params.templateId;
+    const beforeExists = event.data && event.data.before && event.data.before.exists;
+    const afterExists = event.data && event.data.after && event.data.after.exists;
+    const beforeData = beforeExists ? event.data.before.data() : null;
+    const afterData = afterExists ? event.data.after.data() : null;
+
+    // Resolve the actor: the app writes `updatedBy` (edits/pause) / `createdBy`
+    // (create) on the definition; deletes carry the last known editor.
+    const actorSource = afterData || beforeData || {};
+    const actorId = String(
+      actorSource.updatedBy || actorSource.createdBy || "system",
+    );
+    const branchId = String((afterData || beforeData || {}).branchId || "") || null;
+
+    let eventType;
+    let metadata = {};
+
+    if (!beforeExists && afterExists) {
+      eventType = "automation.created";
+      metadata = {
+        title: afterData.title || "",
+        shift: afterData.shift || null,
+        repeat: afterData.repeat || null,
+      };
+    } else if (beforeExists && !afterExists) {
+      eventType = "automation.deleted";
+      metadata = { title: (beforeData || {}).title || "" };
+    } else {
+      const changes = diffTemplateConfig(
+        templateConfigSnapshot(beforeData),
+        templateConfigSnapshot(afterData),
+      );
+      if (!changes.length) return; // rollup-only / version-only write → no audit
+      const activeChange = changes.find((c) => c.field === "active");
+      if (activeChange && changes.length === 1) {
+        eventType = activeChange.new ? "automation.resumed" : "automation.paused";
+      } else {
+        eventType = "automation.config_changed";
+      }
+      metadata = { changes };
+
+      // Bump the definition's config version (idempotent per event: computed
+      // from the frozen `after` snapshot, written with `set`, and excluded from
+      // the diff above so it can't re-trigger an audit).
+      try {
+        await event.data.after.ref.set(
+          { configVersion: (Number(afterData.configVersion) || 0) + 1 },
+          { merge: true },
+        );
+      } catch (e) {
+        logger.warn("configVersion bump failed", { templateId, error: String(e) });
+      }
+    }
+
+    try {
+      await db.collection(AUDIT_LOGS).doc(`autotpl_${event.id}`).set({
+        eventType,
+        entityType: "automation",
+        entityId: templateId,
+        actorId,
+        actorName: actorId === "system" ? "Automation" : null,
+        actorRole: null,
+        branchId,
+        metadata,
+        schemaVersion: 1,
+        isDeleted: false,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      logger.warn("automation lifecycle audit write failed", {
+        templateId,
+        eventType,
+        error: String(e),
+      });
+    }
   },
 );
 
@@ -2644,3 +3019,401 @@ exports.onRequestEventCreated = onDocumentCreated(
     }
   },
 );
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Attendance — server-authoritative audit trail + correction apply + auto-close.
+//
+//  Clients write ONLY the attendance record (clock in/out/breaks) and the
+//  correction doc (file / decide). Everything a client can't be trusted with is
+//  derived here by the Admin SDK:
+//    • the immutable, append-only audit trail (`attendance/{id}/events`),
+//    • applying an APPROVED correction's resolution onto the parent record,
+//    • auto-closing sessions the employee never clocked out of,
+//    • every notification (routing needs branch/role lookups).
+//  Mirrors the `onRequest*` pattern. No re-fire: the audit append writes a
+//  subcollection doc (never the parent record), and the correction-apply write
+//  carries `source: 'correction'` — which `onAttendanceWritten` ignores for the
+//  self-clock events, so it never double-audits.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Appends one server-authored, immutable audit event to attendance/{id}/events.
+// Clients cannot write these (firestore.rules), so the trail can't be forged.
+async function appendAttendanceEvent(recordId, ev) {
+  if (!recordId) return;
+  try {
+    const ref = db.collection(ATTENDANCE).doc(recordId).collection("events").doc();
+    await ref.set({
+      kind: String(ev.kind || ""),
+      actorId: String(ev.actorId || ""),
+      actorName: ev.actorName != null ? String(ev.actorName) : null,
+      note: ev.note != null ? String(ev.note) : null,
+      data: ev.data && typeof ev.data === "object" ? ev.data : {},
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    logger.warn("failed to append attendance event", { recordId, error: String(e) });
+  }
+}
+
+// The reviewers for an attendance correction — the branch's managers + all
+// admins (active), minus [excludeUid]. Mirrors resolveRequestApprovers.
+async function resolveAttendanceReviewers(branchId, excludeUid) {
+  const out = new Set();
+  const bid = String(branchId || "");
+  if (bid) {
+    try {
+      const snap = await db.collection(USERS)
+        .where("branchId", "==", bid)
+        .where("role", "==", "manager").get();
+      snap.docs.forEach((d) => { if ((d.data() || {}).isActive !== false) out.add(d.id); });
+    } catch (e) { logger.warn("attendance manager lookup failed", { error: String(e) }); }
+  }
+  try {
+    const snap = await db.collection(USERS).where("role", "==", "admin").get();
+    snap.docs.forEach((d) => { if ((d.data() || {}).isActive !== false) out.add(d.id); });
+  } catch (e) { logger.warn("attendance admin lookup failed", { error: String(e) }); }
+  out.delete(excludeUid);
+  out.delete("");
+  return [...out];
+}
+
+// Writes one in-app notification doc per recipient (Admin SDK). onNotificationCreated
+// handles the matching push. Best-effort.
+async function writeAttendanceNotifications(
+  recipientUids,
+  { type, title, body, recordId, correctionId, senderUid },
+) {
+  const uids = [...new Set((recipientUids || []).filter(Boolean))];
+  if (uids.length === 0) return;
+  const payload = { route: "attendance" };
+  if (recordId) payload.recordId = recordId;
+  if (correctionId) payload.correctionId = correctionId;
+  try {
+    for (let i = 0; i < uids.length; i += BATCH_LIMIT) {
+      const slice = uids.slice(i, i + BATCH_LIMIT);
+      const batch = db.batch();
+      for (const uid of slice) {
+        const ref = db.collection(NOTIFICATIONS).doc();
+        batch.set(ref, {
+          id: ref.id,
+          recipientUid: uid,
+          senderUid: String(senderUid || ""),
+          type,
+          title: String(title || "").slice(0, 120),
+          body: String(body || "").slice(0, 500),
+          readAt: null,
+          payload,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    logger.warn("failed to persist attendance notifications", { error: String(err) });
+  }
+}
+
+// A readable label for a correction kind (mirrors AttendanceCorrectionKind.label).
+function attendanceCorrectionKindLabel(kind) {
+  switch (String(kind || "")) {
+    case "missingClockOut": return "missing clock-out";
+    case "wrongTime": return "wrong time";
+    case "absenceDispute": return "absence dispute";
+    default: return "correction";
+  }
+}
+
+// Any write to an attendance record → derive the append-only audit events by
+// diffing before/after. Self-clock events are gated on `source: 'clock'` so the
+// auto-close and correction-apply paths (which own their own events) never
+// double-audit.
+exports.onAttendanceWritten = onDocumentWritten(`${ATTENDANCE}/{recordId}`, async (event) => {
+  const recordId = event.params.recordId;
+  const beforeSnap = event.data && event.data.before;
+  const afterSnap = event.data && event.data.after;
+  const before = (beforeSnap && beforeSnap.exists) ? (beforeSnap.data() || {}) : null;
+  const after = (afterSnap && afterSnap.exists) ? (afterSnap.data() || {}) : null;
+  if (!after) return; // deleted — records are soft-deleted, so this is defensive.
+
+  const source = String(after.source || "clock");
+  const actorId = String(after.userId || "");
+  const actorName = after.userName != null ? String(after.userName) : null;
+  const events = [];
+
+  // Clock-in — first appearance of clockIn on a self-clocked record.
+  if (source === "clock" && !(before && before.clockIn) && after.clockIn) {
+    events.push({ kind: "clockedIn", actorId, actorName });
+  }
+  // Clock-out — clockOut newly set, self-clocked.
+  if (source === "clock" && !(before && before.clockOut) && after.clockOut) {
+    events.push({ kind: "clockedOut", actorId, actorName });
+  }
+  // (Breaks are not part of the MVP — no break audit is derived. The record's
+  // `breaks` array stays a dormant extension point.)
+
+  const beforeStatus = before ? String(before.status || "") : "";
+  const afterStatus = String(after.status || "");
+  // Auto-closed — the scheduled sweep flips an open session to pendingReview.
+  if (beforeStatus !== "pendingReview" && afterStatus === "pendingReview" && source === "autoClose") {
+    events.push({ kind: "autoClosed", actorId: "", actorName: null, note: "Session auto-closed — never clocked out" });
+  }
+  // Marked absent — a manager recorded a no-show.
+  if (beforeStatus !== "absent" && afterStatus === "absent") {
+    events.push({
+      kind: "markedAbsent",
+      actorId: String(after.resolvedBy || ""),
+      actorName: after.resolvedByName != null ? String(after.resolvedByName) : null,
+    });
+  }
+
+  for (const ev of events) {
+    await appendAttendanceEvent(recordId, ev);
+  }
+});
+
+// Apply an approved correction's resolution onto its parent attendance record —
+// the ONE server-authoritative apply path, shared by a reviewer's approval and a
+// manager's direct action (Add record / Resolve). Upserts: an existing record is
+// updated; a MISSING record is materialized (a missed-punch / manager-added shift
+// that never had a document). A concurrently soft-deleted record is left alone.
+// The dayKey is lifted from the deterministic id (`{uid}_{yyyyMMdd}_{shift}`) so it
+// matches the client's calendar day without a timezone round-trip.
+async function applyCorrectionResolution(recordId, after) {
+  if (!recordId) return;
+  const res = (after.resolution && typeof after.resolution === "object") ? after.resolution : {};
+  const fields = {
+    clockIn: res.clockIn || null,
+    clockOut: res.clockOut || null,
+    status: String(res.status || "completed"),
+    workedMinutes: Number(res.workedMinutes || 0),
+    lateMinutes: Number(res.lateMinutes || 0),
+    earlyLeaveMinutes: Number(res.earlyLeaveMinutes || 0),
+    overtimeMinutes: Number(res.overtimeMinutes || 0),
+    breakMinutes: Number(res.breakMinutes || 0),
+    source: "correction",
+    resolvedBy: String(after.decidedBy || ""),
+    resolvedByName: after.decidedByName != null ? String(after.decidedByName) : null,
+    resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  const ref = db.collection(ATTENDANCE).doc(recordId);
+  const snap = await ref.get();
+  if (snap.exists) {
+    // Guard a concurrent soft-delete — never resurrect a deleted record.
+    if ((snap.data() || {}).deletedAt) return;
+    await ref.update(fields);
+    return;
+  }
+  // Materialize a missing record from the correction's identity + schedule.
+  const dayKey = String(recordId).split("_").find((p) => /^\d{8}$/.test(p)) || "";
+  await ref.set({
+    ...fields,
+    userId: String(after.userId || ""),
+    userName: after.userName != null ? String(after.userName) : null,
+    branchId: after.branchId != null ? String(after.branchId) : null,
+    shift: String(after.shift || ""),
+    date: after.date || null,
+    dayKey,
+    scheduledStart: after.scheduledStart || null,
+    scheduledEnd: after.scheduledEnd || null,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+// Any write to a correction → own its lifecycle events + notifications, and (on
+// approval) apply the resolution onto the parent record. Clients never touch the
+// record's corrected fields or the audit trail directly.
+exports.onAttendanceCorrectionWritten = onDocumentWritten(
+  `${ATTENDANCE_CORRECTIONS}/{correctionId}`,
+  async (event) => {
+    const beforeSnap = event.data && event.data.before;
+    const afterSnap = event.data && event.data.after;
+    const before = (beforeSnap && beforeSnap.exists) ? (beforeSnap.data() || {}) : null;
+    const after = (afterSnap && afterSnap.exists) ? (afterSnap.data() || {}) : null;
+    if (!after) return; // soft-deleted only — nothing to do.
+
+    const correctionId = event.params.correctionId;
+    const recordId = String(after.attendanceId || "");
+    const employeeUid = String(after.userId || "");
+    const data = { correctionKind: String(after.kind || "other") };
+
+    // 1) Newly created correction.
+    if (!before) {
+      const createStatus = String(after.status || "pending");
+
+      // 1a) A manager's DIRECT action — born `approved` (Add record / Resolve).
+      // Apply immediately (materializing a missing record), audit, and notify the
+      // employee. No reviewer step, so no reviewer notification.
+      if (createStatus === "approved") {
+        await applyCorrectionResolution(recordId, after);
+        await appendAttendanceEvent(recordId, {
+          kind: "correctionApproved",
+          actorId: String(after.decidedBy || ""),
+          actorName: after.decidedByName != null ? String(after.decidedByName) : null,
+          note: after.decisionNote != null ? String(after.decisionNote) : (after.reason != null ? String(after.reason) : null),
+          data,
+        });
+        if (employeeUid) {
+          const deciderName = String(after.decidedByName || "").trim();
+          await writeAttendanceNotifications([employeeUid], {
+            type: "attendanceCorrectionApproved",
+            title: "Attendance updated",
+            body: deciderName
+              ? `${deciderName} updated your attendance for this shift`
+              : "Your attendance for this shift was updated",
+            recordId,
+            correctionId,
+            senderUid: String(after.decidedBy || ""),
+          });
+        }
+        return;
+      }
+
+      // 1b) An employee FILING (pending) → opening audit event + notify reviewers.
+      await appendAttendanceEvent(recordId, {
+        kind: "correctionRequested",
+        actorId: String(after.requestedBy || ""),
+        actorName: after.requestedByName != null ? String(after.requestedByName) : null,
+        note: after.reason != null ? String(after.reason) : null,
+        data,
+      });
+      const reviewers = await resolveAttendanceReviewers(after.branchId, String(after.requestedBy || ""));
+      await writeAttendanceNotifications(reviewers, {
+        type: "attendanceCorrectionFiled",
+        title: "Attendance correction",
+        body: `${String(after.userName || "An employee")} filed a ${attendanceCorrectionKindLabel(after.kind)} correction`,
+        recordId,
+        correctionId,
+        senderUid: String(after.requestedBy || ""),
+      });
+      return;
+    }
+
+    // 2) Decision — pending → approved / rejected (ignore other field bumps).
+    const beforeStatus = String(before.status || "pending");
+    const afterStatus = String(after.status || "pending");
+    if (beforeStatus === afterStatus) return;
+    if (afterStatus !== "approved" && afterStatus !== "rejected") return;
+
+    const deciderName = String(after.decidedByName || "").trim();
+    const decidedBy = String(after.decidedBy || "");
+
+    if (afterStatus === "approved") {
+      // Apply the client-computed resolution (single source of the minute math:
+      // AttendanceCalculator) onto the parent record — server-authoritative,
+      // upserting a missing record (a missed-punch materializes on approval).
+      if (recordId) {
+        try {
+          await applyCorrectionResolution(recordId, after);
+        } catch (e) {
+          logger.warn("failed to apply approved correction", { recordId, error: String(e) });
+        }
+        await appendAttendanceEvent(recordId, {
+          kind: "correctionApproved",
+          actorId: decidedBy,
+          actorName: after.decidedByName != null ? String(after.decidedByName) : null,
+          note: after.decisionNote != null ? String(after.decisionNote) : null,
+          data,
+        });
+      }
+      if (employeeUid) {
+        await writeAttendanceNotifications([employeeUid], {
+          type: "attendanceCorrectionApproved",
+          title: "Correction approved",
+          body: deciderName
+            ? `${deciderName} approved your attendance correction`
+            : "Your attendance correction was approved",
+          recordId,
+          correctionId,
+          senderUid: decidedBy,
+        });
+      }
+      return;
+    }
+
+    // rejected — record untouched; audit the decision + notify the employee.
+    await appendAttendanceEvent(recordId, {
+      kind: "correctionRejected",
+      actorId: decidedBy,
+      actorName: after.decidedByName != null ? String(after.decidedByName) : null,
+      note: after.decisionNote != null ? String(after.decisionNote) : null,
+      data,
+    });
+    if (employeeUid) {
+      await writeAttendanceNotifications([employeeUid], {
+        type: "attendanceCorrectionRejected",
+        title: "Correction rejected",
+        body: deciderName
+          ? `${deciderName} rejected your attendance correction`
+          : "Your attendance correction was rejected",
+        recordId,
+        correctionId,
+        senderUid: decidedBy,
+      });
+    }
+  },
+);
+
+// Millis of a Firestore Timestamp, or null when absent/unresolved.
+function tsMillis(v) {
+  return v && typeof v.toMillis === "function" ? v.toMillis() : null;
+}
+
+// Auto-close sessions the employee never clocked out of. A still-open session
+// (status inProgress, no clockOut) is flipped to `pendingReview` with source
+// `autoClose` — which onAttendanceWritten audits as `autoClosed` — when it is due
+// per `isAutoCloseDue`: scheduled end + grace has passed, OR (the R7 safety net)
+// it has been open past the max-session cap from clock-in, which catches an
+// UNSCHEDULED session that has no scheduled end. The employee is nudged to file a
+// correction. Idempotent: the query is `status == inProgress` and a close flips
+// that status, so a session is never closed twice and a manual close (which is not
+// inProgress) is never overwritten.
+exports.autoCloseAttendance = onSchedule("every 30 minutes", async () => {
+  const nowMs = Date.now();
+  const graceMs = ATTENDANCE_AUTO_CLOSE_GRACE_MINUTES * 60 * 1000;
+  const maxSessionMs = ATTENDANCE_MAX_SESSION_MINUTES * 60 * 1000;
+  let snap;
+  try {
+    // Open sessions are naturally bounded (only people currently clocked in);
+    // status equality needs only the automatic single-field index.
+    snap = await db.collection(ATTENDANCE).where("status", "==", "inProgress").get();
+  } catch (e) {
+    logger.warn("autoCloseAttendance query failed", { error: String(e) });
+    return;
+  }
+  let closed = 0;
+  for (const doc of snap.docs) {
+    const d = doc.data() || {};
+    const due = isAutoCloseDue({
+      clockOutMs: tsMillis(d.clockOut),
+      deleted: !!d.deletedAt,
+      scheduledEndMs: tsMillis(d.scheduledEnd),
+      clockInMs: tsMillis(d.clockIn),
+      nowMs,
+      graceMs,
+      maxSessionMs,
+    });
+    if (!due) continue;
+    try {
+      await doc.ref.update({
+        status: "pendingReview",
+        source: "autoClose",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      closed++;
+      const uid = String(d.userId || "");
+      if (uid) {
+        await writeAttendanceNotifications([uid], {
+          type: "attendanceAutoClosed",
+          title: "Shift needs review",
+          body: "You didn't clock out — file a correction with your real clock-out time.",
+          recordId: doc.id,
+          senderUid: "",
+        });
+      }
+    } catch (e) {
+      logger.warn("autoCloseAttendance update failed", { recordId: doc.id, error: String(e) });
+    }
+  }
+  if (closed > 0) logger.info("autoCloseAttendance closed sessions", { closed });
+});

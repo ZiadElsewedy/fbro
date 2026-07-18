@@ -100,6 +100,12 @@ class TaskEntity with _$TaskEntity {
     /// successor keys off the current task id and never off a possibly-null
     /// deadline). Null for non-recurring tasks. Additive — no migration.
     String? occurrenceKey,
+    /// The automation-execution **correlation id** (`AUT-{yyyymmdd}-{hash}`) that
+    /// created this task, shared with the run record, its notifications and its
+    /// audit entries so the task can be traced back to the whole execution.
+    /// Server-stamped by `generateShiftTaskInstances`; null for any task not
+    /// produced by a recurring shift automation. Additive — no migration.
+    String? correlationId,
     /// When the task is scheduled to **start** (Task Scheduling V2). Pre-filled
     /// from the assigned shift's hours as a *smart default* the manager can
     /// override; null on tasks predating scheduling (unknown start). Additive —

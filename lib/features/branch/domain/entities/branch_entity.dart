@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:drop/features/branch/domain/branch_geofence.dart';
 import 'package:drop/features/schedule/domain/swap_policy.dart';
 
 part 'branch_entity.freezed.dart';
@@ -30,10 +31,18 @@ class BranchEntity with _$BranchEntity {
     /// Null = [SwapPolicy.permissive] (any role can swap, no rest rule). Stored
     /// as a nested map under `swapPolicy`.
     SwapPolicy? swapPolicy,
+
+    /// Optional attendance **geofence** (lat/lng · allowed radius · min GPS
+    /// accuracy). Null = GPS attendance not configured here yet. Stored as a
+    /// nested map under `geofence`.
+    BranchGeofence? geofence,
   }) = _BranchEntity;
 
   bool get isDeleted => deletedAt != null;
 
   /// The branch's swap rules, or the permissive default when none is set.
   SwapPolicy get effectiveSwapPolicy => swapPolicy ?? SwapPolicy.permissive;
+
+  /// Whether an admin has configured this branch's attendance geofence.
+  bool get hasGeofence => geofence != null;
 }

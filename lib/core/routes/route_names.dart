@@ -51,27 +51,34 @@ class RouteNames {
   static const String requests = '/requests';
   static const String requestsCreate = '/requests/create';
 
+  /// Employee GPS clock-in/out surface (also reachable by managers who clock).
+  static const String attendance = '/attendance';
+
+  /// Admin attendance dashboard — branch-scoped roster × attendance oversight +
+  /// the correction queue (a future manager view reuses the same screen).
+  static const String adminAttendance = '/admin/attendance';
+
+  /// Attendance History ledger — the employee's own history. Reachable by any
+  /// authenticated role (a manager/admin who also clocks has their own here).
+  static const String attendanceHistory = '/attendance/history';
+
+  /// Manager/admin branch attendance review (the longitudinal ledger). Guarded to
+  /// admin‖manager by `_isAttendanceReviewArea` (mirrors the Communications area).
+  static const String attendanceReview = '/attendance/review';
+
+  /// The single attendance-record detail pattern (`/attendance/record/:id`) —
+  /// deep-linkable; access is enforced by `firestore.rules`, not the route.
+  static const String attendanceRecordPattern = '/attendance/record/:id';
+
+  /// The concrete attendance-record detail path for [id].
+  static String attendanceRecord(String id) => '/attendance/record/$id';
+
   /// The single-request deep-link pattern (`/request/:requestId`) — a request
   /// notification opens the exact request here, for every role.
   static const String requestDetailPattern = '/request/:requestId';
 
   /// The concrete request-detail path for [requestId].
   static String requestDetail(String requestId) => '/request/$requestId';
-
-  // ─── Community Hub / DROP Events ───────────────────────────────
-  // Shared by every role (like cases/requests) — the hub self-scopes by role
-  // (admin: all branches · manager + employee: own branch) and Firestore rules
-  // enforce access, so these sit outside the role-area guards. The static
-  // `/community/create` route is declared before the singular `/event/:eventId`
-  // deep-link (a distinct path, so it never captures `create`).
-  static const String community = '/community';
-  static const String communityCreate = '/community/create';
-
-  /// The single-event workspace deep-link pattern (`/event/:eventId`).
-  static const String eventDetailPattern = '/event/:eventId';
-
-  /// The concrete event-workspace path for [eventId].
-  static String eventDetail(String eventId) => '/event/$eventId';
 
   // ─── Role shells (Phase 1) ──────────────────────────────────
   // The employee role uses [home] ('/') as its landing.

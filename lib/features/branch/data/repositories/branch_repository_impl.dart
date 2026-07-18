@@ -4,6 +4,7 @@ import 'package:drop/core/errors/exceptions.dart';
 import 'package:drop/core/errors/failures.dart';
 import 'package:drop/features/branch/data/datasources/branch_remote_datasource.dart';
 import 'package:drop/features/branch/data/models/branch_model.dart';
+import 'package:drop/features/branch/domain/branch_geofence.dart';
 import 'package:drop/features/branch/domain/entities/branch_entity.dart';
 import 'package:drop/features/branch/domain/repositories/branch_repository.dart';
 
@@ -82,6 +83,16 @@ class BranchRepositoryImpl implements BranchRepository {
   Future<void> setBranchActive(String branchId, bool isActive) async {
     try {
       await _remote.setBranchActive(branchId, isActive);
+      _invalidateBranches();
+    } on ServerException catch (e) {
+      throw ServerFailure(e.message);
+    }
+  }
+
+  @override
+  Future<void> setGeofence(String branchId, BranchGeofence geofence) async {
+    try {
+      await _remote.setGeofence(branchId, geofence);
       _invalidateBranches();
     } on ServerException catch (e) {
       throw ServerFailure(e.message);

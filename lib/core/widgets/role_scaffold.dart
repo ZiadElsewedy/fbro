@@ -102,6 +102,14 @@ class RoleScaffold extends StatelessWidget {
               tooltip: 'Communications',
               onPressed: () => context.push(RouteNames.communications),
             ),
+          // Attendance — GPS clock in/out, for the roles that work shifts.
+          if (role.isEmployee || role.isManager)
+            IconButton(
+              icon: const Icon(Icons.fingerprint_rounded,
+                  color: AppColors.textSecondary),
+              tooltip: 'Attendance',
+              onPressed: () => context.push(RouteNames.attendance),
+            ),
           // Operations Requests — available to every role (the list self-scopes).
           IconButton(
             icon: const Icon(Icons.approval_outlined,

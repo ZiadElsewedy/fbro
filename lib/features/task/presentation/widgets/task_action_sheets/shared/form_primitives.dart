@@ -2,25 +2,105 @@ part of '../../task_action_sheets.dart';
 
 // ─── Premium form primitives ─────────────────────────────────────
 // A small, cohesive kit shared across the create sheet so every section reads
-// as one system: a hero header, group dividers, a sliding segmented control,
+// as one system: a hero header, group dividers, quiet duration controls,
 // summary picker tiles, the deadline field and an animated validation banner.
 
 /// The sheet's hero header — title + a one-line intent, so the form opens like
 /// a workflow builder rather than a bare "New Task".
 class _SheetHeader extends StatelessWidget {
-  const _SheetHeader({required this.title, required this.subtitle});
+  const _SheetHeader({
+    required this.title,
+    required this.subtitle,
+    this.eyebrow = 'NEW WORKFLOW',
+  });
   final String title;
   final String subtitle;
+  final String eyebrow;
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final duration = reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 520);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: AppTypography.h2),
-          const SizedBox(height: 2),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: reduceMotion ? 1 : 0, end: 1),
+                duration: duration,
+                curve: Curves.easeOutCubic,
+                builder: (context, progress, child) => Opacity(
+                  opacity: progress,
+                  child: Transform.scale(
+                    scale: 0.88 + (0.12 * progress),
+                    child: child,
+                  ),
+                ),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    gradient: AppColors.subtleGradient,
+                    borderRadius: AppRadius.mdAll,
+                    border: Border.all(color: AppColors.darkBorder),
+                  ),
+                  child: const Icon(
+                    Icons.add_task_rounded,
+                    size: 17,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      eyebrow,
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textTertiary,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(title, style: AppTypography.h2),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: reduceMotion ? 1 : 0, end: 1),
+            duration: duration,
+            curve: Curves.easeOutCubic,
+            builder: (context, progress, _) => ClipRRect(
+              borderRadius: AppRadius.fullAll,
+              child: Container(
+                height: 2,
+                color: AppColors.darkBorder,
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: progress,
+                  child: const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
           Text(subtitle, style: AppTypography.caption),
         ],
       ),
@@ -54,7 +134,9 @@ class _SectionLabel extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.md),
-          const Expanded(child: Divider(color: AppColors.darkBorder, height: 1)),
+          const Expanded(
+            child: Divider(color: AppColors.darkBorder, height: 1),
+          ),
         ],
       ),
     );
@@ -66,9 +148,10 @@ class _FieldCaption extends StatelessWidget {
   const _FieldCaption(this.text);
   final String text;
   @override
-  Widget build(BuildContext context) => Text(text,
-      style: AppTypography.labelSmall
-          .copyWith(color: AppColors.textSecondary));
+  Widget build(BuildContext context) => Text(
+    text,
+    style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary),
+  );
 }
 
 /// The soft rounded 36px icon tile that leads a [_PickerTile] / list row.
@@ -85,8 +168,7 @@ class _LeadIcon extends StatelessWidget {
         borderRadius: AppRadius.mdAll,
         border: Border.all(color: AppColors.darkBorder),
       ),
-      child:
-          Icon(icon, size: 18, color: AppColors.textSecondary),
+      child: Icon(icon, size: 18, color: AppColors.textSecondary),
     );
   }
 }
@@ -130,11 +212,12 @@ class _PickerTileState extends State<_PickerTile> {
     final filled = w.value != null;
     final interactive = w.enabled && w.onTap != null;
     final hovered = _hovered && interactive;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final lifted = hovered && !reduceMotion;
     return Opacity(
       opacity: w.enabled ? 1 : 0.55,
       child: MouseRegion(
-        cursor:
-            interactive ? SystemMouseCursors.click : MouseCursor.defer,
+        cursor: interactive ? SystemMouseCursors.click : MouseCursor.defer,
         onEnter: (_) {
           if (interactive) setState(() => _hovered = true);
         },
@@ -145,18 +228,31 @@ class _PickerTileState extends State<_PickerTile> {
           onTap: w.enabled ? w.onTap : null,
           borderRadius: AppRadius.xlAll,
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
+            duration: reduceMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 160),
             curve: Curves.easeOut,
+            transform: Matrix4.translationValues(0, lifted ? -1 : 0, 0),
+            transformAlignment: Alignment.center,
             padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md, vertical: AppSpacing.md),
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.md,
+            ),
             decoration: BoxDecoration(
-              color: hovered
-                  ? AppColors.darkSurfaceElevated
-                  : AppColors.darkSurface,
+              gradient: AppColors.subtleGradient,
               borderRadius: AppRadius.xlAll,
               border: Border.all(
                 color: hovered ? AppColors.textTertiary : AppColors.darkBorder,
               ),
+              boxShadow: lifted
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x52000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 8),
+                      ),
+                    ]
+                  : null,
             ),
             child: Row(
               children: [
@@ -170,9 +266,12 @@ class _PickerTileState extends State<_PickerTile> {
                       // value is the content (white); an unset placeholder is the
                       // faintest step (dark grey), so an empty field reads clearly
                       // "not filled yet" without competing with its label.
-                      Text(w.label,
-                          style: AppTypography.caption
-                              .copyWith(color: AppColors.textSecondary)),
+                      Text(
+                        w.label,
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
                       const SizedBox(height: 2),
                       Text(
                         filled ? w.value! : (w.placeholder ?? ''),
@@ -180,8 +279,9 @@ class _PickerTileState extends State<_PickerTile> {
                           color: filled
                               ? AppColors.textPrimary
                               : AppColors.textQuaternary,
-                          fontWeight:
-                              filled ? FontWeight.w500 : FontWeight.w400,
+                          fontWeight: filled
+                              ? FontWeight.w500
+                              : FontWeight.w400,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -194,15 +294,20 @@ class _PickerTileState extends State<_PickerTile> {
                   GestureDetector(
                     onTap: w.onClear,
                     behavior: HitTestBehavior.opaque,
-                    child: const Icon(Icons.close_rounded,
-                        size: 18, color: AppColors.textTertiary),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: AppColors.textTertiary,
+                    ),
                   )
                 else if (w.enabled)
-                  Icon(Icons.chevron_right_rounded,
-                      size: 20,
-                      color: hovered
-                          ? AppColors.textSecondary
-                          : AppColors.textTertiary),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: hovered
+                        ? AppColors.textSecondary
+                        : AppColors.textTertiary,
+                  ),
               ],
             ),
           ),
@@ -212,9 +317,10 @@ class _PickerTileState extends State<_PickerTile> {
   }
 }
 
-/// The **Schedule** control (Task Scheduling V2) — a Start row and a Due row,
-/// each carrying a date **and** time, plus the estimated duration, validation,
-/// and a smart-default banner. Times are pre-filled from the resolved shift as a
+/// The **Schedule** control (Task Scheduling V2) — optional quick deadline
+/// presets, then a Start row and a Due row, each carrying a date **and** time,
+/// plus the estimated duration, validation, and a smart-default banner.
+/// Times are pre-filled from the resolved shift as a
 /// *suggestion*; the moment the manager edits either value the banner flips to
 /// "Custom schedule / Originally: Morning shift · 08:30 – 16:30 / Reset to
 /// shift". Suggestions **never lock** the fields; overnight windows (due on a
@@ -228,6 +334,8 @@ class _ScheduleField extends StatelessWidget {
     required this.onClearStart,
     required this.onClearDue,
     this.resolving = false,
+    this.onQuickDeadline,
+    this.quickDeadlineDuration,
     this.sourceLabel,
     this.custom = false,
     this.onReset,
@@ -244,6 +352,12 @@ class _ScheduleField extends StatelessWidget {
 
   /// A rostered-shift resolve is in flight (subtle "Checking roster…" hint).
   final bool resolving;
+
+  /// Optional create-mode shortcuts: start now, due after the picked duration.
+  final ValueChanged<Duration>? onQuickDeadline;
+
+  /// The active quick deadline preset, if this schedule came from one.
+  final Duration? quickDeadlineDuration;
 
   /// The suggestion source (e.g. "Morning shift · 08:30 – 16:30"), or null when
   /// nothing resolved (no banner — pure manual scheduling).
@@ -272,12 +386,18 @@ class _ScheduleField extends StatelessWidget {
       final d = due!.difference(start!);
       if (d.inMinutes > 0) span = d;
     }
-    final overnight =
-        start != null && due != null && !_sameDay(start!, due!);
+    final overnight = start != null && due != null && !_sameDay(start!, due!);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (onQuickDeadline != null) ...[
+          _ScheduleQuickPresets(
+            selected: quickDeadlineDuration,
+            onPick: onQuickDeadline!,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         _PickerTile(
           icon: Icons.play_circle_outline_rounded,
           label: 'Start',
@@ -314,6 +434,7 @@ class _ScheduleField extends StatelessWidget {
             due: due!,
             span: span,
             overnight: overnight,
+            emphasized: quickDeadlineDuration != null,
           ),
         ],
         if (warning != null)
@@ -353,6 +474,263 @@ class _ScheduleField extends StatelessWidget {
       );
 }
 
+class _ScheduleQuickPresets extends StatelessWidget {
+  const _ScheduleQuickPresets({required this.selected, required this.onPick});
+
+  final Duration? selected;
+  final ValueChanged<Duration> onPick;
+
+  static const _options = [
+    _DeadlinePresetOption(
+      label: 'Tomorrow',
+      detail: '24h',
+      icon: Icons.today_outlined,
+      duration: Duration(days: 1),
+      semanticLabel: 'Start now and due tomorrow',
+    ),
+    _DeadlinePresetOption(
+      label: '2 days',
+      detail: '48h',
+      icon: Icons.filter_2_rounded,
+      duration: Duration(days: 2),
+      semanticLabel: 'Start now and due in 2 days',
+    ),
+    _DeadlinePresetOption(
+      label: 'Week',
+      detail: '7d',
+      icon: Icons.calendar_view_week_outlined,
+      duration: Duration(days: 7),
+      semanticLabel: 'Start now and due in 1 week',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedIndex = _options.indexWhere((o) => o.duration == selected);
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        gradient: AppColors.subtleGradient,
+        borderRadius: AppRadius.lgAll,
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final count = _options.length;
+          final slot = constraints.maxWidth / count;
+          final firstStop = slot / 2;
+          final segment = count <= 1 ? 0.0 : slot;
+          final selectedX = selectedIndex < 0
+              ? firstStop
+              : firstStop + (segment * selectedIndex);
+          final activeWidth = selectedIndex < 0 ? 0.0 : selectedX - firstStop;
+
+          return SizedBox(
+            height: 74,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: firstStop,
+                  right: firstStop,
+                  top: 17,
+                  child: Container(height: 1, color: AppColors.darkBorder),
+                ),
+                AnimatedPositioned(
+                  duration: reduceMotion
+                      ? Duration.zero
+                      : const Duration(milliseconds: 340),
+                  curve: Curves.easeOutCubic,
+                  left: firstStop,
+                  top: 16.5,
+                  width: activeWidth,
+                  child: Container(height: 2, color: AppColors.textSecondary),
+                ),
+                if (selectedIndex >= 0)
+                  AnimatedPositioned(
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 340),
+                    curve: Curves.easeOutCubic,
+                    left: selectedX - 13,
+                    top: 5,
+                    child: _DeadlineRailThumb(
+                      icon: _options[selectedIndex].icon,
+                    ),
+                  ),
+                Row(
+                  children: [
+                    for (var i = 0; i < count; i++)
+                      Expanded(
+                        child: _DeadlinePresetStop(
+                          option: _options[i],
+                          selected: i == selectedIndex,
+                          onTap: () => onPick(_options[i].duration),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DeadlinePresetOption {
+  const _DeadlinePresetOption({
+    required this.label,
+    required this.detail,
+    required this.icon,
+    required this.duration,
+    required this.semanticLabel,
+  });
+
+  final String label;
+  final String detail;
+  final IconData icon;
+  final Duration duration;
+  final String semanticLabel;
+}
+
+class _DeadlineRailThumb extends StatelessWidget {
+  const _DeadlineRailThumb({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 26,
+      height: 26,
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.primary),
+      ),
+      child: Icon(icon, size: 13, color: AppColors.onAccent),
+    );
+  }
+}
+
+class _DeadlinePresetStop extends StatefulWidget {
+  const _DeadlinePresetStop({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _DeadlinePresetOption option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_DeadlinePresetStop> createState() => _DeadlinePresetStopState();
+}
+
+class _DeadlinePresetStopState extends State<_DeadlinePresetStop> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.selected;
+    final option = widget.option;
+    final labelColor = selected
+        ? AppColors.textPrimary
+        : _hovered
+        ? AppColors.textSecondary
+        : AppColors.textTertiary;
+    final detailColor = selected
+        ? AppColors.textSecondary
+        : AppColors.textQuaternary;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: option.semanticLabel,
+      child: Tooltip(
+        message: option.semanticLabel,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            onTap: widget.onTap,
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              height: 74,
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 36,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 140),
+                        curve: Curves.easeOut,
+                        width: selected ? 8 : 6,
+                        height: selected ? 8 : 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: selected
+                              ? AppColors.transparent
+                              : _hovered
+                              ? AppColors.textTertiary
+                              : AppColors.darkSurfaceElevated,
+                          border: Border.all(
+                            color: selected
+                                ? AppColors.transparent
+                                : _hovered
+                                ? AppColors.textSecondary
+                                : AppColors.darkBorder,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.easeOut,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: labelColor,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    ),
+                    child: Text(
+                      option.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    option.detail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.caption.copyWith(
+                      color: detailColor,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A compact **start → due** timeline that visualises the scheduled window: the
 /// two times as endpoints (white, tabular so they align), a connecting track
 /// with a node at each end, and the duration riding the middle of the track (a
@@ -364,118 +742,183 @@ class _ScheduleTimeline extends StatelessWidget {
     required this.due,
     required this.span,
     required this.overnight,
+    required this.emphasized,
   });
 
   final DateTime start;
   final DateTime due;
   final Duration span;
   final bool overnight;
+  final bool emphasized;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurfaceElevated,
-        borderRadius: AppRadius.lgAll,
-        border: Border.all(color: AppColors.darkBorder),
-      ),
-      child: Row(
-        children: [
-          // Overnight is signalled by the moon on the duration pill, so the due
-          // endpoint stays a short "Due" — no long label that could force a
-          // RenderFlex overflow on a narrow phone at a large text scale.
-          _endpoint(AppDateFormatter.time(start), 'Start'),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(child: _track()),
-          const SizedBox(width: AppSpacing.sm),
-          _endpoint(AppDateFormatter.time(due), 'Due', end: true),
-        ],
-      ),
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    return TweenAnimationBuilder<double>(
+      key: ValueKey('${span.inMinutes}-$overnight-$emphasized'),
+      tween: Tween(begin: reduceMotion ? 1 : 0, end: 1),
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 620),
+      curve: Curves.easeOutCubic,
+      builder: (context, progress, _) {
+        return Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.md,
+          ),
+          decoration: BoxDecoration(
+            gradient: AppColors.subtleGradient,
+            borderRadius: AppRadius.lgAll,
+            border: Border.all(
+              color: emphasized ? AppColors.accentBorder : AppColors.darkBorder,
+            ),
+          ),
+          child: Row(
+            children: [
+              // Overnight is signalled by the moon on the duration pill, so the
+              // due endpoint stays short and safe at large text scales.
+              _endpoint(AppDateFormatter.time(start), 'Start'),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: _track(progress)),
+              const SizedBox(width: AppSpacing.sm),
+              _endpoint(AppDateFormatter.time(due), 'Due', end: true),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _endpoint(String time, String label, {bool end = false}) => Column(
-        crossAxisAlignment:
-            end ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            time,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w700,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-          const SizedBox(height: 1),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.caption.copyWith(color: AppColors.textTertiary),
-          ),
-        ],
-      );
-
-  Widget _node({required bool filled}) => Container(
-        width: 9,
-        height: 9,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: filled ? AppColors.textSecondary : AppColors.darkSurface,
-          border: Border.all(color: AppColors.textTertiary, width: 1.5),
+    crossAxisAlignment: end ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        time,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.labelLarge.copyWith(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w700,
+          fontFeatures: const [FontFeature.tabularFigures()],
         ),
-      );
+      ),
+      const SizedBox(height: 1),
+      Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.caption.copyWith(color: AppColors.textTertiary),
+      ),
+    ],
+  );
 
-  Widget _track() => SizedBox(
-        height: 30,
-        child: Stack(
-          alignment: Alignment.center,
+  Widget _node({required bool filled}) {
+    final active = filled || emphasized;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: active ? 10 : 9,
+      height: active ? 10 : 9,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: active ? AppColors.textSecondary : AppColors.darkSurface,
+        border: Border.all(
+          color: active ? AppColors.textSecondary : AppColors.textTertiary,
+          width: 1.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _track(double progress) => SizedBox(
+    height: 36,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                _node(filled: true),
-                const Expanded(
-                  child: Divider(color: AppColors.darkBorder, thickness: 2),
-                ),
-                _node(filled: false),
-              ],
-            ),
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.darkSurface,
-                borderRadius: AppRadius.fullAll,
-                border: Border.all(color: AppColors.darkBorder),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+            _node(filled: true),
+            Expanded(
+              child: Stack(
+                alignment: Alignment.centerLeft,
                 children: [
-                  Icon(
-                    overnight
-                        ? Icons.nightlight_round
-                        : Icons.timelapse_rounded,
-                    size: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    formatScheduleDuration(span),
-                    style: AppTypography.labelSmall.copyWith(
-                      color: AppColors.textSecondary,
+                  Container(height: 2, color: AppColors.darkBorder),
+                  FractionallySizedBox(
+                    widthFactor: progress.clamp(0, 1),
+                    child: Container(
+                      height: 2,
+                      color: emphasized
+                          ? AppColors.textSecondary
+                          : AppColors.textTertiary,
                     ),
                   ),
                 ],
               ),
             ),
+            _node(filled: progress > 0.96),
           ],
         ),
-      );
+        Transform.scale(
+          scale: 0.94 + (0.06 * progress),
+          child: Opacity(
+            opacity: progress.clamp(0.35, 1),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.xs,
+              ),
+              decoration: BoxDecoration(
+                color: emphasized ? AppColors.primary : AppColors.darkSurface,
+                borderRadius: AppRadius.fullAll,
+                border: Border.all(
+                  color: emphasized
+                      ? AppColors.transparent
+                      : AppColors.darkBorder,
+                ),
+              ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(scale: animation, child: child),
+                ),
+                child: Row(
+                  key: ValueKey(span.inMinutes),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      overnight
+                          ? Icons.nightlight_round
+                          : Icons.timelapse_rounded,
+                      size: 12,
+                      color: emphasized
+                          ? AppColors.onAccent
+                          : AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      formatScheduleDuration(span),
+                      style: AppTypography.labelSmall.copyWith(
+                        color: emphasized
+                            ? AppColors.onAccent
+                            : AppColors.textSecondary,
+                        fontWeight: emphasized
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// The Suggested / Custom banner under the Schedule rows. When suggested it's a
@@ -497,9 +940,11 @@ class _ScheduleBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
-        color: AppColors.darkSurfaceElevated,
+        gradient: AppColors.subtleGradient,
         borderRadius: AppRadius.mdAll,
         border: Border.all(color: AppColors.darkBorder),
       ),
@@ -519,16 +964,18 @@ class _ScheduleBanner extends StatelessWidget {
                     children: [
                       Text(
                         'Custom schedule',
-                        style: AppTypography.labelSmall
-                            .copyWith(color: AppColors.textPrimary),
+                        style: AppTypography.labelSmall.copyWith(
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                       const SizedBox(height: 1),
                       Text(
                         'Originally: $sourceLabel',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppTypography.caption
-                            .copyWith(color: AppColors.textSecondary),
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   )
@@ -536,8 +983,9 @@ class _ScheduleBanner extends StatelessWidget {
                     'Suggested from $sourceLabel',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.caption
-                        .copyWith(color: AppColors.textSecondary),
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
                   ),
           ),
           if (onReset != null) ...[
@@ -547,8 +995,9 @@ class _ScheduleBanner extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               child: Text(
                 custom ? 'Reset to shift' : 'Reset',
-                style: AppTypography.labelSmall
-                    .copyWith(color: AppColors.textPrimary),
+                style: AppTypography.labelSmall.copyWith(
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
           ],
@@ -581,14 +1030,18 @@ class _MixedShiftChooser extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.groups_2_outlined,
-                  size: 15, color: AppColors.warning),
+              const Icon(
+                Icons.groups_2_outlined,
+                size: 15,
+                color: AppColors.warning,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   'This team works mixed shifts — pick a schedule',
-                  style: AppTypography.caption
-                      .copyWith(color: AppColors.textSecondary),
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
             ],
@@ -626,8 +1079,10 @@ class _ChooserChip extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 7),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: 7,
+        ),
         decoration: BoxDecoration(
           color: AppColors.darkSurface,
           borderRadius: AppRadius.fullAll,
@@ -635,8 +1090,9 @@ class _ChooserChip extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: AppTypography.labelSmall
-              .copyWith(color: AppColors.textPrimary),
+          style: AppTypography.labelSmall.copyWith(
+            color: AppColors.textPrimary,
+          ),
         ),
       ),
     );
@@ -669,12 +1125,13 @@ class _Segmented<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final n = segments.length;
     final index = segments.indexWhere((s) => s.value == value);
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
     // Align.x for equal-width slots: -1 at slot 0 … +1 at slot n-1.
     final thumbX = n <= 1 ? 0.0 : (2 * (index < 0 ? 0 : index) / (n - 1)) - 1;
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.darkSurfaceElevated,
+        gradient: AppColors.subtleGradient,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.darkBorder),
       ),
@@ -683,7 +1140,9 @@ class _Segmented<T> extends StatelessWidget {
           if (index >= 0)
             Positioned.fill(
               child: AnimatedAlign(
-                duration: const Duration(milliseconds: 240),
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
                 alignment: Alignment(thumbX, 0),
                 child: FractionallySizedBox(
@@ -691,8 +1150,15 @@ class _Segmented<T> extends StatelessWidget {
                   heightFactor: 1,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: AppColors.primary,
+                      gradient: AppColors.primaryGradient,
                       borderRadius: BorderRadius.circular(10),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x40000000),
+                          blurRadius: 8,
+                          offset: Offset(0, 3),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -741,10 +1207,12 @@ class _SegLabel extends StatelessWidget {
               color: color,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             ),
-            child: Text(seg.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center),
+            child: Text(
+              seg.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
           ),
         ),
       ],
@@ -783,13 +1251,19 @@ class _FormErrorBanner extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.error_outline_rounded,
-                          size: 18, color: AppColors.error),
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        size: 18,
+                        color: AppColors.error,
+                      ),
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
-                        child: Text(message!,
-                            style: AppTypography.bodySmall
-                                .copyWith(color: AppColors.error)),
+                        child: Text(
+                          message!,
+                          style: AppTypography.bodySmall.copyWith(
+                            color: AppColors.error,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -799,4 +1273,3 @@ class _FormErrorBanner extends StatelessWidget {
     );
   }
 }
-

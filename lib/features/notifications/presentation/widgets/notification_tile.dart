@@ -161,6 +161,14 @@ class NotificationTile extends StatelessWidget {
       case NotificationType.requestSubmitted:
       case NotificationType.requestCommented:
         return ('Request', AppColors.textSecondary);
+      case NotificationType.attendanceCorrectionApproved:
+        return ('Attendance', AppColors.success);
+      case NotificationType.attendanceCorrectionRejected:
+        return ('Attendance', AppColors.error);
+      case NotificationType.attendanceAutoClosed:
+        return ('Attendance', AppColors.warning);
+      case NotificationType.attendanceCorrectionFiled:
+        return ('Attendance', AppColors.textSecondary);
     }
   }
 
@@ -213,6 +221,14 @@ class NotificationTile extends StatelessWidget {
         return Icons.block_rounded;
       case NotificationType.requestCommented:
         return Icons.chat_bubble_outline_rounded;
+      case NotificationType.attendanceCorrectionFiled:
+        return Icons.more_time_rounded;
+      case NotificationType.attendanceCorrectionApproved:
+        return Icons.check_circle_outline_rounded;
+      case NotificationType.attendanceCorrectionRejected:
+        return Icons.cancel_outlined;
+      case NotificationType.attendanceAutoClosed:
+        return Icons.timer_off_outlined;
     }
   }
 
@@ -220,15 +236,18 @@ class NotificationTile extends StatelessWidget {
     switch (type) {
       case NotificationType.taskApproved:
       case NotificationType.swapApproved:
+      case NotificationType.attendanceCorrectionApproved:
         return AppColors.success;
       case NotificationType.taskRejected:
       case NotificationType.taskOverdue:
       case NotificationType.broadcastEmergency:
       case NotificationType.swapRejected:
+      case NotificationType.attendanceCorrectionRejected:
         return AppColors.error;
       case NotificationType.taskRework:
       case NotificationType.taskReminder:
       case NotificationType.swapAccepted:
+      case NotificationType.attendanceAutoClosed:
         return AppColors.warning;
       default:
         return AppColors.primary;

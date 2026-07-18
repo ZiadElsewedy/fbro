@@ -72,11 +72,11 @@ class AppShell extends StatefulWidget {
       label: 'Requests',
       route: RouteNames.requests,
     );
-    const community = SidebarItem(
-      icon: Icons.celebration_outlined,
-      activeIcon: Icons.celebration_rounded,
-      label: 'Community',
-      route: RouteNames.community,
+    const attendance = SidebarItem(
+      icon: Icons.fingerprint_rounded,
+      activeIcon: Icons.fingerprint_rounded,
+      label: 'Attendance',
+      route: RouteNames.attendance,
     );
 
     switch (role) {
@@ -101,10 +101,15 @@ class AppShell extends StatefulWidget {
               label: 'Schedule',
               route: RouteNames.adminSchedule,
             ),
+            SidebarItem(
+              icon: Icons.fingerprint_rounded,
+              activeIcon: Icons.fingerprint_rounded,
+              label: 'Attendance',
+              route: RouteNames.adminAttendance,
+            ),
             communications,
             cases,
             requests,
-            community,
             notifications,
           ]),
           const SidebarSection(title: 'Administration', items: [
@@ -155,10 +160,15 @@ class AppShell extends StatefulWidget {
               label: 'Schedule',
               route: RouteNames.managerSchedule,
             ),
+            SidebarItem(
+              icon: Icons.fingerprint_rounded,
+              activeIcon: Icons.fingerprint_rounded,
+              label: 'Attendance',
+              route: RouteNames.attendanceReview,
+            ),
             communications,
             cases,
             requests,
-            community,
             notifications,
           ]),
         ];
@@ -183,9 +193,9 @@ class AppShell extends StatefulWidget {
               label: 'My Schedule',
               route: RouteNames.mySchedule,
             ),
+            attendance,
             cases,
             requests,
-            community,
             notifications,
           ]),
         ];

@@ -106,6 +106,13 @@ mixin _$TaskEntity {
   /// deadline). Null for non-recurring tasks. Additive — no migration.
   String? get occurrenceKey => throw _privateConstructorUsedError;
 
+  /// The automation-execution **correlation id** (`AUT-{yyyymmdd}-{hash}`) that
+  /// created this task, shared with the run record, its notifications and its
+  /// audit entries so the task can be traced back to the whole execution.
+  /// Server-stamped by `generateShiftTaskInstances`; null for any task not
+  /// produced by a recurring shift automation. Additive — no migration.
+  String? get correlationId => throw _privateConstructorUsedError;
+
   /// When the task is scheduled to **start** (Task Scheduling V2). Pre-filled
   /// from the assigned shift's hours as a *smart default* the manager can
   /// override; null on tasks predating scheduling (unknown start). Additive —
@@ -217,6 +224,7 @@ abstract class $TaskEntityCopyWith<$Res> {
     String? sourceTemplateId,
     String? recurrenceRootId,
     String? occurrenceKey,
+    String? correlationId,
     DateTime? startsAt,
     DateTime? deadline,
     String? notes,
@@ -277,6 +285,7 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
     Object? sourceTemplateId = freezed,
     Object? recurrenceRootId = freezed,
     Object? occurrenceKey = freezed,
+    Object? correlationId = freezed,
     Object? startsAt = freezed,
     Object? deadline = freezed,
     Object? notes = freezed,
@@ -379,6 +388,10 @@ class _$TaskEntityCopyWithImpl<$Res, $Val extends TaskEntity>
             occurrenceKey: freezed == occurrenceKey
                 ? _value.occurrenceKey
                 : occurrenceKey // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            correlationId: freezed == correlationId
+                ? _value.correlationId
+                : correlationId // ignore: cast_nullable_to_non_nullable
                       as String?,
             startsAt: freezed == startsAt
                 ? _value.startsAt
@@ -510,6 +523,7 @@ abstract class _$$TaskEntityImplCopyWith<$Res>
     String? sourceTemplateId,
     String? recurrenceRootId,
     String? occurrenceKey,
+    String? correlationId,
     DateTime? startsAt,
     DateTime? deadline,
     String? notes,
@@ -570,6 +584,7 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
     Object? sourceTemplateId = freezed,
     Object? recurrenceRootId = freezed,
     Object? occurrenceKey = freezed,
+    Object? correlationId = freezed,
     Object? startsAt = freezed,
     Object? deadline = freezed,
     Object? notes = freezed,
@@ -672,6 +687,10 @@ class __$$TaskEntityImplCopyWithImpl<$Res>
         occurrenceKey: freezed == occurrenceKey
             ? _value.occurrenceKey
             : occurrenceKey // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        correlationId: freezed == correlationId
+            ? _value.correlationId
+            : correlationId // ignore: cast_nullable_to_non_nullable
                   as String?,
         startsAt: freezed == startsAt
             ? _value.startsAt
@@ -782,6 +801,7 @@ class _$TaskEntityImpl extends _TaskEntity {
     this.sourceTemplateId,
     this.recurrenceRootId,
     this.occurrenceKey,
+    this.correlationId,
     this.startsAt,
     this.deadline,
     this.notes,
@@ -964,6 +984,14 @@ class _$TaskEntityImpl extends _TaskEntity {
   @override
   final String? occurrenceKey;
 
+  /// The automation-execution **correlation id** (`AUT-{yyyymmdd}-{hash}`) that
+  /// created this task, shared with the run record, its notifications and its
+  /// audit entries so the task can be traced back to the whole execution.
+  /// Server-stamped by `generateShiftTaskInstances`; null for any task not
+  /// produced by a recurring shift automation. Additive — no migration.
+  @override
+  final String? correlationId;
+
   /// When the task is scheduled to **start** (Task Scheduling V2). Pre-filled
   /// from the assigned shift's hours as a *smart default* the manager can
   /// override; null on tasks predating scheduling (unknown start). Additive —
@@ -1074,7 +1102,7 @@ class _$TaskEntityImpl extends _TaskEntity {
 
   @override
   String toString() {
-    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, workType: $workType, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, referenceAttachments: $referenceAttachments, data: $data, createdBy: $createdBy, assignedShiftId: $assignedShiftId, shift: $shift, assignmentType: $assignmentType, instanceDate: $instanceDate, sourceTemplateId: $sourceTemplateId, recurrenceRootId: $recurrenceRootId, occurrenceKey: $occurrenceKey, startsAt: $startsAt, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, revisionNumber: $revisionNumber, requiresRework: $requiresRework, rejectionReason: $rejectionReason, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt, archivedAt: $archivedAt, version: $version)';
+    return 'TaskEntity(id: $id, title: $title, description: $description, type: $type, workType: $workType, status: $status, priority: $priority, branchId: $branchId, assigneeIds: $assigneeIds, checklist: $checklist, referenceAttachments: $referenceAttachments, data: $data, createdBy: $createdBy, assignedShiftId: $assignedShiftId, shift: $shift, assignmentType: $assignmentType, instanceDate: $instanceDate, sourceTemplateId: $sourceTemplateId, recurrenceRootId: $recurrenceRootId, occurrenceKey: $occurrenceKey, correlationId: $correlationId, startsAt: $startsAt, deadline: $deadline, notes: $notes, proofImageUrl: $proofImageUrl, startedAt: $startedAt, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedBy: $rejectedBy, rejectedAt: $rejectedAt, reviewNotes: $reviewNotes, revisionNumber: $revisionNumber, requiresRework: $requiresRework, rejectionReason: $rejectionReason, recurrence: $recurrence, activityLog: $activityLog, createdAt: $createdAt, updatedAt: $updatedAt, archivedAt: $archivedAt, version: $version)';
   }
 
   @override
@@ -1122,6 +1150,8 @@ class _$TaskEntityImpl extends _TaskEntity {
                 other.recurrenceRootId == recurrenceRootId) &&
             (identical(other.occurrenceKey, occurrenceKey) ||
                 other.occurrenceKey == occurrenceKey) &&
+            (identical(other.correlationId, correlationId) ||
+                other.correlationId == correlationId) &&
             (identical(other.startsAt, startsAt) ||
                 other.startsAt == startsAt) &&
             (identical(other.deadline, deadline) ||
@@ -1187,6 +1217,7 @@ class _$TaskEntityImpl extends _TaskEntity {
     sourceTemplateId,
     recurrenceRootId,
     occurrenceKey,
+    correlationId,
     startsAt,
     deadline,
     notes,
@@ -1240,6 +1271,7 @@ abstract class _TaskEntity extends TaskEntity {
     final String? sourceTemplateId,
     final String? recurrenceRootId,
     final String? occurrenceKey,
+    final String? correlationId,
     final DateTime? startsAt,
     final DateTime? deadline,
     final String? notes,
@@ -1370,6 +1402,14 @@ abstract class _TaskEntity extends TaskEntity {
   /// deadline). Null for non-recurring tasks. Additive — no migration.
   @override
   String? get occurrenceKey;
+
+  /// The automation-execution **correlation id** (`AUT-{yyyymmdd}-{hash}`) that
+  /// created this task, shared with the run record, its notifications and its
+  /// audit entries so the task can be traced back to the whole execution.
+  /// Server-stamped by `generateShiftTaskInstances`; null for any task not
+  /// produced by a recurring shift automation. Additive — no migration.
+  @override
+  String? get correlationId;
 
   /// When the task is scheduled to **start** (Task Scheduling V2). Pre-filled
   /// from the assigned shift's hours as a *smart default* the manager can
