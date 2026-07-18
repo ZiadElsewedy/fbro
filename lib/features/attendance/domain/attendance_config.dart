@@ -26,9 +26,11 @@ class AttendanceConfig {
   /// as an early leave.
   final int earlyLeaveGraceMinutes;
 
-  /// How early (before the scheduled start) the employee may clock in. Outside
-  /// the window `[start − lead, scheduledEnd]` a clock-in is refused (use a
-  /// correction request instead).
+  /// How early (before the scheduled start) the employee may clock in. Before
+  /// `scheduledStart − lead` a clock-in is refused ("Opens at HH:MM") — use a
+  /// missed-punch request instead. Enforced by `AttendanceValidation.checkClockIn`
+  /// (spec R1). Early presence never counts as worked time (spec R2 — the
+  /// calculator measures work from `max(clockIn, scheduledStart)`).
   final int clockInLeadMinutes;
 
   /// Extra minutes past the scheduled end that must be worked before the excess
@@ -53,7 +55,7 @@ class AttendanceConfig {
     this.enabled = false,
     this.lateGraceMinutes = 5,
     this.earlyLeaveGraceMinutes = 5,
-    this.clockInLeadMinutes = 30,
+    this.clockInLeadMinutes = 15,
     this.overtimeGraceMinutes = 15,
     this.autoCloseGraceMinutes = 120,
     this.locationPolicy = AttendanceLocationPolicy.none,

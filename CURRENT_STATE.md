@@ -11,7 +11,7 @@
 | --- | --- |
 | **Branch** | `feature/attendance-management` |
 | **Build** | `flutter analyze` clean (1 pre-existing info) |
-| **Tests** | **914 pass · 2 fail** across 139 files (~18s) — the 2 fails are the pre-existing splash-centering cases; see [Known issues](#known-issues) |
+| **Tests** | **927 pass · 2 fail** across 139 files (~18s) — the 2 fails are the pre-existing splash-centering cases; see [Known issues](#known-issues) |
 | **Blocking release** | Firebase deploy (rules · indexes · functions) · iOS push unconfigured · attendance on-device QA |
 | **Platforms** | iOS · Android · macOS |
 
@@ -66,13 +66,16 @@ pruning. `Community-Hub` is **dead** — the feature was removed 2026-07-15.
 phases and committed; what remains is deployment and on-device verification.
 
 > **Product behavior is locked** in [docs/design/ATTENDANCE_SPEC.md](docs/design/ATTENDANCE_SPEC.md)
-> (2026-07-18). **Spec Phase 1 is now implemented** (engine + cubit API + rules +
-> CF + tests; **no new UI surfaces** — wiring buttons awaits owner design sign-off):
-> missed-punch recovery (employee request + manager Add record → server
-> materialization via one upsert apply path), manager direct-resolve of
-> pendingReview, and one-open-correction-per-record. **Still open** (spec deltas,
-> future phases): early-clock-in window + clamp, lazy-Absent/Excused outcome, 16h
-> max-session auto-close, and the UI entry points for the above.
+> (2026-07-18). **Spec Phases 1–2 are implemented** (engine + cubit API + rules +
+> CF + tests; **no new UI surfaces** — wiring buttons awaits owner design sign-off).
+> Phase 1: missed-punch recovery (employee request + manager Add record → server
+> materialization via one upsert apply path), manager direct-resolve, one-open-
+> correction. Phase 2: **early-clock-in window** (`clockInLeadMinutes`, default 15,
+> enforced in `checkClockIn`), **worked-minute clamp** (`max(clockIn,
+> scheduledStart)` in the one calculator), **lazy Absent** (virtual, no document),
+> **Excused** terminal outcome (`AttendanceStatus.excused`, zero minutes, mandatory
+> reason, via `AttendanceAdminCubit.excuseAbsence`). **Still open** (later phases):
+> 16h max-session auto-close, and the **UI entry points** for all of the above.
 
 | Phase | State |
 | --- | --- |

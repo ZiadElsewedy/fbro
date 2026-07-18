@@ -31,7 +31,13 @@ enum AttendanceStatus {
   completed,
   pendingReview,
   absent,
-  onLeave;
+  onLeave,
+
+  /// An expected shift with no work, officially forgiven by a manager — zero
+  /// worked minutes, carries a reason. A **terminal** outcome, distinct from
+  /// [absent] (an unforgiven no-show). Materialized only when a manager excuses
+  /// (spec R14).
+  excused;
 
   /// The string persisted in Firestore (the lower-case name).
   String get value => name;
@@ -43,6 +49,7 @@ enum AttendanceStatus {
         AttendanceStatus.pendingReview => 'Pending review',
         AttendanceStatus.absent => 'Absent',
         AttendanceStatus.onLeave => 'On leave',
+        AttendanceStatus.excused => 'Excused',
       };
 
   /// Clocked in and not yet clocked out — the live session the timer runs on.
@@ -53,7 +60,8 @@ enum AttendanceStatus {
   bool get isTerminal =>
       this == AttendanceStatus.completed ||
       this == AttendanceStatus.absent ||
-      this == AttendanceStatus.onLeave;
+      this == AttendanceStatus.onLeave ||
+      this == AttendanceStatus.excused;
 
   /// Waiting on a manager to resolve it (auto-closed, or flagged).
   bool get needsReview => this == AttendanceStatus.pendingReview;

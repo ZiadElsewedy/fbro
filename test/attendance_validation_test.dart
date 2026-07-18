@@ -40,6 +40,8 @@ void main() {
       ScheduleShift? shift = ScheduleShift.morning,
       LeaveType? leave,
       AttendanceEntity? existing,
+      DateTime? now,
+      DateTime? scheduledStart,
       AttendanceConfig config = enabled,
     }) =>
         AttendanceValidation.checkClockIn(
@@ -47,6 +49,8 @@ void main() {
           todaysShift: shift,
           leave: leave,
           existing: existing,
+          now: now,
+          scheduledStart: scheduledStart,
           config: config,
         );
 
@@ -88,6 +92,29 @@ void main() {
 
     test('allowed (eligibility) with no prior record', () {
       expect(check().allowed, isTrue);
+    });
+
+    test('blocked before the clock-in window opens (R1, default 15 min lead)',
+        () {
+      // Shift starts 08:30 → window opens 08:15. At 08:00 clock-in is refused.
+      final c = check(
+        now: DateTime(2026, 7, 13, 8, 0),
+        scheduledStart: DateTime(2026, 7, 13, 8, 30),
+      );
+      expect(c.reason, AttendanceBlock.tooEarly);
+      expect(c.message, contains('08:15'));
+    });
+
+    test('allowed once inside the window', () {
+      final c = check(
+        now: DateTime(2026, 7, 13, 8, 20), // after 08:15
+        scheduledStart: DateTime(2026, 7, 13, 8, 30),
+      );
+      expect(c.allowed, isTrue);
+    });
+
+    test('no window enforced when now/scheduledStart are absent', () {
+      expect(check(now: null, scheduledStart: null).allowed, isTrue);
     });
   });
 

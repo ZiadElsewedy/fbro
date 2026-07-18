@@ -1,3 +1,4 @@
+import 'package:drop/core/enums/attendance_status.dart';
 import 'package:drop/core/enums/leave_type.dart';
 import 'package:drop/core/enums/schedule_shift.dart';
 import 'package:drop/features/attendance/domain/attendance_config.dart';
@@ -27,6 +28,10 @@ enum AttendanceBoardStatus {
   /// On leave today (from the schedule) — not expected.
   onLeave,
 
+  /// A manager forgave the absence (a materialized `excused` record) — benign,
+  /// not expected to work.
+  excused,
+
   /// Auto-closed / flagged, waiting on a correction or review.
   pendingReview;
 
@@ -37,6 +42,7 @@ enum AttendanceBoardStatus {
         AttendanceBoardStatus.completed => 'Completed',
         AttendanceBoardStatus.absent => 'Absent',
         AttendanceBoardStatus.onLeave => 'On leave',
+        AttendanceBoardStatus.excused => 'Excused',
         AttendanceBoardStatus.pendingReview => 'Needs review',
       };
 
@@ -50,6 +56,7 @@ enum AttendanceBoardStatus {
         AttendanceBoardStatus.notStarted => 4,
         AttendanceBoardStatus.completed => 5,
         AttendanceBoardStatus.onLeave => 6,
+        AttendanceBoardStatus.excused => 7,
       };
 }
 
@@ -118,6 +125,7 @@ class AttendanceBoard {
   int get absent => _count(AttendanceBoardStatus.absent);
   int get notStarted => _count(AttendanceBoardStatus.notStarted);
   int get onLeave => _count(AttendanceBoardStatus.onLeave);
+  int get excused => _count(AttendanceBoardStatus.excused);
   int get pendingReview => _count(AttendanceBoardStatus.pendingReview);
 
   /// Everyone late in any sense (overdue no-shows + late arrivals).
@@ -155,7 +163,9 @@ AttendanceBoard computeAttendanceBoard({
 
     if (record != null) {
       isLate = record.isLate;
-      if (record.needsReview) {
+      if (record.status == AttendanceStatus.excused) {
+        status = AttendanceBoardStatus.excused;
+      } else if (record.needsReview) {
         status = AttendanceBoardStatus.pendingReview;
       } else if (record.isOpen) {
         status = AttendanceBoardStatus.working;

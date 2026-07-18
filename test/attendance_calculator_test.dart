@@ -37,6 +37,27 @@ void main() {
     expect(t.breakMinutes, 0);
   });
 
+  test('early arrival never inflates worked minutes or overtime (R2 clamp)', () {
+    // Clock in 30 min early, leave on time: worked is measured from the scheduled
+    // start, not the early clock-in — and the early time is not overtime.
+    final t = run(
+      clockIn: DateTime(2026, 7, 11, 8, 0), // 30 min before 08:30
+      clockOut: end,
+    );
+    expect(t.workedMinutes, 480); // 08:30 → 16:30, NOT 510
+    expect(t.overtimeMinutes, 0);
+    expect(t.lateMinutes, 0);
+  });
+
+  test('early arrival + real overtime: only the post-end excess counts', () {
+    final t = run(
+      clockIn: DateTime(2026, 7, 11, 8, 0), // 30 early (clamped away)
+      clockOut: DateTime(2026, 7, 11, 17, 0), // 30 over
+    );
+    expect(t.workedMinutes, 510); // 08:30 → 17:00
+    expect(t.overtimeMinutes, 30);
+  });
+
   test('late arrival and early leave beyond grace are counted in full', () {
     final t = run(
       clockIn: DateTime(2026, 7, 11, 8, 50), // 20 late

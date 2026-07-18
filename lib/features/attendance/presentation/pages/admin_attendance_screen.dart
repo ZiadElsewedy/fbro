@@ -922,6 +922,7 @@ class _CenterMessage extends StatelessWidget {
       AttendanceBoardStatus.absent => (AppColors.error, 'Absent'),
       AttendanceBoardStatus.notStarted => (AppColors.textTertiary, 'Not started'),
       AttendanceBoardStatus.onLeave => (AppColors.warning, 'On leave'),
+      AttendanceBoardStatus.excused => (AppColors.textSecondary, 'Excused'),
       AttendanceBoardStatus.pendingReview => (AppColors.warning, 'Needs review'),
     };
 

@@ -8,7 +8,7 @@ void main() {
       final names = AttendanceStatus.values.map((s) => s.name).toSet();
       expect(names.contains('approved'), isFalse);
       expect(names.contains('rejected'), isFalse);
-      expect(AttendanceStatus.values.length, 6);
+      expect(AttendanceStatus.values.length, 7);
     });
 
     test('inProgress is the only live session', () {
@@ -20,16 +20,25 @@ void main() {
       }
     });
 
-    test('terminal states are completed/absent/onLeave (pendingReview is not)', () {
+    test('terminal states are completed/absent/onLeave/excused (not pendingReview)',
+        () {
       const terminal = {
         AttendanceStatus.completed,
         AttendanceStatus.absent,
         AttendanceStatus.onLeave,
+        AttendanceStatus.excused,
       };
       for (final s in AttendanceStatus.values) {
         expect(s.isTerminal, terminal.contains(s), reason: '$s');
       }
       expect(AttendanceStatus.pendingReview.isTerminal, isFalse);
+    });
+
+    test('excused is a terminal outcome, not present and not an absence', () {
+      expect(AttendanceStatus.excused.isTerminal, isTrue);
+      expect(AttendanceStatus.excused.isPresent, isFalse);
+      expect(AttendanceStatus.excused.isAbsence, isFalse); // distinct from absent
+      expect(AttendanceStatus.excused.needsReview, isFalse);
     });
 
     test('only pendingReview needs review', () {

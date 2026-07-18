@@ -72,7 +72,15 @@ class AttendanceCalculator {
 
     // The session either ends at clockOut, or is measured live to now.
     final end = clockOut ?? now;
-    final gross = _nonNeg(end.difference(clockIn).inMinutes);
+    // Worked time is measured from `max(clockIn, scheduledStart)` — clocking in
+    // early never inflates the total (spec R2). Lateness (below) still measures
+    // the real clock-in, so an early arrival is simply neither early-worked nor
+    // late.
+    final workStart =
+        (scheduledStart != null && scheduledStart.isAfter(clockIn))
+            ? scheduledStart
+            : clockIn;
+    final gross = _nonNeg(end.difference(workStart).inMinutes);
     final breakMinutes = totalBreakMinutes(breaks, end);
     final worked = _nonNeg(gross - breakMinutes);
 

@@ -71,6 +71,9 @@ Color attendanceStatusColor(AttendanceStatus s) {
       return AppColors.error;
     case AttendanceStatus.onLeave:
       return AppColors.textSecondary;
+    case AttendanceStatus.excused:
+      // A forgiven absence — neutral, not an error tint.
+      return AppColors.textSecondary;
   }
 }
 

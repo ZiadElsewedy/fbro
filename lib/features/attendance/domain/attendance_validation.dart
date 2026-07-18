@@ -17,6 +17,7 @@ enum AttendanceBlock {
   alreadyClockedIn,
   alreadyClockedOut,
   notClockedIn,
+  tooEarly,
   // ── GPS verification (clock-in gate) ──
   serviceDisabled,
   permissionDenied,
@@ -61,13 +62,21 @@ class AttendanceValidation {
   /// The **eligibility** gate for a clock-in — everything that doesn't need a GPS
   /// fix, checked first so the app never asks for location when the person can't
   /// clock in anyway. Order: module enabled → user active → not on leave → has a
-  /// shift → not already in/out for this shift. The GPS gate ([checkGpsFix]) runs
-  /// after this passes.
+  /// shift → not already in/out for this shift → **inside the clock-in window**.
+  /// The GPS gate ([checkGpsFix]) runs after this passes.
+  ///
+  /// The window (spec R1): a rostered clock-in is refused before
+  /// `scheduledStart − config.clockInLeadMinutes` — [now] and [scheduledStart]
+  /// drive it. When either is null (unscheduled shift, or the caller doesn't pass
+  /// a clock), no window is enforced. Early presence still never counts as worked
+  /// time — that clamp lives in `AttendanceCalculator` (spec R2).
   static AttendanceCheck checkClockIn({
     required bool userActive,
     required ScheduleShift? todaysShift,
     required LeaveType? leave,
     required AttendanceEntity? existing,
+    DateTime? now,
+    DateTime? scheduledStart,
     AttendanceConfig config = AttendanceConfig.defaults,
   }) {
     if (!config.enabled) {
@@ -94,8 +103,20 @@ class AttendanceValidation {
       return const AttendanceCheck(AttendanceBlock.alreadyClockedOut,
           'You\'ve already completed this shift.');
     }
+    if (now != null && scheduledStart != null) {
+      final opens =
+          scheduledStart.subtract(Duration(minutes: config.clockInLeadMinutes));
+      if (now.isBefore(opens)) {
+        return AttendanceCheck(AttendanceBlock.tooEarly,
+            'Clock-in opens at ${_hhmm(opens)}.');
+      }
+    }
     return AttendanceCheck.ok;
   }
+
+  /// `HH:MM` (24h, zero-padded) for a user-facing "opens at" message.
+  static String _hhmm(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   /// The **GPS gate** for a clock-in — pure over the acquisition outcome. The
   /// caller (cubit) reads the device location, evaluates it against the branch
@@ -265,6 +286,35 @@ class AttendanceValidation {
     if (proposedClockOut != null && !proposedClockOut.isAfter(proposedClockIn)) {
       return const AttendanceCheck(AttendanceBlock.invalidTimes,
           'The clock-out must be after the clock-in.');
+    }
+    return AttendanceCheck.ok;
+  }
+
+  /// The gate for a manager **excusing** an absence (spec R14) — a forgiven
+  /// no-show, materialized with zero worked minutes and no clock times. Unlike
+  /// [checkManagerEntry] it needs no start time (there was no work); it only
+  /// requires a mandatory [reason], a not-still-running record, and no competing
+  /// open correction.
+  static AttendanceCheck checkExcuse({
+    required AttendanceEntity? existing,
+    required String reason,
+    bool hasOpenCorrection = false,
+  }) {
+    if (existing != null && existing.isDeleted) {
+      return const AttendanceCheck(
+          AttendanceBlock.recordMissing, 'This record was deleted.');
+    }
+    if (existing != null && existing.status.isInProgress) {
+      return const AttendanceCheck(AttendanceBlock.sessionOpen,
+          'This shift is still running — it can\'t be excused yet.');
+    }
+    if (hasOpenCorrection) {
+      return const AttendanceCheck(AttendanceBlock.duplicateOpen,
+          'Decide the pending correction for this shift instead.');
+    }
+    if (reason.trim().isEmpty) {
+      return const AttendanceCheck(
+          AttendanceBlock.emptyReason, 'Add a reason for excusing this shift.');
     }
     return AttendanceCheck.ok;
   }

@@ -185,4 +185,36 @@ void main() {
       expect(c.reason, AttendanceBlock.invalidTimes);
     });
   });
+
+  group('checkExcuse', () {
+    test('excusing a virtual absence (no record) is allowed with a reason', () {
+      final c = AttendanceValidation.checkExcuse(
+        existing: null,
+        reason: 'Approved family emergency',
+      );
+      expect(c.allowed, isTrue);
+    });
+
+    test('reason is mandatory → emptyReason', () {
+      final c = AttendanceValidation.checkExcuse(existing: null, reason: '  ');
+      expect(c.reason, AttendanceBlock.emptyReason);
+    });
+
+    test('a still-running session cannot be excused', () {
+      final c = AttendanceValidation.checkExcuse(
+        existing: record(status: AttendanceStatus.inProgress),
+        reason: 'x',
+      );
+      expect(c.reason, AttendanceBlock.sessionOpen);
+    });
+
+    test('an open correction blocks an excuse → duplicateOpen', () {
+      final c = AttendanceValidation.checkExcuse(
+        existing: record(status: AttendanceStatus.absent),
+        reason: 'x',
+        hasOpenCorrection: true,
+      );
+      expect(c.reason, AttendanceBlock.duplicateOpen);
+    });
+  });
 }

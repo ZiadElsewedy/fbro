@@ -136,6 +136,8 @@ class AttendanceCubit extends Cubit<AttendanceState> {
       todaysShift: ctx.shift,
       leave: ctx.leave,
       existing: _todayTargetRecord,
+      now: _now(),
+      scheduledStart: ctx.scheduledStart,
       config: _config,
     );
   }

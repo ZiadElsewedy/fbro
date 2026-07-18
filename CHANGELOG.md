@@ -18,6 +18,23 @@ released — DROP ships from branches and has no version tags.
 
 ### 2026-07-18
 
+- **Attendance spec Phase 2 implemented** (engine-level; **no new UI**, wiring
+  awaits sign-off). (1) **Early clock-in window** — `AttendanceValidation.checkClockIn`
+  now enforces `clockInLeadMinutes` (default aligned to the locked spec's **15 min**,
+  was an unused 30): a rostered clock-in before `scheduledStart − lead` is refused
+  with an "Opens at HH:MM" message; enforcement is centralized in the validation
+  engine, wired through the employee cubit's `clockInCheck`. (2) **Worked-minute
+  clamp** — `AttendanceCalculator` measures work from `max(clockIn, scheduledStart)`,
+  so early arrival never inflates worked minutes or overtime (still one calc source;
+  lateness continues to measure the real clock-in). (3) **Lazy Absent** — confirmed:
+  no attendance document is created for a no-show (the board derives `absent`
+  virtually); materialization happens only via manager Add record / Excuse or an
+  employee missed-punch. (4) **Excused** — new terminal `AttendanceStatus.excused`
+  (zero worked minutes, mandatory reason) via `AttendanceAdminCubit.excuseAbsence` +
+  `AttendanceValidation.checkExcuse`, applied through the existing approved-correction
+  path (no CF change); surfaced on the board (`AttendanceBoardStatus.excused`) and
+  the status badge. +~20 tests; 927 pass / 2 pre-existing splash; analyze clean.
+
 - **Attendance spec Phase 1 implemented** (critical items — engine + cubit API +
   rules + CF + tests; **no new UI**, wiring awaits design sign-off). (1) **Missed-
   punch recovery**: `checkCorrection` now allows a null record (asserting a start

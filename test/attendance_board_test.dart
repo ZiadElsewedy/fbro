@@ -64,6 +64,23 @@ void main() {
     expect(byUid['bob'], AttendanceBoardStatus.notStarted);
     expect(byUid['abby'], AttendanceBoardStatus.late);
     expect(byUid['cara'], AttendanceBoardStatus.absent);
+    // Lazy absent (spec R13): the absent row is derived with NO document.
+    final caraRow = board.rows.firstWhere((r) => r.uid == 'cara');
+    expect(caraRow.record, isNull);
+  });
+
+  test('an excused record surfaces as Excused, not Completed (R14)', () {
+    final board = computeAttendanceBoard(
+      roster: [roster('dana')],
+      records: [
+        rec('dana', status: AttendanceStatus.excused), // no clock, zero minutes
+      ],
+      now: now,
+    );
+    final row = board.rows.single;
+    expect(row.status, AttendanceBoardStatus.excused);
+    expect(board.excused, 1);
+    expect(board.completed, 0);
   });
 
   test('joins records → working / completed / pending review (+ late flag)', () {

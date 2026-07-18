@@ -283,6 +283,76 @@ class AttendanceAdminCubit extends Cubit<AttendanceAdminState> {
     );
   }
 
+  /// **Excuse** an absence (spec R14) — a manager forgives a rostered no-show.
+  /// Materializes an `excused` record with **zero worked minutes** and no clock
+  /// times, carrying a mandatory reason. Reuses the same approved-correction apply
+  /// path as the other direct actions; no approval loop.
+  Future<void> excuseAbsence(
+    AttendanceBoardRow row, {
+    required String reason,
+  }) async {
+    final admin = _admin;
+    if (admin == null || _deciding) return;
+    final entry = row.entry;
+    final date = _today();
+    final id = attendanceDocId(uid: entry.uid, date: date, shift: entry.shift);
+    final check = AttendanceValidation.checkExcuse(
+      existing: row.record,
+      reason: reason,
+      hasOpenCorrection: _hasOpenCorrectionFor(id),
+    );
+    if (check.blocked) {
+      emit(AttendanceAdminState.error(check.message));
+      _emit();
+      return;
+    }
+    _deciding = true;
+    _emit();
+    try {
+      // No clock times → the calculator yields zero minutes; status is excused.
+      final resolution = AttendanceResolution.fromRecord(
+        scheduledStart: entry.scheduledStart,
+        scheduledEnd: entry.scheduledEnd,
+        clockIn: null,
+        clockOut: null,
+        status: AttendanceStatus.excused,
+        now: _now(),
+        config: _config,
+      );
+      final correction = AttendanceCorrectionEntity(
+        id: '',
+        attendanceId: id,
+        userId: entry.uid,
+        userName: entry.name,
+        branchId: _branchId,
+        shift: entry.shift,
+        date: date,
+        requestedBy: admin.uid,
+        requestedByName: admin.displayName,
+        kind: AttendanceCorrectionKind.absenceDispute,
+        status: RequestStatus.approved,
+        reason: reason.trim(),
+        scheduledStart: entry.scheduledStart,
+        scheduledEnd: entry.scheduledEnd,
+        proposedStatus: AttendanceStatus.excused,
+        resolution: resolution,
+        decidedBy: admin.uid,
+        decidedByName: admin.displayName,
+        decisionNote: reason.trim(),
+      );
+      await _repository.createResolvedCorrection(correction);
+    } on Failure catch (e) {
+      emit(AttendanceAdminState.error(e.message));
+    } catch (e, st) {
+      developer.log('[ATTENDANCE-ADMIN] excuse failed: $e',
+          name: 'ATTENDANCE', error: e, stackTrace: st);
+      emit(const AttendanceAdminState.error('Failed to excuse the shift.'));
+    } finally {
+      _deciding = false;
+      _emit();
+    }
+  }
+
   /// Shared writer for the two direct-action paths: validate the manager entry,
   /// guard one-open-correction, compute the resolution through the single
   /// minute-math source, and write the approved correction.

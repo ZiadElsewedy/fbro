@@ -225,6 +225,61 @@ void main() {
     expect(c.resolution!.workedMinutes, 480);
     await cubit.close();
   });
+
+  test('excuseAbsence materializes an excused record with zero worked minutes',
+      () async {
+    final cubit = build();
+    await cubit.load(admin, branchId: 'b1');
+    await pump();
+
+    const entry = AttendanceRosterEntry(
+      uid: 'e3',
+      name: 'Excused One',
+      shift: ScheduleShift.morning,
+    );
+    final row = AttendanceBoardRow(
+      entry: entry,
+      record: null,
+      status: AttendanceBoardStatus.absent,
+      isLate: true,
+    );
+
+    await cubit.excuseAbsence(row, reason: 'Approved sick day, called ahead');
+
+    expect(repo.resolved, hasLength(1));
+    final c = repo.resolved.single;
+    expect(c.attendanceId, 'e3_20260713_morning');
+    expect(c.status, RequestStatus.approved);
+    expect(c.decidedBy, 'm1');
+    expect(c.resolution!.status, AttendanceStatus.excused);
+    expect(c.resolution!.workedMinutes, 0);
+    expect(c.resolution!.clockIn, isNull);
+    expect(c.resolution!.clockOut, isNull);
+    expect(c.reason, 'Approved sick day, called ahead');
+    await cubit.close();
+  });
+
+  test('excuseAbsence requires a reason', () async {
+    final cubit = build();
+    await cubit.load(admin, branchId: 'b1');
+    await pump();
+    const entry = AttendanceRosterEntry(
+      uid: 'e3',
+      name: 'Excused One',
+      shift: ScheduleShift.morning,
+    );
+    await cubit.excuseAbsence(
+      AttendanceBoardRow(
+        entry: entry,
+        record: null,
+        status: AttendanceBoardStatus.absent,
+        isLate: true,
+      ),
+      reason: '   ',
+    );
+    expect(repo.resolved, isEmpty);
+    await cubit.close();
+  });
 }
 
 /// Local helper: a roster entry has no copyWith, so rebuild it with a window.
