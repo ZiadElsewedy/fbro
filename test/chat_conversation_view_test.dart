@@ -53,6 +53,10 @@ class _FakeChatRepository implements ChatRepository {
   final Future<ChatMessage> Function(String content)? onSend;
   final List<BigInt> markedUpTo = [];
 
+  /// The `replyToMessageId` passed to the most recent send (null when the last
+  /// send did not quote anything) — lets a test assert the reply was threaded.
+  String? lastReplyTo;
+
   @override
   Future<ChatConversation> getConversation(String conversationId) async =>
       _conversation();
@@ -73,6 +77,7 @@ class _FakeChatRepository implements ChatRepository {
     ChatOutgoingAttachment? attachment,
     String? replyToMessageId,
   }) {
+    lastReplyTo = replyToMessageId;
     final handler = onSend;
     if (handler == null) throw UnimplementedError();
     return handler(content ?? '');
@@ -308,6 +313,73 @@ void main() {
         loaded: (s) => s.messages, orElse: () => throw StateError('not loaded'));
     expect(messages.length, 60);
     expect(messages.first.body, 'Older 0');
+    await cubit.close();
+  });
+
+  testWidgets('a reply renders the quoted preview above its own body',
+      (tester) async {
+    final quoted = ChatMessage(
+      id: 'm2',
+      conversationId: _convId,
+      senderId: _me,
+      type: ChatMessageType.text,
+      body: 'Yes exactly that one',
+      seq: BigInt.from(2),
+      status: 'SENT',
+      createdAt: DateTime(2026, 7, 22, 9, 2),
+      replyTo: const ChatReplyPreview(
+        id: 'm1',
+        senderId: _them,
+        type: ChatMessageType.text,
+        body: 'Shift swap tomorrow?',
+      ),
+    );
+    final repo = _FakeChatRepository(
+      onHistory: ({String? cursor}) async => ChatMessagePage(items: [
+        _message('m1', 1, _them, 'Shift swap tomorrow?'),
+        quoted,
+      ]),
+    );
+    final cubit = _cubit(repo);
+    await tester.pumpWidget(_host(cubit));
+    await tester.pump();
+    await tester.pump();
+
+    // The quoted snippet appears both as the original message and inside the
+    // reply's quote block; the reply's own body appears once.
+    expect(find.text('Shift swap tomorrow?'), findsNWidgets(2));
+    expect(find.text('Yes exactly that one'), findsOneWidget);
+    await cubit.close();
+  });
+
+  testWidgets('long-press Reply banners the target and threads the next send',
+      (tester) async {
+    final repo = _FakeChatRepository(
+      onHistory: ({String? cursor}) async => ChatMessagePage(items: [
+        _message('m1', 1, _them, 'Shift swap tomorrow?'),
+      ]),
+      onSend: (content) async => _message('m2', 2, _me, content),
+    );
+    final cubit = _cubit(repo);
+    await tester.pumpWidget(_host(cubit));
+    await tester.pump();
+    await tester.pump();
+
+    await tester.longPress(find.text('Shift swap tomorrow?'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reply'));
+    await tester.pumpAndSettle();
+
+    // The composer now shows the reply banner for that message.
+    expect(find.textContaining('Replying to'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'On it');
+    await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
+    await tester.pumpAndSettle();
+
+    // The send carried the quoted message id, and the banner cleared.
+    expect(repo.lastReplyTo, 'm1');
+    expect(find.textContaining('Replying to'), findsNothing);
     await cubit.close();
   });
 }

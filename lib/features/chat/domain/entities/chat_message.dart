@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:drop/core/enums/chat_attachment_kind.dart';
 import 'package:drop/core/enums/chat_message_type.dart';
 
@@ -29,6 +31,7 @@ class ChatMessage {
     required this.status,
     required this.createdAt,
     this.deletedForEveryone = false,
+    this.localBytes,
   });
 
   final String id;
@@ -60,6 +63,12 @@ class ChatMessage {
   /// True when the message was deleted for everyone (tombstoned); [body] then
   /// holds the standard placeholder and [attachment] is gone.
   final bool deletedForEveryone;
+
+  /// **Client-only, never serialized.** The raw bytes of an outgoing attachment
+  /// on an optimistic (not-yet-confirmed) local message, so its image thumbnail
+  /// can render immediately from memory while the upload is in flight. Always
+  /// null on a message that came from the server.
+  final Uint8List? localBytes;
 
   /// This message in the deleted-for-everyone state — how a live
   /// `message:deleted` event re-renders it: the placeholder as the body, the
@@ -94,6 +103,7 @@ class ChatMessage {
         status: status,
         createdAt: createdAt,
         deletedForEveryone: deletedForEveryone,
+        localBytes: localBytes,
       );
 }
 

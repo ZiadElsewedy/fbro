@@ -1,12 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:drop/core/enums/chat_attachment_kind.dart';
+import 'package:drop/core/enums/chat_message_type.dart';
 import 'package:drop/core/errors/failures.dart';
 import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/core/utils/uuid.dart';
 import 'package:drop/features/chat/domain/chat_realtime.dart';
 import 'package:drop/features/chat/domain/entities/chat_conversation.dart';
 import 'package:drop/features/chat/domain/entities/chat_message.dart';
+import 'package:drop/features/chat/domain/entities/chat_outgoing_attachment.dart';
+import 'package:drop/features/chat/presentation/chat_thread_cache.dart';
 import 'package:drop/features/chat/domain/usecases/delete_chat_message_for_everyone.dart';
 import 'package:drop/features/chat/domain/usecases/delete_chat_message_for_me.dart';
 import 'package:drop/features/chat/domain/usecases/get_conversation.dart';
@@ -64,11 +68,19 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
   String? _nextCursor;
   String? _myUserId;
   bool _loading = false;
-  bool _sending = false;
+  // Optimistic sends never block the composer, so the loaded state's `sending`
+  // flag stays false — the in-flight state now lives on the message bubble.
   bool _loadingOlder = false;
   String? _deletingMessageId;
   BigInt? _lastMarkedSeq;
-  _FailedSend? _failedSend;
+  final ChatThreadCache? _cache;
+
+  /// Prefix marking an optimistic (not-yet-confirmed) local message. The id is
+  /// `local:<idempotencyKey>`, so a retry recovers the same key from the id and
+  /// the server's dedupe guarantees no duplicate on a lost-response retry.
+  static const _localIdPrefix = 'local:';
+  static const _statusSending = 'SENDING';
+  static const _statusFailed = 'FAILED';
 
   ChatConversationCubit({
     required this._getConversation,
@@ -80,7 +92,18 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
     required this.conversationId,
     this.counterpartUserId,
     this._realtime,
+    this._cache,
   })  : super(const ChatConversationState.loading()) {
+    // Instant re-open: paint the last-known confirmed messages synchronously
+    // from the cache, then refresh from REST in the background (load()).
+    final cached = _cache?.get(conversationId);
+    if (cached != null) {
+      _conversation = cached.conversation;
+      _messages = cached.messages;
+      _nextCursor = cached.nextCursor;
+      _myUserId = cached.myUserId ?? _myUserId;
+      _emit();
+    }
     final rt = _realtime;
     if (rt != null) {
       _realtimeSub = rt.events.listen(_onRealtimeEvent);
@@ -90,6 +113,8 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
     }
     load();
   }
+
+  bool _isLocal(ChatMessage m) => m.id.startsWith(_localIdPrefix);
 
   @override
   Future<void> close() async {
@@ -106,11 +131,22 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
       conversation,
       List.of(_messages),
       myUserId: _myUserId,
-      sending: _sending,
+      sending: false,
       loadingOlder: _loadingOlder,
       hasMore: _nextCursor != null,
       deletingMessageId: _deletingMessageId,
     ));
+    // Cache only server-confirmed messages, so a re-opened thread never shows a
+    // stuck "sending"/"failed" bubble left over from a torn-down session.
+    _cache?.put(
+      conversationId,
+      ChatThreadSnapshot(
+        conversation: conversation,
+        messages: _messages.where((m) => !_isLocal(m)).toList(growable: false),
+        nextCursor: _nextCursor,
+        myUserId: _myUserId,
+      ),
+    );
   }
 
   /// Derives the caller's internal id once the conversation and counterpart
@@ -189,53 +225,184 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
     }
   }
 
-  /// Sends a text message (optionally quoting [replyToMessageId]). Returns
-  /// whether it was sent — the composer keys its input-clearing off this, so a
-  /// failed send never loses what the user typed (Cases convention). On
-  /// success the server's authoritative message is appended to the thread.
-  Future<bool> sendMessage(String text, {String? replyToMessageId}) async {
+  /// Optimistic send (spec §7): the message appears **immediately** as a local
+  /// `SENDING` bubble and the composer clears at once — the UI never blocks on
+  /// the network. The POST runs in the background and resolves the bubble:
+  /// success replaces it with the server's authoritative message (real `seq`),
+  /// failure marks it `FAILED` for [retrySend]. Returns true as soon as the
+  /// local bubble is inserted (the composer keys its clear off this).
+  ///
+  /// Supports text, an [attachment], or both. The idempotency key is minted
+  /// once and encoded in the local id, so a retry reuses it and the backend's
+  /// dedupe guarantees a lost-response retry never duplicates the message.
+  Future<bool> sendMessage(
+    String text, {
+    String? replyToMessageId,
+    ChatOutgoingAttachment? attachment,
+  }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty || _sending || _conversation == null) return false;
+    if ((trimmed.isEmpty && attachment == null) || _conversation == null) {
+      return false;
+    }
 
-    // A retry of the exact same failed send reuses its idempotency key — the
-    // server then returns the already-persisted message (if the failure was
-    // only a lost response) instead of writing a duplicate.
-    final failed = _failedSend;
-    final idempotencyKey =
-        (failed != null && failed.matches(trimmed, replyToMessageId))
-            ? failed.idempotencyKey
-            : UuidV4.generate();
-
-    _sending = true;
+    final idempotencyKey = UuidV4.generate();
+    final local = _buildLocalMessage(
+      idempotencyKey: idempotencyKey,
+      content: trimmed,
+      replyToMessageId: replyToMessageId,
+      attachment: attachment,
+    );
+    _messages = [..._messages, local];
     _emit();
+
+    unawaited(_dispatchSend(
+      localId: local.id,
+      idempotencyKey: idempotencyKey,
+      content: trimmed.isEmpty ? null : trimmed,
+      replyToMessageId: replyToMessageId,
+      attachment: attachment,
+    ));
+    return true;
+  }
+
+  /// Re-sends a previously failed local message, reusing its idempotency key
+  /// (recovered from the local id) so the retry is dedupe-safe.
+  Future<void> retrySend(String localMessageId) async {
+    final index = _messages.indexWhere((m) => m.id == localMessageId);
+    if (index < 0) return;
+    final failed = _messages[index];
+    if (failed.status != _statusFailed) return;
+
+    _messages = [..._messages]..[index] = failed.withStatus(_statusSending);
+    _emit();
+    unawaited(_dispatchSend(
+      localId: localMessageId,
+      idempotencyKey: localMessageId.substring(_localIdPrefix.length),
+      content: (failed.body ?? '').isEmpty ? null : failed.body,
+      replyToMessageId: failed.replyTo?.id,
+      attachment: _pendingAttachments[localMessageId],
+    ));
+  }
+
+  /// Raw bytes for optimistic attachment sends, kept off the message model so a
+  /// retry can re-upload without re-picking. Cleared once the send resolves.
+  final Map<String, ChatOutgoingAttachment> _pendingAttachments = {};
+
+  Future<void> _dispatchSend({
+    required String localId,
+    required String idempotencyKey,
+    String? content,
+    String? replyToMessageId,
+    ChatOutgoingAttachment? attachment,
+  }) async {
+    if (attachment != null) _pendingAttachments[localId] = attachment;
     try {
       final sent = await _sendMessage(
         conversationId: conversationId,
         idempotencyKey: idempotencyKey,
-        content: trimmed,
+        content: content,
         replyToMessageId: replyToMessageId,
+        attachment: attachment,
       );
-      _failedSend = null;
+      if (isClosed) return;
+      _pendingAttachments.remove(localId);
       _myUserId ??= sent.senderId; // authoritative "me" from my own send
-      // Append (or replace, on an idempotent replay already in the list).
-      final index = _messages.indexWhere((m) => m.id == sent.id);
-      _messages = index >= 0
-          ? ([..._messages]..[index] = sent)
-          : [..._messages, sent];
-      return true;
+      _replaceLocal(localId, sent);
+      _emit();
     } on Failure catch (e) {
-      _failedSend = _FailedSend(trimmed, replyToMessageId, idempotencyKey);
-      emit(ChatConversationState.error(e.message));
-      return false;
+      AppLog.warning('chat', 'send failed: ${e.message}');
+      if (isClosed) return;
+      _markLocalFailed(localId);
+      _emit();
     } catch (e) {
       AppLog.warning('chat', 'send failed: $e');
-      _failedSend = _FailedSend(trimmed, replyToMessageId, idempotencyKey);
-      emit(const ChatConversationState.error('Failed to send your message.'));
-      return false;
-    } finally {
-      _sending = false;
+      if (isClosed) return;
+      _markLocalFailed(localId);
       _emit();
     }
+  }
+
+  /// Builds the optimistic local message. Its `seq` sits just past the newest
+  /// so it renders at the bottom; on confirmation it is replaced by the server
+  /// message carrying the real `seq`.
+  ChatMessage _buildLocalMessage({
+    required String idempotencyKey,
+    required String content,
+    String? replyToMessageId,
+    ChatOutgoingAttachment? attachment,
+  }) {
+    var maxSeq = BigInt.zero;
+    for (final m in _messages) {
+      if (m.seq > maxSeq) maxSeq = m.seq;
+    }
+    ChatReplyPreview? replyPreview;
+    if (replyToMessageId != null) {
+      for (final m in _messages) {
+        if (m.id == replyToMessageId) {
+          replyPreview = ChatReplyPreview(
+            id: m.id,
+            senderId: m.senderId,
+            type: m.type,
+            body: m.body,
+            attachment: m.attachment,
+          );
+          break;
+        }
+      }
+    }
+    final localAttachment = attachment == null
+        ? null
+        : ChatMessageAttachment(
+            id: '$_localIdPrefix$idempotencyKey',
+            kind: attachment.kind,
+            format: attachment.format.value,
+            mimeType: attachment.mimeType,
+            originalFilename: attachment.originalFilename,
+            byteSize: attachment.bytes.length,
+          );
+    return ChatMessage(
+      id: '$_localIdPrefix$idempotencyKey',
+      conversationId: conversationId,
+      senderId: _myUserId ?? '',
+      type: attachment == null
+          ? ChatMessageType.text
+          : (attachment.kind == ChatAttachmentKind.image
+              ? ChatMessageType.image
+              : ChatMessageType.document),
+      body: content.isEmpty ? null : content,
+      attachment: localAttachment,
+      replyTo: replyPreview,
+      seq: maxSeq + BigInt.one,
+      status: _statusSending,
+      createdAt: DateTime.now(),
+      localBytes: attachment?.kind == ChatAttachmentKind.image
+          ? attachment?.bytes
+          : null,
+    );
+  }
+
+  void _replaceLocal(String localId, ChatMessage sent) {
+    final localIndex = _messages.indexWhere((m) => m.id == localId);
+    final existingIndex = _messages.indexWhere((m) => m.id == sent.id);
+    // Idempotent replay already present under the real id → drop the local.
+    if (existingIndex >= 0 && existingIndex != localIndex) {
+      if (localIndex >= 0) {
+        _messages = [..._messages]..removeAt(localIndex);
+      }
+      return;
+    }
+    if (localIndex >= 0) {
+      _messages = [..._messages]..[localIndex] = sent;
+    } else {
+      _insertBySeq(sent);
+    }
+  }
+
+  void _markLocalFailed(String localId) {
+    final index = _messages.indexWhere((m) => m.id == localId);
+    if (index < 0) return;
+    _messages = [..._messages]..[index] =
+        _messages[index].withStatus(_statusFailed);
   }
 
   // ─── Message deletion (REST — the socket only echoes the fact) ────────
@@ -400,8 +567,16 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
   /// fire-and-forget: failures are logged, never surfaced — a missed read
   /// receipt isn't worth an error banner.
   Future<void> markVisibleRead() async {
-    if (_messages.isEmpty) return;
-    final upToSeq = _messages.last.seq;
+    // Read up to the newest *server-confirmed* message — an optimistic bubble's
+    // placeholder `seq` must never be sent as a real read cursor.
+    BigInt? upToSeq;
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      if (!_isLocal(_messages[i])) {
+        upToSeq = _messages[i].seq;
+        break;
+      }
+    }
+    if (upToSeq == null) return;
     final already = _lastMarkedSeq;
     if (already != null && upToSeq <= already) return;
 
@@ -416,17 +591,4 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
       AppLog.warning('chat', 'mark-read failed: $e');
     }
   }
-}
-
-/// The one remembered failed send, so an identical retry can reuse its
-/// idempotency key (see [ChatConversationCubit.sendMessage]).
-class _FailedSend {
-  final String content;
-  final String? replyToMessageId;
-  final String idempotencyKey;
-
-  const _FailedSend(this.content, this.replyToMessageId, this.idempotencyKey);
-
-  bool matches(String content, String? replyToMessageId) =>
-      this.content == content && this.replyToMessageId == replyToMessageId;
 }

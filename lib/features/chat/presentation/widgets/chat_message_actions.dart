@@ -22,6 +22,10 @@ Future<ChatMessageAction?> showChatMessageActions(
   required bool mine,
 }) async {
   final canDeleteForEveryone = mine && !message.deletedForEveryone;
+  // A tombstone has no content to reply to or copy — only the delete-for-me
+  // escape hatch stays meaningful on it.
+  final tombstone = message.deletedForEveryone;
+  final hasText = (message.body ?? '').trim().isNotEmpty && !tombstone;
   final action = await showModalBottomSheet<ChatMessageAction>(
     context: context,
     backgroundColor: AppColors.darkSurface,
@@ -42,6 +46,28 @@ Future<ChatMessageAction?> showChatMessageActions(
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
+          if (!tombstone)
+            _ActionRow(
+              icon: Icons.reply_rounded,
+              label: 'Reply',
+              detail: 'Quote this message in your next reply.',
+              onTap: () =>
+                  Navigator.of(sheetContext).pop(ChatMessageAction.reply),
+            ),
+          if (hasText)
+            _ActionRow(
+              icon: Icons.copy_rounded,
+              label: 'Copy',
+              detail: 'Copy the message text.',
+              onTap: () => Navigator.of(sheetContext).pop(ChatMessageAction.copy),
+            ),
+          _ActionRow(
+            icon: Icons.info_outline_rounded,
+            label: 'Message info',
+            detail: 'Delivery details and identifiers.',
+            onTap: () =>
+                Navigator.of(sheetContext).pop(ChatMessageAction.messageInfo),
+          ),
           _ActionRow(
             icon: Icons.visibility_off_outlined,
             label: 'Delete for me',
@@ -65,11 +91,23 @@ Future<ChatMessageAction?> showChatMessageActions(
   );
   if (action == null || !context.mounted) return null;
 
+  // Reply, Copy and Message info are non-destructive and instant — no confirm.
+  if (action == ChatMessageAction.reply ||
+      action == ChatMessageAction.copy ||
+      action == ChatMessageAction.messageInfo) {
+    return action;
+  }
   final confirmed = await _confirm(context, action);
   return confirmed ? action : null;
 }
 
-enum ChatMessageAction { deleteForMe, deleteForEveryone }
+enum ChatMessageAction {
+  reply,
+  copy,
+  messageInfo,
+  deleteForMe,
+  deleteForEveryone,
+}
 
 Future<bool> _confirm(BuildContext context, ChatMessageAction action) async {
   final forEveryone = action == ChatMessageAction.deleteForEveryone;

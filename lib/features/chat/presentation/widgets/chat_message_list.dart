@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
@@ -5,6 +7,7 @@ import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/utils/app_date_formatter.dart';
 import 'package:drop/features/chat/domain/entities/chat_message.dart';
+import 'package:drop/features/chat/presentation/chat_message_preview.dart';
 import 'package:drop/features/task/presentation/activity_format.dart'
     show relativeTime;
 
@@ -31,6 +34,8 @@ class ChatMessageList extends StatefulWidget {
     this.onLoadOlder,
     this.onVisible,
     this.onMessageLongPress,
+    this.onRetry,
+    this.onImageTap,
     this.deletingMessageId,
     this.counterpartName,
   });
@@ -59,6 +64,12 @@ class ChatMessageList extends StatefulWidget {
   /// Long-press on a bubble — opens the message context menu (the host owns
   /// the sheet + the action). Null → long-press does nothing.
   final void Function(ChatMessage message, bool mine)? onMessageLongPress;
+
+  /// Tap on a failed optimistic bubble — re-sends it.
+  final void Function(ChatMessage message)? onRetry;
+
+  /// Tap on an image attachment — opens the full-screen viewer.
+  final void Function(ChatMessage message)? onImageTap;
 
   /// The message with a delete in flight — its bubble dims until it resolves.
   final String? deletingMessageId;
@@ -208,6 +219,13 @@ class _ChatMessageListState extends State<ChatMessageList> {
         lastDay = day;
       }
       final mine = _isMine(m);
+      // Resolve the quoted message's author for the reply preview label.
+      final rp = m.replyTo;
+      final replyAuthorLabel = rp == null
+          ? null
+          : (rp.senderId == widget.myUserId
+              ? 'You'
+              : (widget.counterpartName ?? 'Them'));
       // Group consecutive same-sender messages within the same day: only the
       // last of a run ("tail") shows the timestamp, and grouped bubbles sit
       // tight together — the iMessage/Telegram rhythm that reads as premium.
@@ -220,9 +238,14 @@ class _ChatMessageListState extends State<ChatMessageList> {
           next == null || next.senderId != m.senderId || !nextSameDay;
       children.add(
         _Bubble(
+          // Keyed by message id so an element follows its message across
+          // prepends/appends — the entrance animation then fires only for a
+          // genuinely new bubble, never re-running on an existing one.
+          key: ValueKey(m.id),
           message: m,
           mine: mine,
           isTail: isTail,
+          replyAuthorLabel: replyAuthorLabel,
           deleting: m.id == widget.deletingMessageId,
           onLongPress: widget.onMessageLongPress == null
               ? null
@@ -274,14 +297,20 @@ class _OlderPageSpinner extends StatelessWidget {
 
 class _Bubble extends StatelessWidget {
   const _Bubble({
+    super.key,
     required this.message,
     required this.mine,
     this.isTail = true,
+    this.replyAuthorLabel,
     this.deleting = false,
     this.onLongPress,
   });
   final ChatMessage message;
   final bool mine;
+
+  /// Display label for the author of the quoted (replied-to) message, when
+  /// this message is a reply — "You" or the counterpart's name.
+  final String? replyAuthorLabel;
 
   /// Last message of a consecutive same-sender run — shows the timestamp and
   /// the flattened "tail" corner; grouped (non-tail) bubbles are fully rounded
@@ -305,8 +334,22 @@ class _Bubble extends StatelessWidget {
     final body = (message.body ?? '').trim();
     final tombstone = message.deletedForEveryone;
     final attachment = message.attachment;
+    // Cap bubble width so a short line doesn't stretch edge-to-edge on tablets
+    // and large phones while still tracking the viewport on small ones.
+    final maxBubbleWidth =
+        math.min(MediaQuery.sizeOf(context).width * 0.72, 560.0);
 
-    return Padding(
+    // Subtle entrance: fade + a small upward drift, ~220ms. Keyed by message
+    // id at the list level, so this runs once per new bubble, never on rebuild.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(offset: Offset(0, (1 - t) * 8), child: child),
+      ),
+      child: Padding(
       // Tight gap within a group, roomier gap between senders/groups.
       padding: EdgeInsets.only(bottom: isTail ? AppSpacing.md : 2),
       child: Column(
@@ -320,9 +363,7 @@ class _Bubble extends StatelessWidget {
             child: GestureDetector(
               onLongPress: deleting ? null : onLongPress,
               child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.sizeOf(context).width * 0.72,
-                ),
+                constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.md,
@@ -340,6 +381,19 @@ class _Bubble extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Quoted reply preview, above the body it replies to.
+                      if (message.replyTo != null && !tombstone) ...[
+                        _QuotedPreview(
+                          mine: mine,
+                          authorLabel: replyAuthorLabel ?? 'Them',
+                          snippet: chatReplySnippet(
+                            body: message.replyTo!.body,
+                            attachment: message.replyTo!.attachment,
+                          ),
+                        ),
+                        if (body.isNotEmpty || attachment != null)
+                          const SizedBox(height: 6),
+                      ],
                       if (body.isNotEmpty)
                         Text(
                           body,
@@ -396,15 +450,129 @@ class _Bubble extends StatelessWidget {
           if (isTail)
             Padding(
               padding: const EdgeInsets.only(top: 4, left: 6, right: 6),
-              child: Text(
-                relativeTime(message.createdAt),
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textTertiary,
-                  fontSize: 11,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    relativeTime(message.createdAt),
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textTertiary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  // Delivery status on my own messages only — a monochrome
+                  // single/double check (no chromatic accent exists in the
+                  // system). Hidden on a tombstone (nothing to acknowledge).
+                  if (mine && !tombstone) ...[
+                    const SizedBox(width: 4),
+                    _StatusTicks(status: message.status),
+                  ],
+                ],
               ),
             ),
         ],
+      ),
+      ),
+    );
+  }
+}
+
+/// Monochrome delivery ticks for an own message: a single check until the
+/// counterpart has read it, then a brighter double check. Delivered (if the
+/// server ever reports it) reads as a muted double check. Color-free by design
+/// — the system has no chromatic accent, so state is carried by shape + weight.
+class _StatusTicks extends StatelessWidget {
+  const _StatusTicks({required this.status});
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final read = status == 'READ';
+    final delivered = read || status == 'DELIVERED';
+    return Icon(
+      delivered ? Icons.done_all_rounded : Icons.done_rounded,
+      size: 14,
+      color: read ? AppColors.textSecondary : AppColors.textTertiary,
+      semanticLabel: read
+          ? 'Read'
+          : delivered
+              ? 'Delivered'
+              : 'Sent',
+    );
+  }
+}
+
+/// The quoted-message block shown at the top of a reply bubble: an accent bar,
+/// the quoted author, and a one-line snippet. Tinted to sit legibly on either
+/// bubble surface — a dark tint on my white bubble, a light tint on the
+/// counterpart's dark bubble.
+class _QuotedPreview extends StatelessWidget {
+  const _QuotedPreview({
+    required this.mine,
+    required this.authorLabel,
+    required this.snippet,
+  });
+
+  final bool mine;
+  final String authorLabel;
+  final String snippet;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = mine
+        ? AppColors.onPrimary.withValues(alpha: 0.06)
+        : const Color(0x14FFFFFF);
+    final bar = mine
+        ? AppColors.onPrimary.withValues(alpha: 0.45)
+        : AppColors.textSecondary;
+    final author = mine ? AppColors.onPrimary : AppColors.textSecondary;
+    final snippetColor = mine
+        ? AppColors.onPrimary.withValues(alpha: 0.65)
+        : AppColors.textTertiary;
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 5, 10, 5),
+      child: IntrinsicHeight(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: bar,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    authorLabel,
+                    style: AppTypography.caption.copyWith(
+                      color: author,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    snippet,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        AppTypography.caption.copyWith(color: snippetColor),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

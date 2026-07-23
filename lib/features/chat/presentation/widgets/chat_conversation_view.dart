@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/features/chat/domain/entities/chat_message.dart';
+import 'package:drop/features/chat/presentation/chat_message_preview.dart';
+import 'package:drop/features/chat/presentation/pages/message_info_screen.dart';
 import 'package:drop/features/chat/presentation/cubit/chat_conversation_cubit.dart';
 import 'package:drop/features/chat/presentation/cubit/chat_conversation_state.dart';
 import 'package:drop/features/chat/presentation/widgets/chat_composer.dart';
@@ -18,11 +22,31 @@ import 'package:drop/features/chat/presentation/widgets/chat_message_list.dart';
 /// screen is transient — the cubit re-emits the last loaded state right after,
 /// so it surfaces as a snackbar. A **first-load** failure is terminal and
 /// renders the full-screen retry.
-class ChatConversationView extends StatelessWidget {
+class ChatConversationView extends StatefulWidget {
   const ChatConversationView({super.key, this.counterpartName});
 
-  /// Counterpart display name — personalizes the empty state.
+  /// Counterpart display name — personalizes the empty state and reply banner.
   final String? counterpartName;
+
+  @override
+  State<ChatConversationView> createState() => _ChatConversationViewState();
+}
+
+class _ChatConversationViewState extends State<ChatConversationView> {
+  /// The message the next send will quote, or null. Presentation-only compose
+  /// state: the cubit already accepts `replyToMessageId`, so nothing about the
+  /// domain or the write path changes — this just remembers the target and is
+  /// cleared once the send lands (or the user cancels).
+  ChatMessage? _replyTarget;
+
+  /// The id of the message my own participant sent, when known — resolves the
+  /// reply author label ("You" vs the counterpart).
+  String? _myUserId;
+
+  void _startReply(ChatMessage message) =>
+      setState(() => _replyTarget = message);
+
+  void _cancelReply() => setState(() => _replyTarget = null);
 
   @override
   Widget build(BuildContext context) {
@@ -43,50 +67,169 @@ class ChatConversationView extends StatelessWidget {
             onRetry: cubit.load,
           ),
           loaded: (conversation, messages, myUserId, sending, loadingOlder,
-                  hasMore, deletingMessageId) =>
-              Column(
-            children: [
-              Expanded(
-                child: ChatMessageList(
-                  messages: messages,
-                  myUserId: myUserId,
-                  hasMore: hasMore,
-                  loadingOlder: loadingOlder,
-                  onLoadOlder: cubit.loadOlder,
-                  onVisible: cubit.markVisibleRead,
-                  deletingMessageId: deletingMessageId,
-                  counterpartName: counterpartName,
-                  onMessageLongPress: (message, mine) =>
-                      _onMessageLongPress(context, message, mine),
+                  hasMore, deletingMessageId) {
+            _myUserId = myUserId;
+            final reply = _replyTarget;
+            return Column(
+              children: [
+                Expanded(
+                  child: ChatMessageList(
+                    messages: messages,
+                    myUserId: myUserId,
+                    hasMore: hasMore,
+                    loadingOlder: loadingOlder,
+                    onLoadOlder: cubit.loadOlder,
+                    onVisible: cubit.markVisibleRead,
+                    deletingMessageId: deletingMessageId,
+                    counterpartName: widget.counterpartName,
+                    onMessageLongPress: (message, mine) =>
+                        _onMessageLongPress(context, message, mine),
+                  ),
                 ),
-              ),
-              ChatComposer(
-                onSend: cubit.sendMessage,
-                sending: sending,
-              ),
-            ],
-          ),
+                ChatComposer(
+                  sending: sending,
+                  header: reply == null
+                      ? null
+                      : ReplyComposerBanner(
+                          authorLabel: _authorLabel(reply.senderId),
+                          snippet: chatReplySnippet(
+                            body: reply.body,
+                            attachment: reply.attachment,
+                          ),
+                          onCancel: _cancelReply,
+                        ),
+                  onSend: (text) => _send(cubit, text),
+                ),
+              ],
+            );
+          },
         );
       },
     );
   }
 
-  /// Long-press → context menu → confirm → cubit. The sheet decides which
-  /// actions to *offer* from identity facts only; the backend enforces the
-  /// actual rules (sender-only, time window) and a refusal surfaces its own
-  /// message through the transient-error snackbar.
+  /// Sends through the cubit, quoting the active reply target when set, and
+  /// clears the reply banner only on success — a failed send keeps the target
+  /// (and, via the composer, the text) so the retry quotes the same message.
+  Future<bool> _send(ChatConversationCubit cubit, String text) async {
+    final ok =
+        await cubit.sendMessage(text, replyToMessageId: _replyTarget?.id);
+    if (ok && mounted && _replyTarget != null) {
+      setState(() => _replyTarget = null);
+    }
+    return ok;
+  }
+
+  String _authorLabel(String senderId) =>
+      senderId == _myUserId ? 'You' : (widget.counterpartName ?? 'Them');
+
+  /// Long-press → context menu → the chosen action. Reply/Copy are handled
+  /// here in the presentation layer; deletes go to the cubit, where the backend
+  /// enforces the actual rules (sender-only, time window) and a refusal surfaces
+  /// through the transient-error snackbar.
   Future<void> _onMessageLongPress(
       BuildContext context, ChatMessage message, bool mine) async {
     final cubit = context.read<ChatConversationCubit>();
     final action =
         await showChatMessageActions(context, message: message, mine: mine);
-    if (action == null) return;
+    if (action == null || !context.mounted) return;
     switch (action) {
+      case ChatMessageAction.reply:
+        _startReply(message);
+      case ChatMessageAction.copy:
+        await Clipboard.setData(ClipboardData(text: message.body ?? ''));
+        if (context.mounted) context.showSuccess('Copied to clipboard');
+      case ChatMessageAction.messageInfo:
+        await MessageInfoScreen.push(
+          context,
+          message: message,
+          mine: mine,
+          senderLabel: mine ? 'You' : (widget.counterpartName ?? 'Them'),
+          replyAuthorLabel: message.replyTo == null
+              ? null
+              : (message.replyTo!.senderId == _myUserId
+                  ? 'You'
+                  : (widget.counterpartName ?? 'Them')),
+        );
       case ChatMessageAction.deleteForMe:
         await cubit.deleteMessageForMe(message.id);
       case ChatMessageAction.deleteForEveryone:
         await cubit.deleteMessageForEveryone(message.id);
     }
+  }
+}
+
+/// The "Replying to …" banner shown inside the composer surface while a reply
+/// is being composed — a left accent bar, the quoted author + snippet, and a
+/// cancel affordance. Presentation-only; the parent owns the reply target.
+class ReplyComposerBanner extends StatelessWidget {
+  const ReplyComposerBanner({
+    super.key,
+    required this.authorLabel,
+    required this.snippet,
+    required this.onCancel,
+  });
+
+  final String authorLabel;
+  final String snippet;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.darkSurfaceElevated,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.darkBorder),
+        ),
+        padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+        child: Row(
+          children: [
+            Container(
+              width: 3,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Replying to $authorLabel',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    snippet,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.caption
+                        .copyWith(color: AppColors.textTertiary),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: onCancel,
+              icon: const Icon(Icons.close_rounded, size: 18),
+              color: AppColors.textTertiary,
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Cancel reply',
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

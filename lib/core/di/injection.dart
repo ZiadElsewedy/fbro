@@ -130,6 +130,7 @@ import 'package:drop/features/chat/domain/usecases/load_chat_history.dart';
 import 'package:drop/features/chat/domain/usecases/mark_chat_read.dart';
 import 'package:drop/features/chat/domain/usecases/send_chat_message.dart';
 import 'package:drop/features/chat/domain/usecases/start_conversation.dart';
+import 'package:drop/features/chat/presentation/chat_thread_cache.dart';
 import 'package:drop/features/chat/presentation/cubit/chat_conversation_cubit.dart';
 import 'package:drop/features/chat/presentation/cubit/chat_list_cubit.dart';
 import 'package:drop/features/chat/presentation/cubit/new_chat_cubit.dart';
@@ -181,7 +182,12 @@ class AppDependencies {
         conversationId: conversationId,
         counterpartUserId: counterpartUserId,
         realtime: chatRealtime,
+        cache: _chatThreadCache,
       );
+
+  /// Process-lifetime cache of opened threads — lets a re-opened conversation
+  /// paint its last messages instantly while it refreshes in the background.
+  static final ChatThreadCache _chatThreadCache = ChatThreadCache();
 
   /// Teammate directory use case for the new-conversation picker (set in
   /// [init] once the auth repository exists).

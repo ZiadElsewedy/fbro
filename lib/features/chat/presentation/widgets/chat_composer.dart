@@ -20,10 +20,15 @@ class ChatComposer extends StatefulWidget {
     super.key,
     required this.onSend,
     required this.sending,
+    this.header,
   });
 
   final Future<bool> Function(String text) onSend;
   final bool sending;
+
+  /// Optional banner rendered above the input row, inside the composer surface
+  /// (e.g. the "Replying to …" preview). Null → just the input row.
+  final Widget? header;
 
   @override
   State<ChatComposer> createState() => _ChatComposerState();
@@ -89,7 +94,18 @@ class _ChatComposerState extends State<ChatComposer> {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The reply banner (when present) animates in above the input row and
+          // shares the composer's surface so the two read as one control.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment.bottomCenter,
+            child: widget.header ?? const SizedBox(width: double.infinity),
+          ),
+          Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
@@ -141,6 +157,8 @@ class _ChatComposerState extends State<ChatComposer> {
               );
             },
           ),
+        ],
+      ),
         ],
       ),
     );
