@@ -132,6 +132,7 @@ import 'package:drop/features/chat/domain/usecases/send_chat_message.dart';
 import 'package:drop/features/chat/domain/usecases/start_conversation.dart';
 import 'package:drop/features/chat/presentation/cubit/chat_conversation_cubit.dart';
 import 'package:drop/features/chat/presentation/cubit/chat_list_cubit.dart';
+import 'package:drop/features/chat/presentation/cubit/new_chat_cubit.dart';
 
 class AppDependencies {
   AppDependencies._();
@@ -181,6 +182,30 @@ class AppDependencies {
         counterpartUserId: counterpartUserId,
         realtime: chatRealtime,
       );
+
+  /// Teammate directory use case for the new-conversation picker (set in
+  /// [init] once the auth repository exists).
+  static late final GetUsersByBranch _getUsersByBranchForChat;
+
+  /// Builds a fresh new-conversation picker cubit, scoped to [user]'s branch
+  /// and excluding [user] themselves. Owned + disposed by its `BlocProvider`.
+  static NewChatCubit createNewChatCubit(UserEntity? user) => NewChatCubit(
+        getUsersByBranch: _getUsersByBranchForChat,
+        branchId: user?.branchId,
+        currentUid: user?.uid ?? '',
+      );
+
+  /// The [user]'s branch teammate directory keyed by **Firebase uid**, so the
+  /// chat UI can resolve a conversation's `counterpartExternalId` to a real
+  /// name/avatar/role. Empty when there's no branch. Used by the inbox + thread
+  /// to render profiles instead of backend ids.
+  static Future<Map<String, UserEntity>> loadChatDirectory(
+      UserEntity? user) async {
+    final branchId = user?.branchId;
+    if (branchId == null || branchId.isEmpty) return const {};
+    final users = await _getUsersByBranchForChat(branchId);
+    return {for (final u in users) u.uid: u};
+  }
 
   static late final AuthCubit authCubit;
   static late final ProfileCubit profileCubit;
@@ -379,6 +404,9 @@ class AppDependencies {
 
     final AuthRepository authRepository =
         AuthRepositoryImpl(authRemoteDataSource, userRemoteDataSource);
+
+    // Teammate directory for the chat new-conversation picker (own-branch).
+    _getUsersByBranchForChat = GetUsersByBranch(authRepository);
 
     final ProfileRepository profileRepository =
         ProfileRepositoryImpl(profileRemoteDataSource, authRemoteDataSource);

@@ -32,6 +32,7 @@ class ChatMessageList extends StatefulWidget {
     this.onVisible,
     this.onMessageLongPress,
     this.deletingMessageId,
+    this.counterpartName,
   });
 
   /// Ascending by `seq` — oldest first.
@@ -61,6 +62,9 @@ class ChatMessageList extends StatefulWidget {
 
   /// The message with a delete in flight — its bubble dims until it resolves.
   final String? deletingMessageId;
+
+  /// Counterpart's display name — personalizes the empty state.
+  final String? counterpartName;
 
   @override
   State<ChatMessageList> createState() => _ChatMessageListState();
@@ -187,33 +191,38 @@ class _ChatMessageListState extends State<ChatMessageList> {
   @override
   Widget build(BuildContext context) {
     if (widget.messages.isEmpty) {
-      return const Center(
-        child: Text(
-          'No messages yet — say hello.',
-          style: AppTypography.bodySmall,
-        ),
-      );
+      return _EmptyThread(counterpartName: widget.counterpartName);
     }
 
+    final msgs = widget.messages;
     DateTime? lastDay;
     final children = <Widget>[
       if (widget.loadingOlder) const _OlderPageSpinner(),
     ];
-    for (final m in widget.messages) {
-      final day = DateTime(
-        m.createdAt.year,
-        m.createdAt.month,
-        m.createdAt.day,
-      );
-      if (lastDay == null || day != lastDay) {
+    for (var i = 0; i < msgs.length; i++) {
+      final m = msgs[i];
+      final day = DateTime(m.createdAt.year, m.createdAt.month, m.createdAt.day);
+      final newDay = lastDay == null || day != lastDay;
+      if (newDay) {
         children.add(_DateSeparator(day: day));
         lastDay = day;
       }
       final mine = _isMine(m);
+      // Group consecutive same-sender messages within the same day: only the
+      // last of a run ("tail") shows the timestamp, and grouped bubbles sit
+      // tight together — the iMessage/Telegram rhythm that reads as premium.
+      final next = i + 1 < msgs.length ? msgs[i + 1] : null;
+      final nextSameDay = next != null &&
+          next.createdAt.year == m.createdAt.year &&
+          next.createdAt.month == m.createdAt.month &&
+          next.createdAt.day == m.createdAt.day;
+      final isTail =
+          next == null || next.senderId != m.senderId || !nextSameDay;
       children.add(
         _Bubble(
           message: m,
           mine: mine,
+          isTail: isTail,
           deleting: m.id == widget.deletingMessageId,
           onLongPress: widget.onMessageLongPress == null
               ? null
@@ -267,11 +276,17 @@ class _Bubble extends StatelessWidget {
   const _Bubble({
     required this.message,
     required this.mine,
+    this.isTail = true,
     this.deleting = false,
     this.onLongPress,
   });
   final ChatMessage message;
   final bool mine;
+
+  /// Last message of a consecutive same-sender run — shows the timestamp and
+  /// the flattened "tail" corner; grouped (non-tail) bubbles are fully rounded
+  /// and sit tight against the next.
+  final bool isTail;
 
   /// A delete for this message is in flight — dimmed until it resolves.
   final bool deleting;
@@ -280,19 +295,20 @@ class _Bubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const tail = 4.0; // the flattened "tail" corner nearest the sender
+    const tailR = 5.0; // the flattened "tail" corner nearest the sender
     final radius = BorderRadius.only(
       topLeft: const Radius.circular(AppRadius.lg),
       topRight: const Radius.circular(AppRadius.lg),
-      bottomLeft: Radius.circular(mine ? AppRadius.lg : tail),
-      bottomRight: Radius.circular(mine ? tail : AppRadius.lg),
+      bottomLeft: Radius.circular(mine || !isTail ? AppRadius.lg : tailR),
+      bottomRight: Radius.circular(!mine || !isTail ? AppRadius.lg : tailR),
     );
     final body = (message.body ?? '').trim();
     final tombstone = message.deletedForEveryone;
     final attachment = message.attachment;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      // Tight gap within a group, roomier gap between senders/groups.
+      padding: EdgeInsets.only(bottom: isTail ? AppSpacing.md : 2),
       child: Column(
         crossAxisAlignment: mine
             ? CrossAxisAlignment.end
@@ -377,16 +393,60 @@ class _Bubble extends StatelessWidget {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
-            child: Text(
-              relativeTime(message.createdAt),
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textTertiary,
+          if (isTail)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 6, right: 6),
+              child: Text(
+                relativeTime(message.createdAt),
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.textTertiary,
+                  fontSize: 11,
+                ),
               ),
             ),
-          ),
         ],
+      ),
+    );
+  }
+}
+
+/// The empty-thread state — a quiet, premium invitation to start the chat,
+/// personalized with the counterpart's name when known.
+class _EmptyThread extends StatelessWidget {
+  const _EmptyThread({this.counterpartName});
+  final String? counterpartName;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (counterpartName ?? '').trim();
+    final title = name.isEmpty ? 'Say hello' : 'Say hello to ${name.split(' ').first}';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 68,
+              height: 68,
+              decoration: const BoxDecoration(
+                color: AppColors.darkSurfaceElevated,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.waving_hand_rounded,
+                  size: 30, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(title, style: AppTypography.h3, textAlign: TextAlign.center),
+            const SizedBox(height: 4),
+            Text(
+              'This is the beginning of your conversation.',
+              style: AppTypography.bodySmall
+                  .copyWith(color: AppColors.textTertiary),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

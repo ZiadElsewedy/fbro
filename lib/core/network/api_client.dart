@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:drop/core/errors/exceptions.dart';
 import 'package:drop/core/network/network_config.dart';
+import 'package:drop/core/utils/app_logger.dart';
 
 /// Resolves the caller's bearer token for the NestJS API. Returns null when no
 /// one is signed in (the request then goes out unauthenticated and the server
@@ -59,8 +60,28 @@ class ApiClient {
     try {
       return (await request()).data;
     } on DioException catch (e) {
+      // The mapped exception carries only a user-facing message; the real
+      // cause (connection refused, host unreachable, wrong base URL, a 500
+      // body, …) lives on the DioException and would otherwise vanish. Log it
+      // so a failing request is diagnosable instead of a silent generic error.
+      final method = e.requestOptions.method;
+      final url = e.requestOptions.uri;
+      final status = e.response?.statusCode;
+      AppLog.warning(
+        'network',
+        '$method $url failed: type=${e.type.name} '
+            'status=${status ?? '-'} error=${e.error ?? e.message} '
+            'body=${_briefBody(e.response?.data)}',
+      );
       throw mapDioException(e);
     }
+  }
+
+  /// A short, log-safe rendering of a response body (truncated).
+  static String _briefBody(dynamic data) {
+    if (data == null) return '-';
+    final s = data.toString();
+    return s.length > 300 ? '${s.substring(0, 300)}…' : s;
   }
 }
 

@@ -115,13 +115,17 @@ class ChatListCubit extends Cubit<ChatListState> {
       _hasLoaded = true;
       _refreshing = false;
       _emitLoaded();
-    } on Failure catch (e) {
+    } on Failure catch (e, st) {
+      // Log the real failure (type + message) rather than only flipping to the
+      // error state — otherwise a loading→error loop hides its own cause. The
+      // network layer additionally logs the underlying transport error.
+      AppLog.error('chat', 'conversation list load failed', e, st);
       _refreshing = false;
       emit(ChatListState.error(e.message));
       // Transient when we still have a list to show (Cases convention).
       if (_hasLoaded) _emitLoaded();
-    } catch (e) {
-      AppLog.warning('chat', 'conversation list load failed: $e');
+    } catch (e, st) {
+      AppLog.error('chat', 'conversation list load failed (unexpected)', e, st);
       _refreshing = false;
       emit(const ChatListState.error(
           'Failed to load conversations. Please try again.'));
@@ -132,6 +136,16 @@ class ChatListCubit extends Cubit<ChatListState> {
   }
 
   Future<void> refresh() => load(forceRefresh: true);
+
+  /// The loaded summary for [conversationId], or null if the current window
+  /// doesn't hold it. Lets a caller (e.g. the new-chat flow) read the
+  /// server-computed counterpart id after [startChatWith] refreshes the list.
+  ChatConversationSummary? conversationById(String conversationId) {
+    for (final c in _conversations) {
+      if (c.id == conversationId) return c;
+    }
+    return null;
+  }
 
   /// Clears the unread badge for [conversationId] — called when the user
   /// opens the conversation (the client counts unread itself; the backend
@@ -240,42 +254,42 @@ class ChatListCubit extends Cubit<ChatListState> {
     }
   }
 
-  /// Starts (get-or-creates) the conversation with [targetUserId] — the
-  /// **backend-internal** user UUID, not a Firebase uid (see the identity
-  /// mapping note on [ChatRepository.startConversation]). Returns the
-  /// conversation for navigation, or null on failure. Idempotent server-side,
-  /// so re-tapping an existing counterpart just returns the existing thread.
-  Future<ChatConversation?> startChatWith(String targetUserId) async {
+  /// Starts (get-or-creates) the conversation with the teammate identified by
+  /// [targetUserRef] — the teammate's **DROP user id (Firebase uid)**, the only
+  /// identity a client holds for another user; the server resolves it to the
+  /// internal participant and returns the conversation. Returns it for
+  /// navigation, or null on failure. Idempotent server-side, so picking a
+  /// teammate you already chat with just returns the existing thread.
+  ///
+  /// On success the inbox is refreshed so the (possibly new) conversation shows
+  /// with the server's real summary — the list row carries the server-computed
+  /// counterpart id, which the client cannot derive from a Firebase uid alone.
+  Future<ChatConversation?> startChatWith(String targetUserRef) async {
     if (_starting) return null;
     _starting = true;
-    _emitLoaded();
+    if (_hasLoaded) _emitLoaded();
     try {
-      final conversation = await _startConversation(targetUserId);
-      // Surface it at the top immediately; the server list will agree on the
-      // next refresh (a fresh conversation is its most recent activity).
-      if (!_conversations.any((c) => c.id == conversation.id)) {
-        _conversations = [
-          ChatConversationSummary(
-            id: conversation.id,
-            counterpartUserId: targetUserId,
-            participantIds: conversation.participantIds,
-            createdAt: conversation.createdAt,
-            lastMessageAt: conversation.lastMessageAt,
-          ),
-          ..._conversations,
-        ];
-      }
+      final conversation = await _startConversation(targetUserRef);
+      // Pull the server's list so the conversation appears with correct data
+      // (name/preview slots, ordering). A no-op-cheap refresh; fire-and-forget
+      // would race the caller's navigation, so await it.
+      _starting = false;
+      await load(forceRefresh: true);
       return conversation;
     } on Failure catch (e) {
+      _starting = false;
       emit(ChatListState.error(e.message));
+      if (_hasLoaded) _emitLoaded();
       return null;
     } catch (e) {
       AppLog.warning('chat', 'start conversation failed: $e');
+      _starting = false;
       emit(const ChatListState.error('Failed to start the conversation.'));
+      if (_hasLoaded) _emitLoaded();
       return null;
     } finally {
       _starting = false;
-      _emitLoaded();
+      if (_hasLoaded) _emitLoaded();
     }
   }
 }

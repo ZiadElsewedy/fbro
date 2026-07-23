@@ -16,7 +16,62 @@ released — DROP ships from branches and has no version tags.
 
 ## Unreleased
 
+### 2026-07-23
+
+- **Chat: real profiles, premium composer/thread, and LAN dev networking
+  (Phase 10).**
+  - **Real conversation identities.** `GET /conversations` now returns each
+    row's `counterpartExternalId` (the counterpart's Firebase uid), resolved
+    server-side via a new read-only `USER_DIRECTORY` port (reverse of the
+    identity resolver: internal UUID → provider subject, one batched query).
+    The Flutter inbox loads the branch directory (`GetUsersByBranch`) and renders
+    the teammate's real **avatar · name · role**; the thread header shows the
+    counterpart's avatar + name. Backend internal UUIDs are never shown.
+  - **Premium composer.** Rounded 46px pill, generous padding, multiline growth,
+    a circular send button that reactively lights up when there's text (taps
+    always route through the send guard so it's never a dead target).
+  - **Premium thread.** Consecutive same-sender messages group (timestamp only
+    on the run's tail, tight spacing, tail corner only there) and a warmer empty
+    state.
+  - **LAN dev networking.** Backend binds `0.0.0.0:3000`; a debug-only Android
+    manifest enables cleartext HTTP; one
+    `--dart-define=API_BASE_URL=http://<mac-lan-ip>:3000` points REST **and**
+    Socket.IO at the same backend from both the iOS Simulator and a physical
+    Android device (localhost never works from a real Android device). No
+    production hardcoding — release keeps cleartext off.
+  - **Real error surfaced.** `ApiClient` logs the underlying transport error
+    (connection refused / host unreachable / status + body) before mapping it,
+    and `ChatListCubit` logs the failure — ending the silent loading→error loop.
+  - +2 widget tests (title resolution); backend suite still green.
+
 ### 2026-07-22
+
+- **Chat: new-conversation entry flow (Phase 9).** Empty-state "Start Chat" CTA
+  + an always-present inbox FAB open a `/chat/new` teammate picker
+  (`NewChatScreen`/`NewChatView` + `NewChatCubit` over the existing
+  `GetUsersByBranch`): own-branch teammates, search, current user excluded,
+  each row avatar · name · role. Selecting a teammate calls `StartConversation`
+  and `pushReplacement`s to the thread (Back → inbox); the server's idempotent
+  get-or-create means picking someone you already chat with opens the existing
+  thread, never a duplicate. **Backend (`drop-api`) contract change:**
+  `POST /conversations` `targetUserId` is now the teammate's Firebase uid
+  (external subject) — a client never holds another user's internal UUID — which
+  the use case resolves to the internal participant via the existing identity
+  resolver (get-or-create, so a teammate who's never opened chat is provisioned
+  on demand); self-start stays a 400. `ChatListCubit.startChatWith` refreshes the
+  inbox after starting so the row carries the server's real counterpart id.
+  Verified live end-to-end; backend suite still 84 green. +6 widget tests.
+
+- **Chat WebSocket "auth" failure root-caused — a DB migration gap, not a token
+  bug.** The reported `socket auth rejected: Invalid or expired authentication
+  token` was traced end-to-end: the Flutter client attaches the Firebase ID
+  token correctly (`setAuth({token})` → handshake `auth.token`), the gateway
+  reads it, and the verifier accepts a valid token (confirmed by minting a real
+  token and calling `verifyIdToken` directly). The real cause was three unapplied
+  chat migrations — critically `20260720130000_add_app_user` — so identity
+  resolution threw *after* `verifyToken`, surfacing as a socket reject and REST
+  500s on Chat. `prisma migrate deploy` fixed it; the socket then connects and
+  authenticates cleanly. No client or gateway auth code changed.
 
 - **Chat promoted to a primary navigation destination.** The mobile bottom
   nav's fourth tab changed from **Profile** to **Chat** (`chat_bubble` icon →

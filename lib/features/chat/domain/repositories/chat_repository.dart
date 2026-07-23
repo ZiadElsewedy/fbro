@@ -11,12 +11,16 @@ import 'package:drop/features/chat/domain/entities/chat_read_receipt.dart';
 /// conversation the caller isn't part of surfaces as "not found" — the API
 /// never reveals existence.
 abstract class ChatRepository {
-  /// Starts (get-or-creates) the conversation with [targetUserId]. Idempotent
-  /// per pair — the server returns the same conversation whether it existed or
-  /// was just created, so this doubles as "open chat with user".
+  /// Starts (get-or-creates) the conversation with the teammate identified by
+  /// [targetUserRef] — their **DROP user id (Firebase uid)**, the identity a
+  /// client holds for another user. The server resolves it to the internal
+  /// participant (provisioning the teammate's user record on first sight) and
+  /// returns the conversation. Idempotent per pair — the same conversation is
+  /// returned whether it existed or was just created, so this doubles as "open
+  /// chat with user".
   ///
-  /// `POST /conversations`
-  Future<ChatConversation> startConversation(String targetUserId);
+  /// `POST /conversations` (body `{ targetUserId }`)
+  Future<ChatConversation> startConversation(String targetUserRef);
 
   /// The caller's conversations, most-recent-activity first. [cursor] is the
   /// opaque `nextCursor` from the previous page. The server clamps [limit] to

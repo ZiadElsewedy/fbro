@@ -137,12 +137,15 @@ Widget _host(ChatConversationCubit cubit) => MaterialApp(
 void main() {
   testWidgets('renders the thread with a date separator and both sides',
       (tester) async {
+    // Dates are relative to now so the Today/Yesterday separators hold
+    // regardless of the wall clock (a midnight rollover used to flake this).
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day, 9);
+    final yesterday = today.subtract(const Duration(days: 1));
     final repo = _FakeChatRepository(
       onHistory: ({String? cursor}) async => ChatMessagePage(items: [
-        _message('m1', 1, _them, 'Hey — shift swap tomorrow?',
-            at: DateTime(2026, 7, 21, 18)),
-        _message('m2', 2, _me, 'Works for me.',
-            at: DateTime(2026, 7, 22, 9)),
+        _message('m1', 1, _them, 'Hey — shift swap tomorrow?', at: yesterday),
+        _message('m2', 2, _me, 'Works for me.', at: today),
       ]),
     );
     final cubit = _cubit(repo);
@@ -186,7 +189,9 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('No messages yet — say hello.'), findsOneWidget);
+    expect(find.text('Say hello'), findsOneWidget);
+    expect(find.text('This is the beginning of your conversation.'),
+        findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     await cubit.close();
   });

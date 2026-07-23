@@ -46,13 +46,21 @@ class ChatConversationSummary {
     required this.counterpartUserId,
     required this.participantIds,
     required this.createdAt,
+    this.counterpartExternalId,
     this.lastMessageAt,
   });
 
   final String id;
 
   /// The other participant relative to the requester, resolved server-side.
+  /// Backend-internal id — **never a UI display key**; use
+  /// [counterpartExternalId] to look up the real profile.
   final String counterpartUserId;
+
+  /// The counterpart's DROP user id (Firebase uid), so the client can resolve
+  /// the real name/avatar/role from its own directory. Null if the backend
+  /// hasn't provisioned the counterpart yet.
+  final String? counterpartExternalId;
 
   final List<String> participantIds;
   final DateTime createdAt;
@@ -64,6 +72,7 @@ class ChatConversationSummary {
       ChatConversationSummary(
         id: id,
         counterpartUserId: counterpartUserId,
+        counterpartExternalId: counterpartExternalId,
         participantIds: participantIds,
         createdAt: createdAt,
         lastMessageAt: at,

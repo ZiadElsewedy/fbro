@@ -11,7 +11,7 @@
 | --- | --- |
 | **Branch** | `feature/chat-nestjs` (from `feature/attendance-management`) |
 | **Build** | `flutter analyze`: 1 info, no errors/warnings (pre-existing test style) |
-| **Tests** | **1018 pass · 2 fail** across 150 files (~20s) — the 2 fails are the pre-existing splash-centering cases; see [Known issues](#known-issues). Cloud Functions: **34 pass** (`cd functions && node --test`) |
+| **Tests** | **1028 pass · 2 fail** across 152 files (~25s) — the 2 fails are the pre-existing splash-centering cases; see [Known issues](#known-issues). Cloud Functions: **34 pass**; NestJS chat backend: **84 pass** (`cd ~/Desktop/Developer/drop-api && npx jest`) |
 | **Blocking release** | Firebase deploy (rules · indexes · functions; live `shift_templates` rule missing) · recurring-template manager read isolation · iOS push unconfigured · attendance on-device QA |
 | **Platforms** | iOS · Android · macOS |
 
@@ -77,6 +77,8 @@ Base URL comes from `--dart-define=API_BASE_URL` (default `http://localhost:3000
 | P6 — Realtime (Socket.IO) | Done, **uncommitted** (2026-07-22). Protocol read from the `drop-api` gateway (namespace `/chat`, handshake `auth.token` = Firebase ID token, `conversation:join`/`leave` with `{ok,error?}` acks, server events `message:new`/`read`/`deleted`/`deleted-for-me`, auth reject = `connection:error` + disconnect). New `ChatRealtime` domain port + `ChatSocketService` (`socket_io_client ^3.1.6`, the only file importing it): refcounted connect (first join) / teardown (last leave), **self-owned reconnect** (rebuilt socket + fresh token each attempt, exp. backoff ≤30s, force-refresh after auth reject), room re-join on reconnect. `ChatConversationCubit` (additive `realtime:` param): live `message:new` inserted by `seq` + deduped, `message:read` → status READ, reconnect → newest-page REST reconcile. **REST stays the only write path & source of truth** |
 | P7 — Message deletion UI | Done, **uncommitted** (2026-07-22). Long-press → bottom-sheet menu (`chat_message_actions.dart`) → Cases-style confirm → the existing use cases. **Delete for me** always offered; **Delete for everyone** offered only on own non-deleted messages (identity fact — the real rules, sender-only + 1h window, stay server-enforced; a 403 surfaces the server's message). In-flight delete dims the bubble (`deletingMessageId`, one at a time). Live `message:deleted` now tombstones in place (client mirrors the backend placeholder constant) and `message:deleted-for-me` removes cross-session |
 | P8 — Inbox realtime | Done, **uncommitted** (2026-07-22). Same shared socket (no second service): `ChatRealtime` gains `attachInbox`/`detachInbox` — inbox interest that keeps the connection alive with **no room join** (the personal `user:{id}` room already delivers `message:new` for every conversation). `ChatListCubit` (additive `realtime` seam, attached on first load) bumps the row to top with fresh activity, holds a client last-message preview + client-counted unread badge (opening a conversation clears it via `clearUnread`), dedupes by per-conversation `seq`, refreshes on an unknown-conversation message or a reconnect, and tombstones a previewed line on live delete-for-everyone. Loaded state carries `previews`/`unreadCounts` maps into the Phase-4 tile slots. **REST stays the source of truth**; pagination unchanged |
+| P9 — New-conversation flow | Done, **uncommitted** (2026-07-22). Inbox FAB (always) + empty-state "Start Chat" CTA → `/chat/new` teammate picker (`NewChatScreen`/`NewChatView` + `NewChatCubit` over `GetUsersByBranch`): own-branch teammates, search, current user excluded, avatar · name · role. Selecting one calls `StartConversation` and `pushReplacement`s to the thread (Back → inbox); server get-or-create means an existing pair opens the same thread, no duplicate. **Backend contract change (`drop-api`):** `POST /conversations` `targetUserId` is now the teammate's **Firebase uid** (external subject), resolved server-side to the internal participant via the existing identity resolver (get-or-create — provisions a teammate who's never opened chat); clients never hold other users' internal UUIDs. Self-start rejected 400 |
+| P10 — Real profiles + polish + LAN | Done, **uncommitted** (2026-07-23). **Real titles:** `GET /conversations` now returns `counterpartExternalId` (Firebase uid, resolved via a new `USER_DIRECTORY` reverse-lookup port); the inbox loads the branch directory and renders real **avatar · name · role**, the thread header shows the counterpart avatar+name — no backend id is ever a UI key. **Composer** redesigned premium (rounded 46px pill, reactive send button, multiline). **Thread** gets message grouping (time on the run tail only) + a premium empty state. **Networking:** backend binds `0.0.0.0:3000`; a debug-only Android manifest allows cleartext; one `--dart-define=API_BASE_URL=http://192.168.1.8:3000` wires REST + socket for both the iOS Simulator and a physical Android device. `ApiClient` + `ChatListCubit` now log the real transport error (no more silent loading→error loop). Composer refined (reactive send button + lifted bar + safe-area anchor), empty state personalized ("Say hello to {first name}"). **Verified live on the iOS Simulator via the LAN IP: real profiles, inbox, thread, and a live message send all work end-to-end** |
 | Notifications · attachments | ❌ Not started |
 
 > The list endpoint exposes **no counterpart names, no last-message preview, no
@@ -85,8 +87,14 @@ Base URL comes from `--dart-define=API_BASE_URL` (default `http://localhost:3000
 > `preview`/`unreadCount` slots (counterpart names still pending a backend
 > directory endpoint). Chat is now a **primary nav destination**: the mobile
 > bottom nav's fourth tab (replacing Profile, which moved to the avatar →
-> Settings hub) and a desktop sidebar entry for every role. **Not verified
-> against a live backend yet** — needs `drop-api` running at `API_BASE_URL`.
+> Settings hub) and a desktop sidebar entry for every role. **Verified live
+> (2026-07-22):** REST + Socket.IO auth + start-conversation all confirmed
+> against the running `drop-api`. **Operational note — the socket "auth"
+> failure was a DB migration gap, not a token bug:** three chat migrations
+> (critically `20260720130000_add_app_user`) were unapplied, so identity
+> resolution threw *after* `verifyToken`, surfacing as a socket auth reject and
+> REST 500s on Chat. Fix is `prisma migrate deploy` in `drop-api`; both sides'
+> auth code was correct all along.
 
 **Attendance** — the only feature not closed out. Code is complete across all three
 phases and committed; what remains is deployment and on-device verification.
@@ -300,7 +308,7 @@ If you change status, gaps, or priorities, update this file **in the same task**
 
 ```bash
 flutter analyze                          # expect: 1 info, 0 errors/warnings
-flutter test                             # expect: 1018 pass, 2 fail (splash)
+flutter test                             # expect: 1028 pass, 2 fail (splash)
 (cd functions && node --test)            # expect: 34 pass
 grep -c "static const String" lib/core/routes/route_names.dart   # expect: 45
 ls lib/features | wc -l                  # expect: 18

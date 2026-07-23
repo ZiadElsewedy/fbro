@@ -40,6 +40,7 @@ class ChatConversationModel {
       ChatConversationSummary(
         id: json['id'] as String,
         counterpartUserId: json['counterpartUserId'] as String,
+        counterpartExternalId: json['counterpartExternalId'] as String?,
         participantIds: _stringList(json['participantIds']),
         createdAt: DateTime.parse(json['createdAt'] as String),
         lastMessageAt: _optionalDate(json['lastMessageAt']),

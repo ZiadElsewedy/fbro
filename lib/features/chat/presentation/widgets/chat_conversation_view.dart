@@ -19,7 +19,10 @@ import 'package:drop/features/chat/presentation/widgets/chat_message_list.dart';
 /// so it surfaces as a snackbar. A **first-load** failure is terminal and
 /// renders the full-screen retry.
 class ChatConversationView extends StatelessWidget {
-  const ChatConversationView({super.key});
+  const ChatConversationView({super.key, this.counterpartName});
+
+  /// Counterpart display name — personalizes the empty state.
+  final String? counterpartName;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +55,7 @@ class ChatConversationView extends StatelessWidget {
                   onLoadOlder: cubit.loadOlder,
                   onVisible: cubit.markVisibleRead,
                   deletingMessageId: deletingMessageId,
+                  counterpartName: counterpartName,
                   onMessageLongPress: (message, mine) =>
                       _onMessageLongPress(context, message, mine),
                 ),

@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:drop/core/di/injection.dart';
+import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/drop_empty_state.dart';
+import 'package:drop/core/widgets/premium_button.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/chat/domain/entities/chat_conversation.dart';
+import 'package:drop/features/chat/presentation/chat_format.dart';
+import 'package:drop/features/chat/presentation/chat_thread_args.dart';
 import 'package:drop/features/chat/presentation/cubit/chat_list_cubit.dart';
 import 'package:drop/features/chat/presentation/cubit/chat_list_state.dart';
 import 'package:drop/features/chat/presentation/widgets/chat_conversation_tile.dart';
@@ -27,12 +34,35 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  /// Branch teammate directory keyed by Firebase uid — resolves each row's
+  /// `counterpartExternalId` to a real profile. Loaded once; branch membership
+  /// is stable within a session.
+  Map<String, UserEntity> _directory = const {};
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<ChatListCubit>().load(),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ChatListCubit>().load();
+      _loadDirectory();
+    });
+  }
+
+  Future<void> _loadDirectory() async {
+    // Best-effort enrichment: resolves real names/avatars for the rows. Never
+    // let it break the inbox — without it, rows fall back to a neutral label.
+    try {
+      final user = context.currentUser;
+      final dir = await AppDependencies.loadChatDirectory(user);
+      if (mounted && dir.isNotEmpty) setState(() => _directory = dir);
+    } catch (e) {
+      AppLog.warning('chat', 'teammate directory load skipped: $e');
+    }
+  }
+
+  UserEntity? _counterpartFor(ChatConversationSummary c) {
+    final uid = c.counterpartExternalId;
+    return uid == null ? null : _directory[uid];
   }
 
   @override
@@ -40,6 +70,15 @@ class _ChatScreenState extends State<ChatScreen> {
     return AdaptiveScaffold(
       title: 'Chat',
       subtitle: 'Direct messages with your team',
+      // Always-available entry to the teammate picker (even with conversations
+      // present); the empty state also offers it as a primary CTA.
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push(RouteNames.chatNew),
+        backgroundColor: AppColors.primary,
+        foregroundColor: AppColors.onPrimary,
+        icon: const Icon(Icons.chat_bubble_outline_rounded),
+        label: const Text('New Chat'),
+      ),
       body: BlocConsumer<ChatListCubit, ChatListState>(
         // A failure while a list is on screen is transient (the cubit
         // immediately re-emits the last loaded list) — surface it as a
@@ -69,10 +108,16 @@ class _ChatScreenState extends State<ChatScreen> {
               onRefresh: () => context.read<ChatListCubit>().refresh(),
               color: AppColors.primary,
               child: conversations.isEmpty
-                  ? const DropEmptyState(
+                  ? DropEmptyState(
                       title: 'No conversations yet',
                       message:
                           'Direct messages with your teammates will appear here.',
+                      action: PremiumButton(
+                        label: 'Start Chat',
+                        icon: Icons.chat_bubble_outline_rounded,
+                        style: PremiumButtonStyle.filled,
+                        onPressed: () => context.push(RouteNames.chatNew),
+                      ),
                     )
                   : _ConversationList(
                       conversations: conversations,
@@ -80,6 +125,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       hasMore: hasMore,
                       previews: previews,
                       unreadCounts: unreadCounts,
+                      counterpartOf: _counterpartFor,
                     ),
             ),
           );
@@ -96,6 +142,7 @@ class _ConversationList extends StatelessWidget {
     required this.hasMore,
     required this.previews,
     required this.unreadCounts,
+    required this.counterpartOf,
   });
 
   final List<ChatConversationSummary> conversations;
@@ -106,6 +153,9 @@ class _ConversationList extends StatelessWidget {
   /// tile's override slots; absent key → the tile's honest fallback.
   final Map<String, String> previews;
   final Map<String, int> unreadCounts;
+
+  /// Resolves a row's counterpart to a real teammate profile (Firebase dir).
+  final UserEntity? Function(ChatConversationSummary) counterpartOf;
 
   @override
   Widget build(BuildContext context) {
@@ -118,16 +168,22 @@ class _ConversationList extends StatelessWidget {
         }
         return false;
       },
-      child: ListView.builder(
+      child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: AppSpacing.huge),
+        padding: const EdgeInsets.only(top: 4, bottom: AppSpacing.huge),
         itemCount: conversations.length + (loadingMore ? 1 : 0),
+        separatorBuilder: (context, index) => const Padding(
+          padding: EdgeInsets.only(left: 78),
+          child: Divider(height: 1, thickness: 0.5, color: AppColors.darkBorder),
+        ),
         itemBuilder: (context, index) {
           if (index == conversations.length) return const _PageSpinnerRow();
           final conversation = conversations[index];
           final preview = previews[conversation.id];
+          final counterpart = counterpartOf(conversation);
           return ChatConversationTile(
             conversation: conversation,
+            counterpart: counterpart,
             preview: preview == null || preview.isEmpty ? null : preview,
             unreadCount: unreadCounts[conversation.id],
             onTap: () {
@@ -136,7 +192,14 @@ class _ConversationList extends StatelessWidget {
               context.read<ChatListCubit>().clearUnread(conversation.id);
               context.push(
                 RouteNames.chatConversation(conversation.id),
-                extra: conversation.counterpartUserId,
+                extra: ChatThreadArgs(
+                  counterpartUserId: conversation.counterpartUserId,
+                  counterpartName: counterpart == null
+                      ? null
+                      : chatDisplayName(counterpart,
+                          fallbackId: conversation.counterpartUserId),
+                  counterpartPhotoUrl: counterpart?.photoUrl,
+                ),
               );
             },
           );

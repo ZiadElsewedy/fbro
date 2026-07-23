@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drop/core/enums/user_role.dart';
+import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/chat/domain/entities/chat_conversation.dart';
 import 'package:drop/features/chat/presentation/chat_format.dart';
 import 'package:drop/features/chat/presentation/widgets/chat_conversation_tile.dart';
@@ -8,6 +10,7 @@ void main() {
   final active = ChatConversationSummary(
     id: 'conv-1',
     counterpartUserId: 'b7e2a1c4-0000-4000-8000-000000000000',
+    counterpartExternalId: 'fb-sara',
     participantIds: const ['me', 'b7e2a1c4-0000-4000-8000-000000000000'],
     createdAt: DateTime(2026, 7, 20, 9),
     lastMessageAt: DateTime(2026, 7, 22, 10),
@@ -20,12 +23,25 @@ void main() {
     createdAt: DateTime(2026, 7, 21, 9),
   );
 
+  const sara = UserEntity(
+    uid: 'fb-sara',
+    email: 'sara@drop.test',
+    displayName: 'Sara Khaled',
+    authProvider: 'password',
+    branchId: 'b1',
+    role: UserRole.manager,
+  );
+
   Widget host(ChatConversationSummary c,
-          {String? title, String? preview, int? unreadCount}) =>
+          {UserEntity? counterpart,
+          String? title,
+          String? preview,
+          int? unreadCount}) =>
       MaterialApp(
         home: Scaffold(
           body: ChatConversationTile(
             conversation: c,
+            counterpart: counterpart,
             title: title,
             preview: preview,
             unreadCount: unreadCount,
@@ -44,6 +60,16 @@ void main() {
   testWidgets('a provided title overrides the fallback label', (tester) async {
     await tester.pumpWidget(host(active, title: 'Sara K.'));
     expect(find.text('Sara K.'), findsOneWidget);
+  });
+
+  testWidgets('resolves the real name + role from the counterpart profile',
+      (tester) async {
+    await tester.pumpWidget(host(active, counterpart: sara));
+    expect(find.text('Sara Khaled'), findsOneWidget); // real name, not id
+    expect(find.text('Store Manager'), findsOneWidget); // role
+    // The backend id / fallback tag is never shown.
+    expect(find.text(chatCounterpartLabel(active.counterpartUserId)),
+        findsNothing);
   });
 
   testWidgets('a never-messaged conversation shows the empty preview line',

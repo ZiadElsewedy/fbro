@@ -51,6 +51,11 @@ class RouteNames {
   // stable deep-link path (thread UI lands in a later phase).
   static const String chat = '/chat';
 
+  /// The new-conversation teammate picker. A static child of `/chat`; it is
+  /// registered before the `:conversationId` pattern so it is never captured
+  /// as a conversation id.
+  static const String chatNew = '/chat/new';
+
   /// The single-conversation pattern (`/chat/:conversationId`).
   static const String chatConversationPattern = '/chat/:conversationId';
 
