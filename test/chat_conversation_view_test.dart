@@ -451,7 +451,7 @@ void main() {
     // Open the attachment sheet and choose Document.
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Document'));
+    await tester.tap(find.text('Documents'));
     await tester.pumpAndSettle();
 
     // The staged attachment previews in the composer (filename shown), and the
@@ -484,7 +484,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Document'));
+    await tester.tap(find.text('Documents'));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
     await tester.pump(); // optimistic insert + the 40% progress tick

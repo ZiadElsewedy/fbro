@@ -55,14 +55,18 @@ class ChatConversationTile extends StatelessWidget {
         chatDisplayName(counterpart,
             fallbackId: conversation.counterpartUserId);
     final role = counterpart == null ? null : chatRoleLabel(counterpart!.role);
+    final previewText = (preview ?? '').trim();
 
     return Material(
       color: selected ? AppColors.primarySurface : Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        // iOS-style press: a quiet highlight fade, no Material ripple.
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: AppColors.primarySurface,
         child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.pagePadding, vertical: 11),
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.pagePadding, 9, AppSpacing.pagePadding, 9),
           decoration: BoxDecoration(
             border: Border(
               left: BorderSide(
@@ -74,18 +78,20 @@ class ChatConversationTile extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _Avatar(counterpart: counterpart, unread: unread),
-              const SizedBox(width: AppSpacing.md),
+              _Avatar(counterpart: counterpart, fallbackName: name, unread: unread),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
                           child: Text(
                             name,
                             style: AppTypography.body.copyWith(
+                                fontSize: 16,
                                 fontWeight:
                                     unread ? FontWeight.w700 : FontWeight.w600,
                                 height: 1.2),
@@ -96,6 +102,7 @@ class ChatConversationTile extends StatelessWidget {
                         const SizedBox(width: AppSpacing.sm),
                         Text(relativeTime(when),
                             style: AppTypography.caption.copyWith(
+                                fontSize: 12,
                                 color: unread
                                     ? AppColors.textPrimary
                                     : AppColors.textTertiary,
@@ -104,17 +111,26 @@ class ChatConversationTile extends StatelessWidget {
                                     : FontWeight.w400)),
                       ],
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Row(
                       children: [
                         Expanded(
                           child: Text(
-                            preview ?? chatPreviewLine(conversation),
+                            // The inbox only lists conversations that have a
+                            // message, so there is always a real preview; a rare
+                            // still-resolving row shows the subtle role instead
+                            // of any "no messages" placeholder.
+                            previewText.isNotEmpty
+                                ? previewText
+                                : (role ?? ''),
                             style: AppTypography.bodySmall.copyWith(
+                                fontSize: 14,
                                 color: unread
                                     ? AppColors.textSecondary
                                     : AppColors.textTertiary,
-                                height: 1.25),
+                                fontWeight:
+                                    unread ? FontWeight.w500 : FontWeight.w400,
+                                height: 1.3),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -122,11 +138,12 @@ class ChatConversationTile extends StatelessWidget {
                         if (unread) ...[
                           const SizedBox(width: AppSpacing.sm),
                           _UnreadBadge(count: unreadCount!),
-                        ] else if (role != null) ...[
+                        ] else if (role != null && previewText.isNotEmpty) ...[
                           const SizedBox(width: AppSpacing.sm),
                           Text(role,
-                              style: AppTypography.caption
-                                  .copyWith(color: AppColors.textTertiary)),
+                              style: AppTypography.caption.copyWith(
+                                  fontSize: 11.5,
+                                  color: AppColors.textQuaternary)),
                         ],
                       ],
                     ),
@@ -141,30 +158,31 @@ class ChatConversationTile extends StatelessWidget {
   }
 }
 
-/// The counterpart avatar — real photo/initials when resolved, a neutral glyph
-/// otherwise. An unread conversation gets a subtle accent ring.
+/// The counterpart avatar — real photo when resolved, otherwise the initial(s)
+/// of the display name (never a generic grey glyph). An unread conversation
+/// gets a subtle accent ring.
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.counterpart, required this.unread});
+  const _Avatar({
+    required this.counterpart,
+    required this.fallbackName,
+    required this.unread,
+  });
   final UserEntity? counterpart;
+
+  /// Name to derive initials from when [counterpart] hasn't resolved (the same
+  /// label the row shows), so the disc stays consistent with the title.
+  final String fallbackName;
   final bool unread;
 
   @override
   Widget build(BuildContext context) {
     final ring = unread ? AppColors.primary : AppColors.darkBorder;
     if (counterpart != null) {
-      return UserAvatar.fromUser(counterpart!, size: 50, ringColor: ring);
+      return UserAvatar.fromUser(counterpart!, size: 56, ringColor: ring);
     }
-    return Container(
-      width: 50,
-      height: 50,
-      decoration: BoxDecoration(
-        color: AppColors.primarySurface,
-        shape: BoxShape.circle,
-        border: Border.all(color: ring, width: 1.5),
-      ),
-      child: const Icon(Icons.person_outline_rounded,
-          size: 22, color: AppColors.textSecondary),
-    );
+    // Unresolved (directory miss / deep link): still an initials chip, not the
+    // grey placeholder — UserAvatar renders the display name's initial(s).
+    return UserAvatar(name: fallbackName, size: 56, ringColor: ring);
   }
 }
 

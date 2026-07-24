@@ -72,10 +72,13 @@ void main() {
         findsNothing);
   });
 
-  testWidgets('a never-messaged conversation shows the empty preview line',
+  testWidgets('never renders a "no messages"/"tap to open" placeholder',
       (tester) async {
+    // Empty conversations are hidden from the inbox upstream; the tile itself
+    // must not emit any placeholder preview line (premium requirement).
     await tester.pumpWidget(host(empty));
-    expect(find.text('No messages yet — say hello'), findsOneWidget);
+    expect(find.text('No messages yet — say hello'), findsNothing);
+    expect(find.text('Tap to open the conversation'), findsNothing);
   });
 
   testWidgets('a provided preview overrides the state line', (tester) async {

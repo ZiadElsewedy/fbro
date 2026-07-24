@@ -908,18 +908,24 @@ class _FailedFooter extends StatelessWidget {
   }
 }
 
-/// Monochrome delivery ticks for an own message: a single check until the
-/// counterpart has read it, then a brighter double check. Delivered (if the
-/// server ever reports it) reads as a muted double check. Color-free by design
-/// — the system has no chromatic accent, so state is carried by shape + weight.
+/// WhatsApp-style delivery ticks for an own message: a clock while sending, a
+/// double **grey** check once delivered, and a double **green** check once the
+/// counterpart has read it.
+///
+/// Owner ruling 2026-07-24 explicitly overrides the earlier monochrome-ticks
+/// decision: green is requested for the read state (the familiar messaging
+/// pattern). The backend accepts a message as `SENT` and immediately delivers
+/// it to the counterpart's socket, so `SENT`/`DELIVERED` both read as
+/// "delivered"; `READ` arrives over the socket.
 class _StatusTicks extends StatelessWidget {
   const _StatusTicks({required this.status});
   final String status;
 
   @override
   Widget build(BuildContext context) {
+    final s = status.toUpperCase();
     // Optimistic in-flight send → a clock, not a check.
-    if (status == 'SENDING') {
+    if (s == 'SENDING') {
       return const Icon(
         Icons.access_time_rounded,
         size: 13,
@@ -927,17 +933,12 @@ class _StatusTicks extends StatelessWidget {
         semanticLabel: 'Sending',
       );
     }
-    final read = status == 'READ';
-    final delivered = read || status == 'DELIVERED';
+    final read = s == 'READ';
     return Icon(
-      delivered ? Icons.done_all_rounded : Icons.done_rounded,
-      size: 14,
-      color: read ? AppColors.textSecondary : AppColors.textTertiary,
-      semanticLabel: read
-          ? 'Read'
-          : delivered
-              ? 'Delivered'
-              : 'Sent',
+      Icons.done_all_rounded,
+      size: 16,
+      color: read ? AppColors.success : AppColors.textTertiary,
+      semanticLabel: read ? 'Read' : 'Delivered',
     );
   }
 }

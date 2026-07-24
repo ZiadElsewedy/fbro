@@ -111,7 +111,9 @@ void main() {
     await tester.pump(); // post-frame load
     await tester.pump(); // resolve the page future
     expect(find.byType(ChatConversationTile), findsNWidgets(2));
-    expect(find.text(chatCounterpartLabel('user-a')), findsOneWidget);
+    // With no directory resolution both rows fall back to the neutral, id-free
+    // label (never a truncated internal id) — so it appears on both tiles.
+    expect(find.text(chatCounterpartLabel('user-a')), findsNWidgets(2));
     await c.close();
   });
 

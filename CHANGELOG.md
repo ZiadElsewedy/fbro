@@ -18,6 +18,65 @@ released — DROP ships from branches and has no version tags.
 
 ### 2026-07-24
 
+- **Chat P0 image-send fix + production-readiness pass.**
+  - **Image sending fixed (root cause proven, backend).** `drop-api`: the
+    NestJS/Express default JSON body limit is 100 KB, but chat sends attachment
+    bytes as base64 in the JSON body and the attachment domain allows 25 MiB —
+    so every real photo was 413'd *before* validation/storage. Proven against
+    Railway prod (300 KB body → 413, tiny → 401). Fix: take over body parsing
+    and size the JSON limit to the configured attachment cap + base64 overhead
+    (`main.ts`); `express` declared as a direct dep. Verified locally
+    (300 KB/5 MB → 401, 40 MB → 413). Committed on `drop-api` (`746a804`);
+    **needs a Railway deploy** to take effect in production.
+  - **No internal IDs in the UI (P1):** removed the user-id line from the New
+    Chat card; `chatCounterpartLabel` no longer embeds a UUID fragment (was
+    "Teammate 019F8F") — it's a neutral id-free "Teammate"; Message Info drops
+    Message/Conversation/Reference IDs and Sequence. Only avatar · name · role
+    surface anywhere.
+  - **Delivery status (P2):** WhatsApp pattern — clock (sending) → double **grey**
+    check (delivered) → double **green** check (read). Owner override of the
+    prior monochrome-ticks ruling.
+  - **Composer redesigned (P3):** a single cohesive pill with the attachment `+`
+    and send controls *inside* the field (no detached satellite buttons),
+    focus-animated border, bottom-aligned controls that track multiline growth.
+    Fixed a theme-border leak (the global `inputDecorationTheme.focusedBorder`
+    drew a second outline around the text) by nulling every `*Border` state on
+    the field — the pill now reads as one unit.
+
+- **Chat UX overhaul — inbox, previews, composer, attachment sheet
+  (uncommitted, presentation-only).** No backend/contract/cubit/repo changes.
+  - **Empty conversations are now hidden** (WhatsApp/Telegram behavior): the
+    inbox filters out never-messaged conversations (no `lastMessageAt` and no
+    live preview). Returning from a thread re-pulls the list so your *own* first
+    message surfaces (the socket never echoes your sends back to you).
+  - **Real last-message previews** replace the "Tap to open"/"No messages yet"
+    placeholders: resolved from the live socket preview → in-memory thread cache
+    → a one-item history fetch (reusing `LoadChatHistory`), formatted as the
+    body / "Photo" / file name / "You: …". New `ChatPreview` + `chatMessage
+    PreviewText` in `chat_format.dart`; `AppDependencies.latestChatMessage`.
+  - **Redesigned inbox tile**: 56px avatar, name + right-aligned time, real
+    preview + unread badge, subtle role, iOS-style press highlight (no ripple),
+    inset hairline separators.
+  - **Attachment sheet** rebuilt premium (icon-chip rows with labels/subtitles).
+    Videos intentionally omitted — the API accepts no video attachment format,
+    so it would need a backend/contract change to work.
+  - **Composer** press-scale feedback on the `+` and send buttons.
+
+- **Chat directory rules DEPLOYED + card polish.** The flat `users` read rule
+  (`allow read: if isSignedIn()`, ADR-012) was **deployed to production**
+  (`bazic-d9ad7`) — this is what actually makes company-wide chat work at
+  runtime. **Root cause of the "Teammate 019F8F" placeholder** (audited, not
+  guessed): the client resolves counterpart names via a Firestore directory
+  (`getAllUsers`), but the flat rule was undeployed, so a non-admin's unfiltered
+  `users` query was denied, the directory stayed empty, and every counterpart
+  fell back to a label built from the backend's internal UUID. The logged-in
+  user was an *employee*; an admin never hit it. Backend was never implicated —
+  `counterpartExternalId` (the counterpart's Firebase uid) is correctly returned.
+  Presentation: the teammate picker card now shows the **user id** (with photo ·
+  name · role, nothing private beyond that); the inbox fallback avatar is now an
+  **initials chip** instead of the generic grey person glyph (`UserAvatar`
+  already did initials — only the tile's unresolved branch used the icon).
+
 - **Chat mobile UI refinement (uncommitted).** Presentation-only; no backend
   or contract change. **Fixed own-message alignment** — my messages were
   rendering on the left. Root cause: `_SwipeToReply` wraps a confirmed bubble in

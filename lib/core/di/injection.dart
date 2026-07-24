@@ -124,6 +124,7 @@ import 'package:drop/features/chat/domain/chat_realtime.dart';
 import 'package:drop/features/chat/domain/repositories/chat_repository.dart';
 import 'package:drop/features/chat/domain/usecases/delete_chat_message_for_everyone.dart';
 import 'package:drop/features/chat/domain/usecases/delete_chat_message_for_me.dart';
+import 'package:drop/features/chat/domain/entities/chat_message.dart';
 import 'package:drop/features/chat/domain/usecases/get_chat_attachment_url.dart';
 import 'package:drop/features/chat/domain/usecases/get_chat_directory.dart';
 import 'package:drop/features/chat/domain/usecases/get_conversation.dart';
@@ -193,6 +194,28 @@ class AppDependencies {
   /// Process-lifetime cache of opened threads — lets a re-opened conversation
   /// paint its last messages instantly while it refreshes in the background.
   static final ChatThreadCache _chatThreadCache = ChatThreadCache();
+
+  /// The newest message of [conversationId], for an inbox last-message preview.
+  /// Prefers the in-memory thread snapshot (instant, covers threads touched
+  /// this session — including the caller's own sends, which the socket never
+  /// echoes back); otherwise a one-item history fetch. Presentation-only
+  /// enrichment (the list endpoint carries no body); null on failure or an
+  /// empty thread. Reuses the existing [LoadChatHistory] use case — no new
+  /// contract.
+  static Future<ChatMessage?> latestChatMessage(String conversationId) async {
+    final cached = _chatThreadCache.get(conversationId);
+    if (cached != null && cached.messages.isNotEmpty) {
+      return cached.messages.last;
+    }
+    try {
+      final page =
+          await _loadChatHistory(conversationId: conversationId, limit: 1);
+      if (page.items.isEmpty) return null;
+      return page.items.reduce((a, b) => a.seq >= b.seq ? a : b);
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Attachment source for the chat composer (camera/gallery/documents).
   static final ChatAttachmentSource chatAttachmentSource =

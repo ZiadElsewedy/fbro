@@ -201,9 +201,13 @@ class _TeammateRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            UserAvatar.fromUser(teammate, size: 40),
+            // Real avatar when a photo exists, otherwise the initial(s) of the
+            // display name — never a generic grey glyph (UserAvatar's fallback).
+            UserAvatar.fromUser(teammate, size: 44),
             const SizedBox(width: AppSpacing.md),
             Expanded(
+              // Card content: display name + role only. The internal/Firebase
+              // user id is NEVER shown — it's an implementation detail.
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

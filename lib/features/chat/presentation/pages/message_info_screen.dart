@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
@@ -85,19 +83,6 @@ class MessageInfoScreen extends StatelessWidget {
             title: 'Message',
             children: [
               _InfoRow(label: 'Type', value: _typeLabel(message.type.name)),
-              _InfoRow(
-                label: 'Message ID',
-                value: message.id,
-                mono: true,
-                copyable: true,
-              ),
-              _InfoRow(
-                label: 'Conversation ID',
-                value: message.conversationId,
-                mono: true,
-                copyable: true,
-              ),
-              _InfoRow(label: 'Sequence', value: message.seq.toString()),
             ],
           ),
           if (attachment != null) ...[
@@ -126,7 +111,6 @@ class MessageInfoScreen extends StatelessWidget {
                     attachment: reply.attachment,
                   ),
                 ),
-                _InfoRow(label: 'Reference ID', value: reply.id, mono: true),
               ],
             ),
           ],
@@ -219,63 +203,38 @@ class _Section extends StatelessWidget {
 }
 
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.label,
-    required this.value,
-    this.mono = false,
-    this.copyable = false,
-  });
+  const _InfoRow({required this.label, required this.value});
 
   final String label;
   final String value;
-  final bool mono;
-  final bool copyable;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: copyable
-          ? () async {
-              await Clipboard.setData(ClipboardData(text: value));
-              if (context.mounted) context.showSuccess('Copied $label');
-            }
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.md,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 120,
-              child: Text(
-                label,
-                style: AppTypography.bodySmall
-                    .copyWith(color: AppColors.textTertiary),
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: AppTypography.bodySmall
+                  .copyWith(color: AppColors.textTertiary),
             ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Text(
-                value,
-                style: mono
-                    ? AppTypography.caption.copyWith(
-                        fontFamily: 'monospace',
-                        color: AppColors.textSecondary,
-                      )
-                    : AppTypography.bodySmall,
-                textAlign: TextAlign.right,
-              ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              value,
+              style: AppTypography.bodySmall,
+              textAlign: TextAlign.right,
             ),
-            if (copyable) ...[
-              const SizedBox(width: 6),
-              const Icon(Icons.copy_rounded,
-                  size: 14, color: AppColors.textTertiary),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -34,9 +34,11 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  /// Branch teammate directory keyed by Firebase uid — resolves each row's
-  /// `counterpartExternalId` to a real profile. Loaded once; branch membership
-  /// is stable within a session.
+  /// Company-wide user directory keyed by Firebase uid — resolves each row's
+  /// `counterpartExternalId` to a real profile (avatar · name · role). Loaded
+  /// once per session. Requires the flat `users` read rule to be deployed;
+  /// until then a non-admin's directory read is denied and rows fall back to a
+  /// neutral label (see `_loadDirectory`).
   Map<String, UserEntity> _directory = const {};
 
   @override
@@ -65,6 +67,90 @@ class _ChatScreenState extends State<ChatScreen> {
     return uid == null ? null : _directory[uid];
   }
 
+  /// Resolved last-message previews keyed by conversation id — fetched once per
+  /// row (thread cache → one-item history) so the inbox shows the real last
+  /// message instead of a placeholder. The live socket preview (counterpart
+  /// activity) always wins over this when present.
+  final Map<String, ChatPreview> _previews = {};
+  final Set<String> _previewFetching = {};
+
+  /// The conversations to actually show: WhatsApp/Telegram behavior — an
+  /// **empty** conversation (created but never messaged) stays hidden until it
+  /// has a real message. "Has a message" = the server set `lastMessageAt`, or a
+  /// live socket preview has arrived this session.
+  List<ChatConversationSummary> _visible(
+      List<ChatConversationSummary> conversations,
+      Map<String, String> socketPreviews) {
+    return conversations
+        .where((c) =>
+            c.lastMessageAt != null ||
+            (socketPreviews[c.id]?.isNotEmpty ?? false))
+        .toList(growable: false);
+  }
+
+  /// The preview line for a row: the live socket preview (counterpart's latest,
+  /// no "You:") wins; otherwise the resolved last message (which may be mine →
+  /// "You: …"). Null while still resolving.
+  String? _previewLine(
+      ChatConversationSummary c, Map<String, String> socketPreviews) {
+    final socket = socketPreviews[c.id];
+    if (socket != null && socket.isNotEmpty) return socket;
+    return _previews[c.id]?.line;
+  }
+
+  /// Fetches the real last message for any visible row that lacks a socket
+  /// preview and hasn't been resolved yet. One fetch per conversation; the
+  /// thread cache makes most instant (including my own sends, which the socket
+  /// never echoes back to me).
+  void _resolvePreviews(List<ChatConversationSummary> visible,
+      Map<String, String> socketPreviews) {
+    for (final c in visible) {
+      if (socketPreviews[c.id]?.isNotEmpty ?? false) continue;
+      if (_previews.containsKey(c.id) || _previewFetching.contains(c.id)) {
+        continue;
+      }
+      _previewFetching.add(c.id);
+      // Derive "mine" per conversation: my internal id is the participant that
+      // is not the counterpart. No global "me" needed.
+      final myId = c.participantIds
+          .firstWhere((p) => p != c.counterpartUserId, orElse: () => '');
+      AppDependencies.latestChatMessage(c.id).then((message) {
+        if (!mounted) return;
+        _previewFetching.remove(c.id);
+        if (message == null) return;
+        setState(() => _previews[c.id] = ChatPreview(
+              chatMessagePreviewText(message),
+              mine: myId.isNotEmpty && message.senderId == myId,
+            ));
+      });
+    }
+  }
+
+  /// Opens a conversation, then refreshes on return: my own first message is
+  /// never delivered to my inbox over the socket (the server excludes my sends),
+  /// so a re-pull is how a just-messaged conversation surfaces / updates its
+  /// preview. Dropping its cached preview forces a fresh resolve.
+  void _openConversation(ChatConversationSummary c, UserEntity? counterpart) {
+    final listCubit = context.read<ChatListCubit>();
+    listCubit.clearUnread(c.id);
+    context
+        .push(
+      RouteNames.chatConversation(c.id),
+      extra: ChatThreadArgs(
+        counterpartUserId: c.counterpartUserId,
+        counterpartName: counterpart == null
+            ? null
+            : chatDisplayName(counterpart, fallbackId: c.counterpartUserId),
+        counterpartPhotoUrl: counterpart?.photoUrl,
+      ),
+    )
+        .then((_) {
+      if (!mounted) return;
+      _previews.remove(c.id);
+      listCubit.refresh();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
@@ -73,7 +159,11 @@ class _ChatScreenState extends State<ChatScreen> {
       // Always-available entry to the teammate picker (even with conversations
       // present); the empty state also offers it as a primary CTA.
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(RouteNames.chatNew),
+        // A conversation messaged during the new-chat flow only surfaces on a
+        // re-pull (my own send isn't delivered to my inbox over the socket).
+        onPressed: () => context.push(RouteNames.chatNew).then((_) {
+          if (context.mounted) context.read<ChatListCubit>().refresh();
+        }),
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.onPrimary,
         icon: const Icon(Icons.chat_bubble_outline_rounded),
@@ -103,31 +193,44 @@ class _ChatScreenState extends State<ChatScreen> {
               onRetry: () => context.read<ChatListCubit>().refresh(),
             ),
             loaded: (conversations, refreshing, loadingMore, hasMore, _,
-                    previews, unreadCounts) =>
-                RefreshIndicator(
-              onRefresh: () => context.read<ChatListCubit>().refresh(),
-              color: AppColors.primary,
-              child: conversations.isEmpty
-                  ? DropEmptyState(
-                      title: 'No conversations yet',
-                      message:
-                          'Direct messages with your teammates will appear here.',
-                      action: PremiumButton(
-                        label: 'Start Chat',
-                        icon: Icons.chat_bubble_outline_rounded,
-                        style: PremiumButtonStyle.filled,
-                        onPressed: () => context.push(RouteNames.chatNew),
+                previews, unreadCounts) {
+              // Hide empty (never-messaged) conversations, then resolve real
+              // previews for what remains (post-frame — never setState in build).
+              final visible = _visible(conversations, previews);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _resolvePreviews(visible, previews);
+              });
+              return RefreshIndicator(
+                onRefresh: () => context.read<ChatListCubit>().refresh(),
+                color: AppColors.primary,
+                child: visible.isEmpty
+                    ? DropEmptyState(
+                        title: 'No conversations yet',
+                        message:
+                            'Direct messages with your teammates will appear here.',
+                        action: PremiumButton(
+                          label: 'Start Chat',
+                          icon: Icons.chat_bubble_outline_rounded,
+                          style: PremiumButtonStyle.filled,
+                          onPressed: () =>
+                              context.push(RouteNames.chatNew).then((_) {
+                            if (context.mounted) {
+                              context.read<ChatListCubit>().refresh();
+                            }
+                          }),
+                        ),
+                      )
+                    : _ConversationList(
+                        conversations: visible,
+                        loadingMore: loadingMore,
+                        hasMore: hasMore,
+                        unreadCounts: unreadCounts,
+                        counterpartOf: _counterpartFor,
+                        previewOf: (c) => _previewLine(c, previews),
+                        onOpen: _openConversation,
                       ),
-                    )
-                  : _ConversationList(
-                      conversations: conversations,
-                      loadingMore: loadingMore,
-                      hasMore: hasMore,
-                      previews: previews,
-                      unreadCounts: unreadCounts,
-                      counterpartOf: _counterpartFor,
-                    ),
-            ),
+              );
+            },
           );
         },
       ),
@@ -140,22 +243,25 @@ class _ConversationList extends StatelessWidget {
     required this.conversations,
     required this.loadingMore,
     required this.hasMore,
-    required this.previews,
     required this.unreadCounts,
     required this.counterpartOf,
+    required this.previewOf,
+    required this.onOpen,
   });
 
   final List<ChatConversationSummary> conversations;
   final bool loadingMore;
   final bool hasMore;
-
-  /// Live socket-derived enrichment (see [ChatListState.loaded]) — fills the
-  /// tile's override slots; absent key → the tile's honest fallback.
-  final Map<String, String> previews;
   final Map<String, int> unreadCounts;
 
-  /// Resolves a row's counterpart to a real teammate profile (Firebase dir).
+  /// Resolves a row's counterpart to a real teammate profile (company dir).
   final UserEntity? Function(ChatConversationSummary) counterpartOf;
+
+  /// The resolved last-message preview line for a row (socket → history).
+  final String? Function(ChatConversationSummary) previewOf;
+
+  /// Opens a conversation (handles unread-clear + refresh-on-return).
+  final void Function(ChatConversationSummary, UserEntity?) onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -170,38 +276,27 @@ class _ConversationList extends StatelessWidget {
       },
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(top: 4, bottom: AppSpacing.huge),
+        padding: const EdgeInsets.only(top: 6, bottom: AppSpacing.huge),
         itemCount: conversations.length + (loadingMore ? 1 : 0),
-        separatorBuilder: (context, index) => const Padding(
-          padding: EdgeInsets.only(left: 78),
-          child: Divider(height: 1, thickness: 0.5, color: AppColors.darkBorder),
+        // Hairline inset past the avatar (WhatsApp/iMessage rhythm) — subtle,
+        // never a heavy full-width rule.
+        separatorBuilder: (context, index) => Padding(
+          padding: const EdgeInsets.only(left: 90),
+          child: Divider(
+              height: 0.5,
+              thickness: 0.5,
+              color: AppColors.darkBorder.withValues(alpha: 0.6)),
         ),
         itemBuilder: (context, index) {
           if (index == conversations.length) return const _PageSpinnerRow();
           final conversation = conversations[index];
-          final preview = previews[conversation.id];
           final counterpart = counterpartOf(conversation);
           return ChatConversationTile(
             conversation: conversation,
             counterpart: counterpart,
-            preview: preview == null || preview.isEmpty ? null : preview,
+            preview: previewOf(conversation),
             unreadCount: unreadCounts[conversation.id],
-            onTap: () {
-              // Opening the conversation clears its unread badge (Cases'
-              // markSeen convention).
-              context.read<ChatListCubit>().clearUnread(conversation.id);
-              context.push(
-                RouteNames.chatConversation(conversation.id),
-                extra: ChatThreadArgs(
-                  counterpartUserId: conversation.counterpartUserId,
-                  counterpartName: counterpart == null
-                      ? null
-                      : chatDisplayName(counterpart,
-                          fallbackId: conversation.counterpartUserId),
-                  counterpartPhotoUrl: counterpart?.photoUrl,
-                ),
-              );
-            },
+            onTap: () => onOpen(conversation, counterpart),
           );
         },
       ),

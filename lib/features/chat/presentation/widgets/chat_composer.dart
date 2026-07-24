@@ -141,24 +141,22 @@ class _ChatComposerState extends State<ChatComposer> {
       });
     }
     final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
+    final showAttach = widget.attachmentSource != null;
     return Container(
-      padding: EdgeInsets.fromLTRB(10, 8, 10, 8 + safeBottom),
-      decoration: const BoxDecoration(
+      padding: EdgeInsets.fromLTRB(10, 6, 10, 6 + safeBottom),
+      decoration: BoxDecoration(
         color: AppColors.darkBg,
-        border: Border(top: BorderSide(color: AppColors.darkBorder, width: 0.5)),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x40000000),
-            blurRadius: 12,
-            offset: Offset(0, -2),
+        border: Border(
+          top: BorderSide(
+            color: AppColors.darkBorder.withValues(alpha: 0.7),
+            width: 0.5,
           ),
-        ],
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Reply banner + staged-attachment preview animate in above the row
-          // and share the composer surface so they read as one control.
+          // Reply banner + staged-attachment preview animate in above the pill.
           AnimatedSize(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
@@ -175,83 +173,101 @@ class _ChatComposerState extends State<ChatComposer> {
               ],
             ),
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (widget.attachmentSource != null) ...[
-                _RoundIconButton(
-                  icon: Icons.add_rounded,
-                  onTap: _picking ? null : _pickAttachment,
+          // ONE cohesive pill — the attachment (+) and send controls live
+          // INSIDE the field, not as detached satellites. The whole surface
+          // lifts on focus (brighter, heavier border). This is the composer
+          // redesign: a single iMessage/Telegram-grade input, not a TextField
+          // flanked by loose buttons.
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            constraints: const BoxConstraints(minHeight: 50),
+            decoration: BoxDecoration(
+              color: AppColors.darkSurfaceElevated,
+              borderRadius: BorderRadius.circular(25),
+              border: Border.all(
+                color:
+                    _focused ? AppColors.textSecondary : AppColors.darkBorder,
+                width: _focused ? 1.5 : 1,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (showAttach)
+                  _InlineIconButton(
+                    icon: Icons.add_rounded,
+                    onTap: _picking ? null : _pickAttachment,
+                  ),
+                Expanded(
+                  child: Padding(
+                    padding:
+                        EdgeInsets.only(left: showAttach ? 0 : 18, right: 4),
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _node,
+                      minLines: 1,
+                      maxLines: 6,
+                      style: AppTypography.body.copyWith(height: 1.35),
+                      cursorColor: AppColors.primary,
+                      keyboardType: TextInputType.multiline,
+                      textCapitalization: TextCapitalization.sentences,
+                      textInputAction: _enterToSend
+                          ? TextInputAction.newline
+                          : TextInputAction.send,
+                      decoration: InputDecoration(
+                        hintText: 'Message',
+                        hintStyle: AppTypography.body.copyWith(
+                          color: AppColors.textTertiary,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        // The pill IS the AnimatedContainer above; the field
+                        // must draw no border of its own. Null out EVERY state
+                        // explicitly — setting only `border` still lets the
+                        // global inputDecorationTheme's focusedBorder leak
+                        // through on focus (a second bright outline around the
+                        // text, breaking the single-pill look).
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        errorBorder: InputBorder.none,
+                        focusedErrorBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        filled: false,
+                        isCollapsed: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      onSubmitted: _enterToSend ? null : (_) => _send(),
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 6),
+                // Send appears only with something to send, scaling in from the
+                // trailing edge inside the pill.
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _controller,
+                  builder: (context, value, _) {
+                    final canSend = _canSend;
+                    final show = canSend || widget.sending;
+                    return AnimatedSize(
+                      duration: const Duration(milliseconds: 170),
+                      curve: Curves.easeOut,
+                      alignment: Alignment.centerRight,
+                      child: show
+                          ? Padding(
+                              padding: const EdgeInsets.fromLTRB(2, 6, 6, 6),
+                              child: _SendButton(
+                                active: canSend,
+                                sending: widget.sending,
+                                onTap: widget.sending ? null : _send,
+                              ),
+                            )
+                          : const SizedBox(width: 8, height: 50),
+                    );
+                  },
+                ),
               ],
-              Expanded(
-                // The pill lifts subtly on focus: a brighter, slightly heavier
-                // border animates in — a premium touch cue without a loud glow.
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
-                  constraints: const BoxConstraints(minHeight: 46),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppColors.darkSurfaceElevated,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: _focused
-                          ? AppColors.textTertiary
-                          : AppColors.darkBorder,
-                      width: _focused ? 1.5 : 1,
-                    ),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _node,
-                    minLines: 1,
-                    maxLines: 6,
-                    style: AppTypography.body.copyWith(height: 1.35),
-                    cursorColor: AppColors.primary,
-                    keyboardType: TextInputType.multiline,
-                    textCapitalization: TextCapitalization.sentences,
-                    textInputAction: _enterToSend
-                        ? TextInputAction.newline
-                        : TextInputAction.send,
-                    decoration: InputDecoration(
-                      hintText: 'Message',
-                      hintStyle: AppTypography.body
-                          .copyWith(color: AppColors.textTertiary),
-                      border: InputBorder.none,
-                      isCollapsed: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onSubmitted: _enterToSend ? null : (_) => _send(),
-                  ),
-                ),
-              ),
-              // The send button appears only when there is something to send,
-              // animating its width in/out for a smooth idle↔typing transition.
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _controller,
-                builder: (context, value, _) {
-                  final canSend = _canSend;
-                  return AnimatedSize(
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOut,
-                    alignment: Alignment.centerRight,
-                    child: canSend || widget.sending
-                        ? Padding(
-                            padding: const EdgeInsets.only(left: 6),
-                            child: _SendButton(
-                              active: canSend,
-                              sending: widget.sending,
-                              onTap: widget.sending ? null : _send,
-                            ),
-                          )
-                        : const SizedBox(height: 46),
-                  );
-                },
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -343,26 +359,58 @@ class _PendingAttachmentPreview extends StatelessWidget {
   }
 }
 
-/// A 46pt circular outline icon button (the paperclip / add-attachment control).
-class _RoundIconButton extends StatelessWidget {
-  const _RoundIconButton({required this.icon, required this.onTap});
+/// Wraps a tappable control with a quick press-scale — the tactile "give" that
+/// makes iMessage/Telegram controls feel physical. No-op when [onTap] is null.
+class _TapScale extends StatefulWidget {
+  const _TapScale({required this.onTap, required this.child});
+  final VoidCallback? onTap;
+  final Widget child;
+  @override
+  State<_TapScale> createState() => _TapScaleState();
+}
+
+class _TapScaleState extends State<_TapScale> {
+  bool _down = false;
+  void _set(bool v) {
+    if (mounted && _down != v) setState(() => _down = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: widget.onTap == null ? null : (_) => _set(true),
+      onTapUp: (_) => _set(false),
+      onTapCancel: () => _set(false),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        scale: _down ? 0.88 : 1,
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// The attachment control that lives INSIDE the pill's leading edge — a
+/// borderless, bottom-aligned icon (no floating satellite disc), so the pill
+/// reads as one unit. Bottom-aligned via the row so it tracks the last text
+/// line as the field grows.
+class _InlineIconButton extends StatelessWidget {
+  const _InlineIconButton({required this.icon, required this.onTap});
   final IconData icon;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _TapScale(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
       child: Container(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: AppColors.darkSurfaceElevated,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.darkBorder),
-        ),
-        child: Icon(icon, size: 24, color: AppColors.textSecondary),
+        width: 48,
+        height: 50,
+        alignment: Alignment.center,
+        child: Icon(icon, size: 25, color: AppColors.textSecondary),
       ),
     );
   }
@@ -381,14 +429,13 @@ class _SendButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _TapScale(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOutBack,
-        width: 46,
-        height: 46,
+        width: 38,
+        height: 38,
         decoration: BoxDecoration(
           color: active ? AppColors.primary : AppColors.darkSurface,
           shape: BoxShape.circle,
@@ -396,13 +443,13 @@ class _SendButton extends StatelessWidget {
         ),
         child: sending
             ? const Padding(
-                padding: EdgeInsets.all(14),
+                padding: EdgeInsets.all(11),
                 child: CircularProgressIndicator(
                     strokeWidth: 2, color: AppColors.onPrimary),
               )
             : Icon(
                 Icons.arrow_upward_rounded,
-                size: 22,
+                size: 19,
                 color: active ? AppColors.onPrimary : AppColors.textTertiary,
               ),
       ),

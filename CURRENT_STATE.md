@@ -190,13 +190,15 @@ and the schedule write is never reached. The correct local rule exists in
 `firestore.rules`; deployment is still pending. This is deployment drift, not an
 admin-role or schedule-payload defect.
 
-The pending deploy now also carries the **flat `users` read** (2026-07-24,
-[ADR-012](docs/decisions/ADR-012-chat-directory-is-flat.md)): `allow read: if
-isSignedIn()`, replacing the owner/admin/same-branch disjunction. Until it ships the
-chat directory is **broken for every non-admin** — the client now issues one
-unfiltered `users` query, which the live ruleset denies outright (previously a
-non-admin at least got their own branch). An admin's picker works undeployed, since
-admins already read every user. **This deploy is no longer optional for chat.**
+The **flat `users` read** was **deployed 2026-07-24**
+([ADR-012](docs/decisions/ADR-012-chat-directory-is-flat.md)): `allow read: if
+isSignedIn()`, replacing the owner/admin/same-branch disjunction. This unblocked the
+chat directory for non-admins — the client issues one unfiltered `users` query, now
+permitted, so counterpart names/avatars resolve for every role (previously the
+directory was denied for non-admins, which is what surfaced the "Teammate XXXXXX"
+placeholder). Note the `firestore.rules` file also carries other uncommitted rule
+changes from this branch (task-hardening field freezes, etc.) that went live with this
+`--only firestore:rules` deploy, since a rules deploy publishes the whole file.
 
 ### Access-control gap
 
