@@ -108,9 +108,81 @@ Future<ChatMessageAction?> showChatMessageActions(
 enum ChatMessageAction {
   reply,
   copy,
+  forward,
   messageInfo,
   deleteForMe,
   deleteForEveryone,
+}
+
+/// The desktop **right-click** context menu for a message — a native-feeling
+/// popup at the cursor, the counterpart to [showChatMessageActions] (the mobile
+/// long-press sheet). Same action vocabulary; destructive actions still route
+/// through the shared confirmation. [Forward] is a UI placeholder (no backend
+/// fan-out yet). Returns the confirmed action, or null if dismissed/declined.
+Future<ChatMessageAction?> showChatMessageContextMenu(
+  BuildContext context, {
+  required Offset position,
+  required ChatMessage message,
+  required bool mine,
+}) async {
+  final tombstone = message.deletedForEveryone;
+  final hasText = (message.body ?? '').trim().isNotEmpty && !tombstone;
+  final canDeleteForEveryone = mine && !tombstone;
+  final overlay =
+      Overlay.of(context).context.findRenderObject() as RenderBox?;
+  if (overlay == null) return null;
+
+  PopupMenuItem<ChatMessageAction> item(
+          ChatMessageAction value, IconData icon, String label,
+          {bool destructive = false}) =>
+      PopupMenuItem<ChatMessageAction>(
+        value: value,
+        height: 40,
+        child: Row(
+          children: [
+            Icon(icon,
+                size: 18,
+                color: destructive ? AppColors.error : AppColors.textSecondary),
+            const SizedBox(width: AppSpacing.md),
+            Text(label,
+                style: AppTypography.body.copyWith(
+                    color:
+                        destructive ? AppColors.error : AppColors.textPrimary)),
+          ],
+        ),
+      );
+
+  final action = await showMenu<ChatMessageAction>(
+    context: context,
+    color: AppColors.darkSurfaceElevated,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+      side: const BorderSide(color: AppColors.darkBorder),
+    ),
+    position: RelativeRect.fromRect(
+      position & const Size(40, 40),
+      Offset.zero & overlay.size,
+    ),
+    items: [
+      if (!tombstone) item(ChatMessageAction.reply, Icons.reply_rounded, 'Reply'),
+      if (hasText) item(ChatMessageAction.copy, Icons.copy_rounded, 'Copy'),
+      item(ChatMessageAction.forward, Icons.forward_rounded, 'Forward'),
+      item(ChatMessageAction.deleteForMe, Icons.visibility_off_outlined,
+          'Delete for me'),
+      if (canDeleteForEveryone)
+        item(ChatMessageAction.deleteForEveryone,
+            Icons.delete_forever_outlined, 'Delete for everyone',
+            destructive: true),
+    ],
+  );
+  if (action == null || !context.mounted) return null;
+  // Destructive actions get the same confirmation as the mobile sheet.
+  if (action == ChatMessageAction.deleteForMe ||
+      action == ChatMessageAction.deleteForEveryone) {
+    final confirmed = await _confirm(context, action);
+    return confirmed ? action : null;
+  }
+  return action;
 }
 
 Future<bool> _confirm(BuildContext context, ChatMessageAction action) async {

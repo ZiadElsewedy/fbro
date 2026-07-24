@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -160,6 +161,12 @@ class AppDependencies {
   /// Direct chat — the inbox list cubit (singleton, app-wide), mirroring
   /// [caseListCubit]'s role for Cases.
   static late final ChatListCubit chatListCubit;
+
+  /// The conversation the user is currently viewing (its id), or null. Set by
+  /// the open thread screen and read by the in-app notification listener so a
+  /// message for the on-screen conversation never raises a redundant banner.
+  static final ValueNotifier<String?> activeChatConversation =
+      ValueNotifier<String?>(null);
 
   // Direct chat — read/write use cases, kept so a fresh per-thread
   // [ChatConversationCubit] can be built on demand (one per opened thread).

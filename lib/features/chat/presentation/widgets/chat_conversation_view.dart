@@ -6,10 +6,12 @@ import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_radius.dart';
 import 'package:drop/core/theme/app_spacing.dart';
 import 'package:drop/core/theme/app_typography.dart';
+import 'package:drop/core/widgets/app_snackbar.dart';
 import 'package:drop/core/widgets/skeleton.dart';
 import 'package:drop/features/chat/domain/entities/chat_message.dart';
 import 'package:drop/features/chat/domain/entities/chat_outgoing_attachment.dart';
 import 'package:drop/features/chat/presentation/chat_attachment_picker.dart';
+import 'package:drop/features/chat/presentation/chat_document_service.dart';
 import 'package:drop/features/chat/presentation/chat_message_preview.dart';
 import 'package:drop/features/chat/presentation/pages/image_viewer_screen.dart';
 import 'package:drop/features/chat/presentation/pages/message_info_screen.dart';
@@ -32,6 +34,8 @@ class ChatConversationView extends StatefulWidget {
     super.key,
     this.counterpartName,
     this.attachmentSource,
+    this.searchQuery,
+    this.activeMatchId,
   });
 
   /// Counterpart display name — personalizes the empty state and reply banner.
@@ -39,6 +43,13 @@ class ChatConversationView extends StatefulWidget {
 
   /// Source for the composer's attachment button. Null → no attachments.
   final ChatAttachmentSource? attachmentSource;
+
+  /// Active in-conversation search needle (highlights matches) — null when the
+  /// search bar is closed.
+  final String? searchQuery;
+
+  /// The id of the current search match to keep in view + emphasize.
+  final String? activeMatchId;
 
   @override
   State<ChatConversationView> createState() => _ChatConversationViewState();
@@ -54,6 +65,9 @@ class _ChatConversationViewState extends State<ChatConversationView> {
   /// The id of the message my own participant sent, when known — resolves the
   /// reply author label ("You" vs the counterpart).
   String? _myUserId;
+
+  /// Downloads + opens document attachments (cached; no duplicate downloads).
+  final ChatDocumentService _documents = ChatDocumentService();
 
   void _startReply(ChatMessage message) =>
       setState(() => _replyTarget = message);
@@ -93,11 +107,18 @@ class _ChatConversationViewState extends State<ChatConversationView> {
                     onVisible: cubit.markVisibleRead,
                     deletingMessageId: deletingMessageId,
                     counterpartName: widget.counterpartName,
+                    highlightQuery: widget.searchQuery,
+                    activeMatchId: widget.activeMatchId,
                     onMessageLongPress: (message, mine) =>
                         _onMessageLongPress(context, message, mine),
+                    onMessageSecondaryTap: (message, mine, position) =>
+                        _onMessageSecondaryTap(context, message, mine, position),
                     onReply: _startReply,
                     onRetry: (message) => cubit.retrySend(message.id),
                     onImageTap: (message) => _openImage(context, cubit, message),
+                    onDocumentTap: (message) => _openDocument(cubit, message),
+                    onDocumentDownload: (message) =>
+                        _downloadDocument(cubit, message),
                     imageUrlLoader: (message) =>
                         cubit.attachmentDownloadUrl(message.id),
                   ),
@@ -163,22 +184,121 @@ class _ChatConversationViewState extends State<ChatConversationView> {
     );
   }
 
+  /// Opens a document attachment: a blocking "Opening…" indicator while it
+  /// downloads (cached — no duplicate downloads) and hands off to the platform
+  /// default app; a friendly snackbar with **Retry** on any failure.
+  Future<void> _openDocument(
+    ChatConversationCubit cubit,
+    ChatMessage message,
+  ) async {
+    final attachment = message.attachment;
+    if (attachment == null) return;
+    final result = await _withOpeningIndicator(
+      () => _documents.open(
+        attachmentId: attachment.id,
+        filename: attachment.originalFilename,
+        urlLoader: () => cubit.attachmentDownloadUrl(message.id),
+      ),
+    );
+    if (!mounted || result == null || result.ok) return;
+    AppSnackbar.error(
+      context,
+      result.message ?? 'Could not open the file.',
+      action: SnackBarAction(
+        label: 'Retry',
+        textColor: AppColors.onPrimary,
+        onPressed: () => _openDocument(cubit, message),
+      ),
+    );
+  }
+
+  /// Saves a document to the device's Downloads (desktop) / documents (mobile).
+  Future<void> _downloadDocument(
+    ChatConversationCubit cubit,
+    ChatMessage message,
+  ) async {
+    final attachment = message.attachment;
+    if (attachment == null) return;
+    final outcome = await _withOpeningIndicator(
+      () => _documents.saveToDownloads(
+        attachmentId: attachment.id,
+        filename: attachment.originalFilename,
+        urlLoader: () => cubit.attachmentDownloadUrl(message.id),
+      ),
+    );
+    if (!mounted || outcome == null) return;
+    if (outcome.result.ok) {
+      context.showSuccess('Saved ${attachment.originalFilename}');
+    } else {
+      AppSnackbar.error(
+        context,
+        outcome.result.message ?? 'Could not save the file.',
+        action: SnackBarAction(
+          label: 'Retry',
+          textColor: AppColors.onPrimary,
+          onPressed: () => _downloadDocument(cubit, message),
+        ),
+      );
+    }
+  }
+
+  /// Runs [action] under a non-dismissible "Opening…" dialog, dismissing it
+  /// whatever the outcome. Returns null if the widget was disposed meanwhile.
+  Future<T?> _withOpeningIndicator<T>(Future<T> Function() action) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (_) => const _OpeningDialog(),
+    );
+    try {
+      return await action();
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
   /// Long-press → context menu → the chosen action. Reply/Copy are handled
   /// here in the presentation layer; deletes go to the cubit, where the backend
   /// enforces the actual rules (sender-only, time window) and a refusal surfaces
   /// through the transient-error snackbar.
   Future<void> _onMessageLongPress(
       BuildContext context, ChatMessage message, bool mine) async {
-    final cubit = context.read<ChatConversationCubit>();
     final action =
         await showChatMessageActions(context, message: message, mine: mine);
     if (action == null || !context.mounted) return;
+    await _runMessageAction(context, action, message, mine);
+  }
+
+  /// Desktop right-click → the popup context menu at the cursor, then the same
+  /// action handling as the long-press sheet.
+  Future<void> _onMessageSecondaryTap(BuildContext context, ChatMessage message,
+      bool mine, Offset position) async {
+    final action = await showChatMessageContextMenu(
+      context,
+      position: position,
+      message: message,
+      mine: mine,
+    );
+    if (action == null || !context.mounted) return;
+    await _runMessageAction(context, action, message, mine);
+  }
+
+  /// Shared handling for a chosen message action (from the sheet or the
+  /// right-click menu). Reply/Copy/Info are presentation; deletes go to the
+  /// cubit (backend enforces the real rules); Forward is a UI placeholder.
+  Future<void> _runMessageAction(BuildContext context, ChatMessageAction action,
+      ChatMessage message, bool mine) async {
+    final cubit = context.read<ChatConversationCubit>();
     switch (action) {
       case ChatMessageAction.reply:
         _startReply(message);
       case ChatMessageAction.copy:
         await Clipboard.setData(ClipboardData(text: message.body ?? ''));
         if (context.mounted) context.showSuccess('Copied to clipboard');
+      case ChatMessageAction.forward:
+        // UI placeholder — no backend fan-out endpoint yet.
+        context.showInfo('Forwarding is coming soon');
       case ChatMessageAction.messageInfo:
         await MessageInfoScreen.push(
           context,
@@ -309,6 +429,39 @@ class ReplyComposerBanner extends StatelessWidget {
               visualDensity: VisualDensity.compact,
               tooltip: 'Cancel reply',
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The quiet blocking indicator shown while a document downloads/opens.
+class _OpeningDialog extends StatelessWidget {
+  const _OpeningDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: AppColors.darkSurfaceElevated,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: AppColors.darkBorder),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppColors.primary),
+            ),
+            SizedBox(width: AppSpacing.md),
+            Text('Opening…', style: AppTypography.body),
           ],
         ),
       ),

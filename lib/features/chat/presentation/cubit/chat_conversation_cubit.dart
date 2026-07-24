@@ -5,6 +5,7 @@ import 'package:drop/core/enums/chat_attachment_kind.dart';
 import 'package:drop/core/enums/chat_message_type.dart';
 import 'package:drop/core/errors/failures.dart';
 import 'package:drop/core/utils/app_logger.dart';
+import 'package:drop/core/utils/concurrent.dart';
 import 'package:drop/core/utils/uuid.dart';
 import 'package:drop/features/chat/domain/chat_realtime.dart';
 import 'package:drop/features/chat/domain/entities/chat_conversation.dart';
@@ -73,6 +74,7 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
   // Optimistic sends never block the composer, so the loaded state's `sending`
   // flag stays false — the in-flight state now lives on the message bubble.
   bool _loadingOlder = false;
+  bool _clearing = false;
   String? _deletingMessageId;
   BigInt? _lastMarkedSeq;
   final ChatThreadCache? _cache;
@@ -572,6 +574,60 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
       _deletingMessageId = null;
       _emit();
     }
+  }
+
+  /// Clears the conversation **for me only** — a bulk delete-for-me over every
+  /// loaded, server-confirmed message (the counterpart keeps their copy). Uses
+  /// the existing per-message delete API (no new backend), pooled so a long
+  /// thread doesn't fan out a request per message at once. Optimistic local
+  /// bubbles (unsent) are left in place. Returns whether it succeeded.
+  Future<bool> clearChatForMe() async {
+    if (_conversation == null || _clearing) return false;
+    final ids = _messages
+        .where((m) => !_isLocal(m))
+        .map((m) => m.id)
+        .toList(growable: false);
+    if (ids.isEmpty) return true;
+    _clearing = true;
+    _deletingMessageId = null;
+    _emit();
+    try {
+      await mapPooled(3, [
+        for (final id in ids)
+          () => _deleteForMe(conversationId: conversationId, messageId: id),
+      ]);
+      _messages = _messages.where(_isLocal).toList();
+      return true;
+    } on Failure catch (e) {
+      emit(ChatConversationState.error(e.message));
+      return false;
+    } catch (e) {
+      AppLog.warning('chat', 'clear chat failed: $e');
+      emit(const ChatConversationState.error(
+          'Failed to clear the conversation.'));
+      return false;
+    } finally {
+      _clearing = false;
+      _emit();
+    }
+  }
+
+  /// Shared-media / document counts over the loaded window — for the
+  /// Conversation Info screen. Derived, presentation-only (no backend count
+  /// endpoint); reflects what's currently loaded, which is the visible history.
+  ({int media, int documents}) get sharedAttachmentCounts {
+    var media = 0;
+    var documents = 0;
+    for (final m in _messages) {
+      final a = m.attachment;
+      if (a == null || m.deletedForEveryone) continue;
+      if (a.kind.isImage) {
+        media++;
+      } else {
+        documents++;
+      }
+    }
+    return (media: media, documents: documents);
   }
 
   // ─── Realtime (socket) ────────────────────────────────────────────────

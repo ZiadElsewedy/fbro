@@ -38,9 +38,14 @@ class ChatMessageList extends StatefulWidget {
     this.onReply,
     this.onRetry,
     this.onImageTap,
+    this.onDocumentTap,
+    this.onDocumentDownload,
+    this.onMessageSecondaryTap,
     this.imageUrlLoader,
     this.deletingMessageId,
     this.counterpartName,
+    this.highlightQuery,
+    this.activeMatchId,
   });
 
   /// Ascending by `seq` — oldest first.
@@ -77,14 +82,32 @@ class ChatMessageList extends StatefulWidget {
   /// Tap on an image attachment — opens the full-screen viewer.
   final void Function(ChatMessage message)? onImageTap;
 
+  /// Tap on a document attachment (or its hover "Open") — opens it.
+  final void Function(ChatMessage message)? onDocumentTap;
+
+  /// Hover "Download" on a document (desktop) — saves it to Downloads.
+  final void Function(ChatMessage message)? onDocumentDownload;
+
   /// Resolves a received image's brokered URL for its inline thumbnail.
   final Future<String?> Function(ChatMessage message)? imageUrlLoader;
+
+  /// Right-click (secondary tap) on a bubble — opens the desktop context menu
+  /// at the given global position.
+  final void Function(ChatMessage message, bool mine, Offset globalPosition)?
+      onMessageSecondaryTap;
 
   /// The message with a delete in flight — its bubble dims until it resolves.
   final String? deletingMessageId;
 
   /// Counterpart's display name — personalizes the empty state.
   final String? counterpartName;
+
+  /// Active in-conversation search needle — matches are highlighted in text.
+  /// Null / empty → no highlighting.
+  final String? highlightQuery;
+
+  /// The id of the current search match to keep in view + emphasize.
+  final String? activeMatchId;
 
   @override
   State<ChatMessageList> createState() => _ChatMessageListState();
@@ -102,6 +125,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
   bool _atBottom = true;
   bool _showJump = false;
+
+  /// Attached to the active search-match bubble so it can be scrolled into view.
+  final GlobalKey _activeMatchKey = GlobalKey();
 
   @override
   void initState() {
@@ -141,6 +167,22 @@ class _ChatMessageListState extends State<ChatMessageList> {
       }
     }
     if (grew || oldWidget.messages.isEmpty) _notifyVisible();
+
+    // Jump to the current search match when it changes.
+    if (widget.activeMatchId != null &&
+        widget.activeMatchId != oldWidget.activeMatchId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _activeMatchKey.currentContext;
+        if (mounted && ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOut,
+            alignment: 0.4,
+          );
+        }
+      });
+    }
   }
 
   /// An older page was prepended above the viewport — the list grew upward, so
@@ -262,12 +304,20 @@ class _ChatMessageListState extends State<ChatMessageList> {
           isTail: isTail,
           replyAuthorLabel: replyAuthorLabel,
           deleting: m.id == widget.deletingMessageId,
+          highlightQuery: widget.highlightQuery,
+          isActiveMatch: widget.activeMatchId != null && m.id == widget.activeMatchId,
           onLongPress: widget.onMessageLongPress == null
               ? null
               : () => widget.onMessageLongPress!(m, mine),
           onRetry: widget.onRetry == null ? null : () => widget.onRetry!(m),
           onImageTap:
               widget.onImageTap == null ? null : () => widget.onImageTap!(m),
+          onDocumentTap: widget.onDocumentTap == null
+              ? null
+              : () => widget.onDocumentTap!(m),
+          onDocumentDownload: widget.onDocumentDownload == null
+              ? null
+              : () => widget.onDocumentDownload!(m),
           imageUrlLoader: widget.imageUrlLoader == null
               ? null
               : () => widget.imageUrlLoader!(m),
@@ -291,10 +341,23 @@ class _ChatMessageListState extends State<ChatMessageList> {
           key: ValueKey(m.id),
           child: Align(
             alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-            child: canSwipeReply
-                ? _SwipeToReply(
-                    onReply: () => widget.onReply!(m), child: bubble)
-                : bubble,
+            child: KeyedSubtree(
+              // The active search match carries the scroll-target key.
+              key: (widget.activeMatchId != null && m.id == widget.activeMatchId)
+                  ? _activeMatchKey
+                  : null,
+              child: GestureDetector(
+                behavior: HitTestBehavior.deferToChild,
+                onSecondaryTapDown: widget.onMessageSecondaryTap == null
+                    ? null
+                    : (d) => widget.onMessageSecondaryTap!(
+                        m, mine, d.globalPosition),
+                child: canSwipeReply
+                    ? _SwipeToReply(
+                        onReply: () => widget.onReply!(m), child: bubble)
+                    : bubble,
+              ),
+            ),
           ),
         ),
       );
@@ -348,18 +411,32 @@ class _Bubble extends StatelessWidget {
     this.isTail = true,
     this.replyAuthorLabel,
     this.deleting = false,
+    this.highlightQuery,
+    this.isActiveMatch = false,
     this.onLongPress,
     this.onRetry,
     this.onImageTap,
+    this.onDocumentTap,
+    this.onDocumentDownload,
     this.imageUrlLoader,
   });
   final ChatMessage message;
   final bool mine;
 
+  /// In-conversation search needle to highlight in the body; null → none.
+  final String? highlightQuery;
+
+  /// This bubble is the current search match (emphasized outline).
+  final bool isActiveMatch;
+
   /// Tap handler for a failed optimistic bubble (re-send) and for an image
   /// attachment (open full-screen). Null → the respective tap is inert.
   final VoidCallback? onRetry;
   final VoidCallback? onImageTap;
+
+  /// Open / download handlers for a document attachment.
+  final VoidCallback? onDocumentTap;
+  final VoidCallback? onDocumentDownload;
 
   /// Resolves this message's received-image URL for the inline thumbnail.
   final Future<String?> Function()? imageUrlLoader;
@@ -405,10 +482,13 @@ class _Bubble extends StatelessWidget {
     final maxBubbleWidth =
         math.min(MediaQuery.sizeOf(context).width * 0.76, 560.0);
 
-    // A failed bubble re-sends on tap; an image opens the full-screen viewer.
+    // A failed bubble re-sends on tap; an image opens the full-screen viewer;
+    // a document opens with the platform default app.
     final VoidCallback? onTap = failed
         ? onRetry
-        : (isImage && !sending ? onImageTap : null);
+        : (sending
+            ? null
+            : (isImage ? onImageTap : (isDoc ? onDocumentTap : null)));
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
@@ -430,22 +510,34 @@ class _Bubble extends StatelessWidget {
               // flight, so "sending" reads as provisional.
               opacity: deleting ? 0.4 : (sending ? 0.7 : 1),
               duration: const Duration(milliseconds: 160),
-              child: GestureDetector(
+              child: MouseRegion(
+                // A pointer cursor on anything tappable (image, document, a
+                // failed bubble) — the desktop affordance.
+                cursor: onTap != null
+                    ? SystemMouseCursors.click
+                    : MouseCursor.defer,
+                child: GestureDetector(
                 onLongPress: (deleting || sending) ? null : onLongPress,
                 onTap: onTap,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                   child: Container(
+                    // Docs sit directly on the bubble (no inner card), so the
+                    // bubble itself is tighter — the compact Slack/WhatsApp-
+                    // desktop row rather than a card-in-a-card.
                     padding: EdgeInsets.symmetric(
-                      horizontal: isImage ? 4 : 14,
-                      vertical: isImage ? 4 : 9,
+                      horizontal: isImage ? 4 : (isDoc ? 8 : 14),
+                      vertical: isImage ? 4 : (isDoc ? 7 : 9),
                     ),
                     decoration: BoxDecoration(
                       color:
                           mine ? AppColors.primary : AppColors.darkSurfaceElevated,
                       borderRadius: radius,
-                      border:
-                          mine ? null : Border.all(color: AppColors.darkBorder),
+                      border: isActiveMatch
+                          ? Border.all(color: AppColors.primary, width: 2)
+                          : (mine
+                              ? null
+                              : Border.all(color: AppColors.darkBorder)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -476,7 +568,12 @@ class _Bubble extends StatelessWidget {
                                     urlLoader: imageUrlLoader,
                                   )
                                 : _FileCard(
-                                    attachment: attachment, mine: mine),
+                                    attachment: attachment,
+                                    mine: mine,
+                                    onOpen: sending ? null : onDocumentTap,
+                                    onDownload:
+                                        sending ? null : onDocumentDownload,
+                                  ),
                           ),
                         if (body.isNotEmpty) ...[
                           if (attachment != null) const SizedBox(height: 6),
@@ -485,9 +582,10 @@ class _Bubble extends StatelessWidget {
                               horizontal: isImage ? 6 : 0,
                               vertical: isImage ? 2 : 0,
                             ),
-                            child: Text(
-                              body,
-                              style: AppTypography.body.copyWith(
+                            child: _HighlightedText(
+                              text: body,
+                              query: tombstone ? null : highlightQuery,
+                              baseStyle: AppTypography.body.copyWith(
                                 color: tombstone
                                     ? (mine
                                         ? AppColors.onPrimary
@@ -497,6 +595,7 @@ class _Bubble extends StatelessWidget {
                                 fontStyle:
                                     tombstone ? FontStyle.italic : null,
                               ),
+                              mine: mine,
                             ),
                           ),
                         ],
@@ -504,6 +603,7 @@ class _Bubble extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
               ),
             ),
             if (failed)
@@ -814,66 +914,216 @@ class _SendableAttachment extends StatelessWidget {
   }
 }
 
-/// A premium document card — a format badge, the filename, and its size.
-class _FileCard extends StatelessWidget {
-  const _FileCard({required this.attachment, required this.mine});
+/// The Material icon that best represents a document format.
+IconData chatDocumentIcon(String format) {
+  switch (format.toUpperCase()) {
+    case 'PDF':
+      return Icons.picture_as_pdf_rounded;
+    case 'DOC':
+    case 'DOCX':
+    case 'TXT':
+      return Icons.description_rounded;
+    case 'XLS':
+    case 'XLSX':
+      return Icons.table_chart_rounded;
+    case 'PPT':
+    case 'PPTX':
+      return Icons.slideshow_rounded;
+    default:
+      return Icons.insert_drive_file_rounded;
+  }
+}
+
+/// A compact document row — a format-icon tile, the filename, and a
+/// `PDF • 577 KB` meta line — sitting **directly** on the bubble (no secondary
+/// card surface), the Slack / WhatsApp-desktop silhouette. On a pointer device
+/// (desktop), hovering reveals quiet **Open** / **Download** affordances; on
+/// touch the whole bubble opens the file.
+class _FileCard extends StatefulWidget {
+  const _FileCard({
+    required this.attachment,
+    required this.mine,
+    this.onOpen,
+    this.onDownload,
+  });
   final ChatMessageAttachment attachment;
   final bool mine;
+  final VoidCallback? onOpen;
+  final VoidCallback? onDownload;
+
+  @override
+  State<_FileCard> createState() => _FileCardState();
+}
+
+class _FileCardState extends State<_FileCard> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final onLight = mine;
+    final onLight = widget.mine;
+    final attachment = widget.attachment;
     final badge = attachment.format.toUpperCase();
     final fg = onLight ? AppColors.onPrimary : AppColors.textPrimary;
     final subFg = onLight
         ? AppColors.onPrimary.withValues(alpha: 0.6)
         : AppColors.textTertiary;
-    return Container(
-      constraints: const BoxConstraints(minWidth: 200),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: onLight
-            ? AppColors.onPrimary.withValues(alpha: 0.06)
-            : const Color(0x14FFFFFF),
-        borderRadius: BorderRadius.circular(AppRadius.md),
+    final showActions = _hovered && widget.onOpen != null;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 150, maxWidth: 250),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // The one subtle surface: a small rounded glyph tile.
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: onLight
+                    ? AppColors.onPrimary.withValues(alpha: 0.14)
+                    : AppColors.darkSurface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(chatDocumentIcon(badge), size: 18, color: fg),
+            ),
+            const SizedBox(width: 9),
+            Flexible(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    attachment.originalFilename,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w600,
+                      height: 1.15,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    '$badge • ${chatHumanBytes(attachment.byteSize)}',
+                    style: AppTypography.caption
+                        .copyWith(color: subFg, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            // Desktop hover actions — Open / Download. Never shown on touch
+            // (MouseRegion only fires for a pointer device).
+            AnimatedSize(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              child: showActions
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(width: 4),
+                        _FileAction(
+                          icon: Icons.open_in_new_rounded,
+                          tooltip: 'Open',
+                          color: fg,
+                          onTap: widget.onOpen,
+                        ),
+                        if (widget.onDownload != null)
+                          _FileAction(
+                            icon: Icons.download_rounded,
+                            tooltip: 'Download',
+                            color: fg,
+                            onTap: widget.onDownload,
+                          ),
+                      ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 44,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: onLight
-                  ? AppColors.onPrimary.withValues(alpha: 0.12)
-                  : AppColors.darkSurface,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.description_rounded, size: 20, color: fg),
-          ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  attachment.originalFilename,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodySmall
-                      .copyWith(color: fg, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$badge · ${chatHumanBytes(attachment.byteSize)}',
-                  style: AppTypography.caption.copyWith(color: subFg),
-                ),
-              ],
-            ),
-          ),
-        ],
+    );
+  }
+}
+
+/// Renders message text with any in-conversation search matches highlighted.
+/// Monochrome, tone-aware: a translucent dark wash on my white bubble, a
+/// translucent light wash on the counterpart's dark bubble. Falls back to a
+/// plain [Text] when there's no active query.
+class _HighlightedText extends StatelessWidget {
+  const _HighlightedText({
+    required this.text,
+    required this.baseStyle,
+    required this.mine,
+    this.query,
+  });
+
+  final String text;
+  final TextStyle baseStyle;
+  final bool mine;
+  final String? query;
+
+  @override
+  Widget build(BuildContext context) {
+    final q = (query ?? '').trim();
+    if (q.isEmpty) return Text(text, style: baseStyle);
+
+    final lowerText = text.toLowerCase();
+    final lowerQuery = q.toLowerCase();
+    if (!lowerText.contains(lowerQuery)) return Text(text, style: baseStyle);
+
+    final highlight = mine
+        ? const Color(0x33000000) // dark wash on the white bubble
+        : const Color(0x55FFFFFF); // light wash on the dark bubble
+    final spans = <TextSpan>[];
+    var start = 0;
+    while (true) {
+      final i = lowerText.indexOf(lowerQuery, start);
+      if (i < 0) {
+        spans.add(TextSpan(text: text.substring(start)));
+        break;
+      }
+      if (i > start) spans.add(TextSpan(text: text.substring(start, i)));
+      spans.add(TextSpan(
+        text: text.substring(i, i + q.length),
+        style: TextStyle(
+          backgroundColor: highlight,
+          fontWeight: FontWeight.w700,
+        ),
+      ));
+      start = i + q.length;
+    }
+    return Text.rich(TextSpan(style: baseStyle, children: spans));
+  }
+}
+
+/// A small icon affordance used in the document row's hover actions.
+class _FileAction extends StatelessWidget {
+  const _FileAction({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    this.onTap,
+  });
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: Icon(icon, size: 16, color: color.withValues(alpha: 0.85)),
+        ),
       ),
     );
   }

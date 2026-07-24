@@ -18,6 +18,36 @@ released — DROP ships from branches and has no version tags.
 
 ### 2026-07-24
 
+- **Chat feature improvements (P15).** Six product upgrades, all additive; no
+  UI-architecture, state-management, realtime, or backend-contract change.
+  1. **Document preview** — tapping a document (PDF/DOC/DOCX/XLS/XLSX/PPT/PPTX/
+     TXT) downloads it to an on-disk cache (dedup by attachment id — no repeat
+     downloads) and opens it with the platform default app (`open_filex` on
+     mobile; the OS opener via `Process` on desktop). Loading indicator +
+     friendly error snackbar with **Retry**. New `ChatDocumentService`; bytes
+     live in the OS temp dir, never the Drift cache. (An in-app PDF *renderer*
+     was intentionally deferred — bundling a native PDF engine is build-risky and
+     unverifiable here; the spec's "platform default" path is used.)
+  2. **Conversation search** — a search icon in the inbox AppBar expands to a
+     live, debounced (220 ms) search over counterpart name/role + last message,
+     O(n) client-side; scroll preserved (PageStorageKey); "No conversations
+     found." empty state.
+  3. **Unread badge** — the desktop sidebar Chat row shows the live total unread
+     (`ChatListCubit.totalUnread`), hidden at zero, reactive.
+  4. **Recent Messages dashboard widget** — `RecentMessagesCard` (avatar · name ·
+     last message · time · unread), capped at 5, tap opens the thread, "No recent
+     conversations" empty state; added to the employee + manager homes.
+  5. **In-app notifications** — a new message raises a tappable banner from any
+     screen (`ChatNotificationListener` over a new `ChatListCubit.incoming`
+     stream), suppressed for the conversation on screen (tracked via
+     `AppDependencies.activeChatConversation`); tapping opens it. Works on
+     desktop too; a true OS-level local notification (native plugin + per-platform
+     setup) is out of scope.
+  6. **Document bubble redesign** — compact card with a format-specific icon and
+     a `PDF • 577 KB` meta line; desktop hover reveals **Open**/**Download**.
+  `open_filex` added. `AppSnackbar.error/success` gained an optional action
+  (retry). +5 tests; full suite 1059 pass / 5 pre-existing fail; analyze clean.
+  **Not device-verified this session** (`pod install` needed for open_filex).
 - **Chat offline cache — Drift/SQLite (P14).** A production-grade local cache
   under `features/chat/data/local/` gives the thread and inbox WhatsApp/Telegram
   behaviour: instant open (incl. cold start), offline reads, and background

@@ -18,6 +18,7 @@ import 'package:drop/core/services/usage_tracker.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/core/theme/app_theme.dart';
+import 'package:drop/features/chat/presentation/widgets/chat_notification_listener.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:drop/features/auth/presentation/cubit/auth_state.dart';
 import 'package:drop/features/auth/presentation/pages/splash_page.dart';
@@ -384,6 +385,10 @@ class App extends StatelessWidget {
           scaffoldMessengerKey: _messengerKey,
           routerConfig: router,
           debugShowCheckedModeBanner: false,
+          // Above the router so a new chat message can raise an in-app banner
+          // from any screen (suppressed for the conversation on screen).
+          builder: (context, child) =>
+              ChatNotificationListener(child: child ?? const SizedBox.shrink()),
         ),
       ),
     );

@@ -258,6 +258,49 @@ void main() {
     await cubit.close();
   });
 
+  test('totalUnread sums per-conversation unread and drops on open', () async {
+    final rt = _FakeRealtime();
+    final cubit = _cubit(
+      _FakeChatRepository(
+          onList: ({String? cursor}) async =>
+              ChatConversationPage(items: [_summary('a'), _summary('b')])),
+      rt,
+    );
+    await cubit.load();
+    expect(cubit.totalUnread, 0);
+
+    rt.controller.add(ChatMessageReceived(_live('a', 'm1', 1, 'Hi')));
+    rt.controller.add(ChatMessageReceived(_live('b', 'm2', 2, 'Yo')));
+    rt.controller.add(ChatMessageReceived(_live('b', 'm3', 3, '!!')));
+    expect(cubit.totalUnread, 3);
+
+    cubit.clearUnread('b');
+    expect(cubit.totalUnread, 1);
+    await cubit.close();
+  });
+
+  test('a live message emits an incoming-notification event', () async {
+    final rt = _FakeRealtime();
+    final cubit = _cubit(
+      _FakeChatRepository(
+          onList: ({String? cursor}) async =>
+              ChatConversationPage(items: [_summary('a')])),
+      rt,
+    );
+    await cubit.load();
+
+    final events = <ChatIncomingMessage>[];
+    final sub = cubit.incoming.listen(events.add);
+    rt.controller.add(ChatMessageReceived(_live('a', 'm1', 7, 'Ping me')));
+    await _settle();
+
+    expect(events, hasLength(1));
+    expect(events.single.conversationId, 'a');
+    expect(events.single.preview, 'Ping me');
+    await sub.cancel();
+    await cubit.close();
+  });
+
   test('a live delete-for-everyone tombstones the previewed line', () async {
     final rt = _FakeRealtime();
     final cubit = _cubit(

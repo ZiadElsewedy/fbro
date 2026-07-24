@@ -12,6 +12,8 @@ import 'package:drop/core/widgets/app_sidebar.dart';
 import 'package:drop/core/widgets/command_palette.dart';
 import 'package:drop/core/widgets/user_avatar.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
+import 'package:drop/features/chat/presentation/cubit/chat_list_cubit.dart';
+import 'package:drop/features/chat/presentation/cubit/chat_list_state.dart';
 import 'package:drop/features/notifications/presentation/cubit/notification_cubit.dart';
 import 'package:drop/features/notifications/presentation/cubit/notification_state.dart';
 
@@ -65,6 +67,7 @@ class AppShell extends StatefulWidget {
       activeIcon: Icons.chat_bubble_rounded,
       label: 'Chat',
       route: RouteNames.chat,
+      trailingBuilder: _chatUnreadBadge,
     );
     const cases = SidebarItem(
       icon: Icons.forum_outlined,
@@ -388,6 +391,53 @@ class _SidebarUserFooterState extends State<_SidebarUserFooter> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Sidebar trailing badge for the Chat destination — the live total unread
+/// count across all conversations (hidden at zero). Top-level so it can be a
+/// `const` tear-off on the chat [SidebarItem].
+Widget _chatUnreadBadge(BuildContext context) => const _ChatUnreadBadge();
+
+class _ChatUnreadBadge extends StatelessWidget {
+  const _ChatUnreadBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    // Optional dependency: the app always provides the singleton ChatListCubit,
+    // but isolated widget tests that render the shell may not — degrade to
+    // nothing rather than throwing a provider-not-found.
+    ChatListCubit? cubit;
+    try {
+      cubit = context.read<ChatListCubit>();
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    return BlocBuilder<ChatListCubit, ChatListState>(
+      bloc: cubit,
+      builder: (context, _) {
+        final unread = cubit!.totalUnread;
+        if (unread <= 0) return const SizedBox.shrink();
+        return Container(
+          margin: const EdgeInsets.only(left: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          constraints: const BoxConstraints(minWidth: 18),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.accent,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Text(
+            unread > 99 ? '99+' : '$unread',
+            style: AppTypography.caption.copyWith(
+              color: AppColors.onAccent,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        );
+      },
     );
   }
 }

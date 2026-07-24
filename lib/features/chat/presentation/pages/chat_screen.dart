@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -6,10 +8,12 @@ import 'package:drop/core/extensions/context_extensions.dart';
 import 'package:drop/core/routes/route_names.dart';
 import 'package:drop/core/theme/app_colors.dart';
 import 'package:drop/core/theme/app_spacing.dart';
+import 'package:drop/core/theme/app_typography.dart';
 import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/core/widgets/adaptive_scaffold.dart';
 import 'package:drop/core/widgets/drop_empty_state.dart';
 import 'package:drop/core/widgets/premium_button.dart';
+import 'package:drop/core/widgets/skeleton.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart';
 import 'package:drop/features/chat/domain/entities/chat_conversation.dart';
 import 'package:drop/features/chat/presentation/chat_format.dart';
@@ -41,6 +45,15 @@ class _ChatScreenState extends State<ChatScreen> {
   /// neutral label (see `_loadDirectory`).
   Map<String, UserEntity> _directory = const {};
 
+  /// Conversation search (client-side, O(n) over the loaded list). [_searching]
+  /// toggles the AppBar between the title and an expanding search field;
+  /// [_query] is the debounced needle (name / last message / role).
+  bool _searching = false;
+  String _query = '';
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+  Timer? _debounce;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +61,59 @@ class _ChatScreenState extends State<ChatScreen> {
       context.read<ChatListCubit>().load();
       _loadDirectory();
     });
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searching = !_searching;
+      if (!_searching) {
+        _searchController.clear();
+        _query = '';
+        _debounce?.cancel();
+      }
+    });
+    if (_searching) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _searchFocus.requestFocus());
+    }
+  }
+
+  /// Debounced so a fast typist doesn't trigger a filter+rebuild per keystroke.
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 220), () {
+      if (mounted) setState(() => _query = value.trim());
+    });
+  }
+
+  /// Filters [conversations] by the current query — matched against the
+  /// counterpart's name/role (directory) and the resolved last-message preview.
+  /// An empty query returns everything unchanged. Single pass → O(n).
+  List<ChatConversationSummary> _applySearch(
+    List<ChatConversationSummary> conversations,
+    Map<String, String> socketPreviews,
+  ) {
+    final needle = _query.toLowerCase();
+    if (needle.isEmpty) return conversations;
+    return conversations.where((c) {
+      final user = _counterpartFor(c);
+      final name = user == null
+          ? ''
+          : chatDisplayName(user, fallbackId: c.counterpartUserId);
+      final role = user == null ? '' : chatRoleLabel(user.role);
+      final preview = _previewLine(c, socketPreviews) ?? '';
+      return name.toLowerCase().contains(needle) ||
+          role.toLowerCase().contains(needle) ||
+          preview.toLowerCase().contains(needle);
+    }).toList(growable: false);
   }
 
   Future<void> _loadDirectory() async {
@@ -138,6 +204,7 @@ class _ChatScreenState extends State<ChatScreen> {
       RouteNames.chatConversation(c.id),
       extra: ChatThreadArgs(
         counterpartUserId: c.counterpartUserId,
+        counterpartExternalId: c.counterpartExternalId,
         counterpartName: counterpart == null
             ? null
             : chatDisplayName(counterpart, fallbackId: c.counterpartUserId),
@@ -155,7 +222,22 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: 'Chat',
-      subtitle: 'Direct messages with your team',
+      subtitle: _searching ? null : 'Direct messages with your team',
+      titleWidget: _searching
+          ? _ChatSearchField(
+              controller: _searchController,
+              focusNode: _searchFocus,
+              onChanged: _onSearchChanged,
+            )
+          : null,
+      actions: [
+        IconButton(
+          tooltip: _searching ? 'Close search' : 'Search conversations',
+          icon: Icon(_searching ? Icons.close_rounded : Icons.search_rounded,
+              color: AppColors.textSecondary),
+          onPressed: _toggleSearch,
+        ),
+      ],
       // Always-available entry to the teammate picker (even with conversations
       // present); the empty state also offers it as a primary CTA.
       floatingActionButton: FloatingActionButton.extended(
@@ -200,6 +282,8 @@ class _ChatScreenState extends State<ChatScreen> {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) _resolvePreviews(visible, previews);
               });
+              // Apply the search filter on top (empty query → everything).
+              final filtered = _applySearch(visible, previews);
               return RefreshIndicator(
                 onRefresh: () => context.read<ChatListCubit>().refresh(),
                 color: AppColors.primary,
@@ -220,15 +304,17 @@ class _ChatScreenState extends State<ChatScreen> {
                           }),
                         ),
                       )
-                    : _ConversationList(
-                        conversations: visible,
-                        loadingMore: loadingMore,
-                        hasMore: hasMore,
-                        unreadCounts: unreadCounts,
-                        counterpartOf: _counterpartFor,
-                        previewOf: (c) => _previewLine(c, previews),
-                        onOpen: _openConversation,
-                      ),
+                    : filtered.isEmpty
+                        ? const _NoSearchResults()
+                        : _ConversationList(
+                            conversations: filtered,
+                            loadingMore: loadingMore,
+                            hasMore: hasMore,
+                            unreadCounts: unreadCounts,
+                            counterpartOf: _counterpartFor,
+                            previewOf: (c) => _previewLine(c, previews),
+                            onOpen: _openConversation,
+                          ),
               );
             },
           );
@@ -275,6 +361,8 @@ class _ConversationList extends StatelessWidget {
         return false;
       },
       child: ListView.separated(
+        // Preserves scroll offset across search toggles / rebuilds.
+        key: const PageStorageKey('chat_inbox_list'),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(top: 6, bottom: AppSpacing.huge),
         itemCount: conversations.length + (loadingMore ? 1 : 0),
@@ -320,11 +408,103 @@ class _PageSpinnerRow extends StatelessWidget {
       );
 }
 
+/// Skeleton inbox — a handful of shimmering conversation-tile placeholders,
+/// matching the real tile's avatar + two-line layout, so a cold load reads as
+/// "loading this list" rather than a bare spinner.
 class _Loading extends StatelessWidget {
   const _Loading();
+
   @override
-  Widget build(BuildContext context) =>
-      const Center(child: CircularProgressIndicator(color: AppColors.primary));
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 8,
+      separatorBuilder: (_, _) => const Padding(
+        padding: EdgeInsets.only(left: 90),
+        child: Divider(height: 0.5, thickness: 0.5, color: AppColors.darkBorder),
+      ),
+      itemBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.pagePadding, vertical: 12),
+        child: Row(
+          children: [
+            const Skeleton(
+                width: 52, height: 52, borderRadius: BorderRadius.all(Radius.circular(26))),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Skeleton(
+                    width: 120 + (index % 3) * 40,
+                    height: 13,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  const SizedBox(height: 8),
+                  Skeleton(
+                    width: 200 + (index % 2) * 40,
+                    height: 11,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The AppBar search field shown while searching — monochrome, borderless, with
+/// a clear affordance. Filtering happens live (debounced) as the user types.
+class _ChatSearchField extends StatelessWidget {
+  const _ChatSearchField({
+    required this.controller,
+    required this.focusNode,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      onChanged: onChanged,
+      textInputAction: TextInputAction.search,
+      style: AppTypography.body,
+      cursorColor: AppColors.primary,
+      decoration: const InputDecoration(
+        hintText: 'Search conversations',
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        isDense: true,
+        contentPadding: EdgeInsets.zero,
+      ),
+    );
+  }
+}
+
+/// Empty state for a search that matched nothing (distinct from the "no
+/// conversations yet" first-run state). Scrollable so pull-to-refresh still
+/// works over it.
+class _NoSearchResults extends StatelessWidget {
+  const _NoSearchResults();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DropEmptyState(
+      title: 'No conversations found.',
+      message: 'Try a different name or message.',
+    );
+  }
 }
 
 class _ErrorView extends StatelessWidget {

@@ -8,6 +8,7 @@
 class ChatThreadArgs {
   const ChatThreadArgs({
     this.counterpartUserId,
+    this.counterpartExternalId,
     this.counterpartName,
     this.counterpartPhotoUrl,
   });
@@ -15,6 +16,11 @@ class ChatThreadArgs {
   /// The counterpart's **backend-internal** id — for own-message alignment
   /// before the first send (never shown to the user).
   final String? counterpartUserId;
+
+  /// The counterpart's DROP user id (Firebase uid) — the directory key, so the
+  /// Conversation Info screen can resolve their role/branch. Null on a bare
+  /// deep link.
+  final String? counterpartExternalId;
 
   /// The counterpart's real display name (from the Firebase directory).
   final String? counterpartName;

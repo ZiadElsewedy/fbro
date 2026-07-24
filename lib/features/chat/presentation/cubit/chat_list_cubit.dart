@@ -56,6 +56,21 @@ class ChatListCubit extends Cubit<ChatListState> {
   final Map<String, BigInt> _lastSeenSeq = {};
   final Map<String, int> _unread = {};
 
+  /// Broadcasts a distinct "a new message just arrived" event for each genuinely
+  /// new (deduped) live message — the app-wide in-app notification listener
+  /// subscribes to this to raise a snackbar/banner when the user isn't already
+  /// viewing that conversation. Purely additive: the inbox rendering path is
+  /// unchanged whether or not anything listens.
+  final StreamController<ChatIncomingMessage> _incomingController =
+      StreamController<ChatIncomingMessage>.broadcast();
+  Stream<ChatIncomingMessage> get incoming => _incomingController.stream;
+
+  /// Total unread across every conversation — powers the sidebar/nav badge and
+  /// the dashboard widget. Reactive: emitted state changes (a live message, an
+  /// opened conversation) rebuild any [BlocBuilder] reading it.
+  int get totalUnread =>
+      _unread.values.fold(0, (sum, count) => sum + count);
+
   ChatListCubit({
     required this._getConversations,
     required this._startConversation,
@@ -68,6 +83,7 @@ class ChatListCubit extends Cubit<ChatListState> {
   @override
   Future<void> close() async {
     await _realtimeSub?.cancel();
+    await _incomingController.close();
     if (_inboxAttached) await _realtime?.detachInbox();
     return super.close();
   }
@@ -228,6 +244,8 @@ class ChatListCubit extends Cubit<ChatListState> {
       // A conversation this page window doesn't hold (brand new, or beyond
       // the loaded pages). The client never invents a row — refresh instead.
       load(forceRefresh: true);
+      // Still surface an in-app notification for it (name resolves in-thread).
+      _notifyIncoming(message, counterpartExternalId: null);
       return;
     }
 
@@ -243,6 +261,20 @@ class ChatListCubit extends Cubit<ChatListState> {
     _unread[message.conversationId] =
         (_unread[message.conversationId] ?? 0) + 1;
     _emitLoaded();
+    _notifyIncoming(message,
+        counterpartExternalId: bumped.counterpartExternalId);
+  }
+
+  /// Raises a distinct incoming-message event (best-effort — a closed
+  /// controller during teardown is ignored). The server never echoes the
+  /// caller's own sends, so this is always genuine counterpart activity.
+  void _notifyIncoming(ChatMessage message, {String? counterpartExternalId}) {
+    if (_incomingController.isClosed) return;
+    _incomingController.add(ChatIncomingMessage(
+      conversationId: message.conversationId,
+      preview: _previewOf(message),
+      counterpartExternalId: counterpartExternalId,
+    ));
   }
 
   String _previewOf(ChatMessage message) {
@@ -318,4 +350,22 @@ class ChatListCubit extends Cubit<ChatListState> {
       if (_hasLoaded) _emitLoaded();
     }
   }
+}
+
+/// A single "new message just arrived" signal for the app-wide in-app
+/// notification listener. Carries only what a notification needs: which
+/// conversation, a one-line preview, and the counterpart's directory key
+/// (Firebase uid) so the listener can resolve the sender's real name — null
+/// when the conversation isn't in the loaded window yet (the notification then
+/// falls back to a neutral title).
+class ChatIncomingMessage {
+  const ChatIncomingMessage({
+    required this.conversationId,
+    required this.preview,
+    this.counterpartExternalId,
+  });
+
+  final String conversationId;
+  final String preview;
+  final String? counterpartExternalId;
 }
