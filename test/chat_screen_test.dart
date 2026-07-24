@@ -19,6 +19,10 @@ import 'package:drop/features/chat/presentation/widgets/chat_conversation_tile.d
 /// List-endpoint-only fake — every other repository call is out of scope for
 /// the inbox screen and throws if reached.
 class _FakeChatRepository implements ChatRepository {
+  @override
+  Future<List<ChatConversationSummary>> getCachedConversations() async =>
+      const [];
+
   _FakeChatRepository(this.onGetConversations);
 
   final Future<ChatConversationPage> Function({int? limit, String? cursor})

@@ -49,6 +49,10 @@ ChatMessage _message(String id, int seq, String sender, String body,
 
 /// Thread-scoped fake — only the four calls the conversation cubit makes.
 class _FakeChatRepository implements ChatRepository {
+  @override
+  Future<List<ChatConversationSummary>> getCachedConversations() async =>
+      const [];
+
   _FakeChatRepository({
     required this.onHistory,
     this.onSend,

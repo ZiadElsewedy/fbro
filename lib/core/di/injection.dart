@@ -118,6 +118,8 @@ import 'package:drop/features/audit/domain/repositories/audit_repository.dart';
 import 'package:drop/features/audit/domain/services/event_tracking_service.dart';
 import 'package:drop/features/auth/domain/entities/user_entity.dart' show UserEntity;
 import 'package:drop/features/chat/data/datasources/chat_remote_datasource.dart';
+import 'package:drop/features/chat/data/local/chat_database.dart';
+import 'package:drop/features/chat/data/local/chat_local_datasource.dart';
 import 'package:drop/features/chat/data/realtime/chat_socket_service.dart';
 import 'package:drop/features/chat/data/repositories/chat_repository_impl.dart';
 import 'package:drop/features/chat/domain/chat_realtime.dart';
@@ -128,6 +130,7 @@ import 'package:drop/features/chat/domain/entities/chat_message.dart';
 import 'package:drop/features/chat/domain/usecases/get_chat_attachment_url.dart';
 import 'package:drop/features/chat/domain/usecases/get_chat_directory.dart';
 import 'package:drop/features/chat/domain/usecases/get_conversation.dart';
+import 'package:drop/features/chat/domain/usecases/get_cached_conversations.dart';
 import 'package:drop/features/chat/domain/usecases/get_conversations.dart';
 import 'package:drop/features/chat/domain/usecases/load_chat_history.dart';
 import 'package:drop/features/chat/domain/usecases/mark_chat_read.dart';
@@ -191,9 +194,27 @@ class AppDependencies {
         getAttachmentUrl: _getChatAttachmentUrl,
       );
 
-  /// Process-lifetime cache of opened threads — lets a re-opened conversation
-  /// paint its last messages instantly while it refreshes in the background.
+  /// Cache of opened threads — lets a re-opened conversation paint its last
+  /// messages instantly while it refreshes in the background. Constructed
+  /// eagerly (static helpers reference it before [init] runs in tests); its
+  /// durable Drift tier is attached during [init] so the instant open survives
+  /// a full app restart.
   static final ChatThreadCache _chatThreadCache = ChatThreadCache();
+
+  /// The Drift-backed offline cache for chat (conversations, messages,
+  /// reply/attachment metadata, send outbox). The single durable seam; wired
+  /// into both [chatRepository] and [_chatThreadCache].
+  static late final ChatLocalDataSource _chatLocalDataSource;
+
+  /// Wipes the chat offline cache (both tiers) — the cache-invalidation hook,
+  /// called on sign-out so a shared device never leaks one user's conversations
+  /// to the next. Best-effort: a failure is swallowed (nothing to recover).
+  static Future<void> clearChatCache() async {
+    _chatThreadCache.clear();
+    try {
+      await _chatLocalDataSource.clearAll();
+    } catch (_) {/* cache clear is best-effort */}
+  }
 
   /// The newest message of [conversationId], for an inbox last-message preview.
   /// Prefers the in-memory thread snapshot (instant, covers threads touched
@@ -408,10 +429,16 @@ class AppDependencies {
       tokenProvider: nestTokenProvider,
     );
 
-    // Direct chat. One datasource over the shared ApiClient; the repository is
-    // the single seam, with the list cubit as an app-wide singleton and thread
-    // cubits built per opened conversation (see createChatConversationCubit).
-    chatRepository = ChatRepositoryImpl(ChatRemoteDataSourceImpl(apiClient));
+    // Direct chat. One remote datasource over the shared ApiClient + one Drift
+    // local datasource (the offline cache); the repository orchestrates both.
+    // The list cubit is an app-wide singleton and thread cubits are built per
+    // opened conversation (see createChatConversationCubit).
+    _chatLocalDataSource = ChatLocalDataSourceImpl(ChatDatabase.open());
+    _chatThreadCache.attachLocal(_chatLocalDataSource);
+    chatRepository = ChatRepositoryImpl(
+      ChatRemoteDataSourceImpl(apiClient),
+      _chatLocalDataSource,
+    );
     _getChatConversation = GetConversation(chatRepository);
     _deleteChatMessageForMe = DeleteChatMessageForMe(chatRepository);
     _deleteChatMessageForEveryone = DeleteChatMessageForEveryone(chatRepository);
@@ -422,6 +449,7 @@ class AppDependencies {
     chatListCubit = ChatListCubit(
       getConversations: GetConversations(chatRepository),
       startConversation: StartConversation(chatRepository),
+      getCachedConversations: GetCachedConversations(chatRepository),
       realtime: chatRealtime,
     );
 
@@ -487,7 +515,12 @@ class AppDependencies {
       // authenticated), so the signed-out account stops receiving this device's
       // pushes. `notificationService` is a `late final` static assigned later in
       // init(); the closure is invoked only at sign-out, long after it's set.
-      onPreSignOut: () => notificationService.forgetUser(),
+      // Also wipe the chat offline cache so a shared device never leaks one
+      // user's conversations to the next (cache invalidation).
+      onPreSignOut: () async {
+        await notificationService.forgetUser();
+        await clearChatCache();
+      },
     );
 
     profileCubit = ProfileCubit(

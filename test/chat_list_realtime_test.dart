@@ -58,6 +58,10 @@ class _FakeRealtime implements ChatRealtime {
 }
 
 class _FakeChatRepository implements ChatRepository {
+  @override
+  Future<List<ChatConversationSummary>> getCachedConversations() async =>
+      const [];
+
   _FakeChatRepository({required this.onList});
 
   final Future<ChatConversationPage> Function({String? cursor}) onList;

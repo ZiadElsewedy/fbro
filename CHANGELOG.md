@@ -18,6 +18,28 @@ released — DROP ships from branches and has no version tags.
 
 ### 2026-07-24
 
+- **Chat offline cache — Drift/SQLite (P14).** A production-grade local cache
+  under `features/chat/data/local/` gives the thread and inbox WhatsApp/Telegram
+  behaviour: instant open (incl. cold start), offline reads, and background
+  sync. `drift`/`sqlite3_flutter_libs` added (pinned 2.26.0 to keep `drift_dev`'s
+  analyzer on the freezed-compatible line). `ChatDatabase` (3 tables:
+  conversations · messages with **reply + attachment metadata** flattened in ·
+  a durable send outbox) + `ChatLocalDataSource` own all row↔entity mapping,
+  conflict-safe upserts (idempotent by id, ordered by server `seq`), cache
+  pagination, and invalidation. **No image/attachment BYTES are ever persisted**
+  — metadata + on-demand brokered URLs only. `ChatRepositoryImpl` gains an
+  *optional* local datasource (null ⇒ the exact REST-only original, so all
+  existing fakes/tests are untouched): read-through / write-through, offline
+  fallback to cache when the network is unreachable, cache-first back-pagination
+  via a `local:<seq>` cursor, and a text-send outbox (enqueue-before-POST,
+  drain-on-ack). `ChatThreadCache` became two-tier (in-memory hot + durable
+  Drift) so re-open survives a restart and realtime-delivered messages persist
+  through the existing `_emit → put` path. Cubit changes are additive only:
+  cold-restore-from-disk, keep local bubbles across a refresh, adopt the durable
+  outbox and auto-retry failed sends on load + reconnect. Cache is wiped on
+  sign-out (`AppDependencies.clearChatCache`, via the pre-sign-out hook).
+  **No UI, composer, realtime, or backend-contract change.** +15 tests
+  (`chat_offline_cache_test.dart`); full suite 1053 pass / 5 pre-existing fail.
 - **Chat P0 image-send fix + production-readiness pass.**
   - **Image sending fixed (root cause proven, backend).** `drop-api`: the
     NestJS/Express default JSON body limit is 100 KB, but chat sends attachment

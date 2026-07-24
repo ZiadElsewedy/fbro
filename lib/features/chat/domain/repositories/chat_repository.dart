@@ -26,8 +26,16 @@ abstract class ChatRepository {
   /// opaque `nextCursor` from the previous page. The server clamps [limit] to
   /// 1..50 (default 20).
   ///
+  /// When an offline cache is wired, the first page (no [cursor]) transparently
+  /// falls back to the cached list if the network is unreachable.
+  ///
   /// `GET /conversations`
   Future<ChatConversationPage> getConversations({int? limit, String? cursor});
+
+  /// The locally-cached conversation list only — no network. Empty when nothing
+  /// is cached (or no cache is wired). Lets the inbox paint instantly on a cold
+  /// start while [getConversations] refreshes from the server in the background.
+  Future<List<ChatConversationSummary>> getCachedConversations();
 
   /// A single conversation the caller participates in. Throws a
   /// [ServerFailure] with the server's "not found" message for a missing

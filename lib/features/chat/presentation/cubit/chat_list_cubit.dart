@@ -6,6 +6,7 @@ import 'package:drop/core/utils/app_logger.dart';
 import 'package:drop/features/chat/domain/chat_realtime.dart';
 import 'package:drop/features/chat/domain/entities/chat_conversation.dart';
 import 'package:drop/features/chat/domain/entities/chat_message.dart';
+import 'package:drop/features/chat/domain/usecases/get_cached_conversations.dart';
 import 'package:drop/features/chat/domain/usecases/get_conversations.dart';
 import 'package:drop/features/chat/domain/usecases/start_conversation.dart';
 import 'chat_list_state.dart';
@@ -33,6 +34,7 @@ import 'chat_list_state.dart';
 class ChatListCubit extends Cubit<ChatListState> {
   final GetConversations _getConversations;
   final StartConversation _startConversation;
+  final GetCachedConversations? _getCachedConversations;
   final ChatRealtime? _realtime;
   StreamSubscription<ChatRealtimeEvent>? _realtimeSub;
   bool _inboxAttached = false;
@@ -57,8 +59,9 @@ class ChatListCubit extends Cubit<ChatListState> {
   ChatListCubit({
     required this._getConversations,
     required this._startConversation,
+    this._getCachedConversations,
     this._realtime,
-  })  : super(const ChatListState.initial()) {
+  }) : super(const ChatListState.initial()) {
     _realtimeSub = _realtime?.events.listen(_onRealtimeEvent);
   }
 
@@ -104,7 +107,13 @@ class ChatListCubit extends Cubit<ChatListState> {
     if (_hasLoaded && _conversations.isNotEmpty) {
       _refreshing = true;
       _emitLoaded();
+    } else if (await _paintFromCache()) {
+      // Cold start: the durable cache held conversations — paint them instantly
+      // (no spinner) and mark refreshing while the server load runs below.
+      _refreshing = true;
+      _emitLoaded();
     } else {
+      // Nothing cached (or no cache wired) — the usual first-load spinner.
       emit(const ChatListState.loading());
     }
 
@@ -136,6 +145,23 @@ class ChatListCubit extends Cubit<ChatListState> {
   }
 
   Future<void> refresh() => load(forceRefresh: true);
+
+  /// Populates [_conversations] from the durable cache for an instant cold-start
+  /// paint. Returns whether anything was painted. Never throws — a cache miss or
+  /// error just falls through to the network path.
+  Future<bool> _paintFromCache() async {
+    final getCached = _getCachedConversations;
+    if (getCached == null) return false;
+    try {
+      final cached = await getCached();
+      if (cached.isEmpty) return false;
+      _conversations = cached;
+      return true;
+    } catch (e) {
+      AppLog.warning('chat', 'inbox cache paint failed: $e');
+      return false;
+    }
+  }
 
   /// The loaded summary for [conversationId], or null if the current window
   /// doesn't hold it. Lets a caller (e.g. the new-chat flow) read the

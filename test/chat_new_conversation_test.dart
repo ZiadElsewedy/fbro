@@ -93,6 +93,10 @@ class _FakeAuthRepository implements AuthRepository {
 /// conversation; list returns whatever the test scripts (so the post-start
 /// refresh finds the conversation with its server counterpart id).
 class _FakeChatRepository implements ChatRepository {
+  @override
+  Future<List<ChatConversationSummary>> getCachedConversations() async =>
+      const [];
+
   _FakeChatRepository({
     required this.onStart,
     this.pages = const [],

@@ -106,6 +106,11 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
       _nextCursor = cached.nextCursor;
       _myUserId = cached.myUserId ?? _myUserId;
       _emit();
+    } else if (_cache != null) {
+      // Cold open (no hot snapshot): rebuild instantly from the durable cache
+      // (Drift) while the network load runs in parallel. Guarded so a network
+      // win is never overwritten by slower disk data.
+      unawaited(_restoreFromCache());
     }
     final rt = _realtime;
     if (rt != null) {
@@ -181,13 +186,19 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
       ]);
       _conversation = results[0] as ChatConversation;
       final page = results[1] as ChatMessagePage;
-      _messages = page.items;
+      // Keep any optimistic/failed local bubbles the network page doesn't carry
+      // (a cold-restored outbox bubble, or an in-flight send) so the refresh
+      // never drops them.
+      final locals = _messages.where(_isLocal).toList();
+      _messages = [...page.items, ...locals];
       _nextCursor = page.nextCursor;
       _deriveMyUserId();
       _emit();
+      unawaited(_adoptOutbox());
     } on Failure catch (e) {
       emit(ChatConversationState.error(e.message));
       _emit(); // transient when the thread is already on screen
+      unawaited(_adoptOutbox());
     } catch (e) {
       AppLog.warning('chat', 'conversation load failed: $e');
       emit(const ChatConversationState.error(
@@ -195,6 +206,56 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
       _emit();
     } finally {
       _loading = false;
+    }
+  }
+
+  /// Cold-start instant open: paints the last-known **confirmed** thread from
+  /// the durable cache (Drift) if the network [load] hasn't already resolved.
+  /// Guarded on [_conversation] so a network win is never clobbered.
+  Future<void> _restoreFromCache() async {
+    final cache = _cache;
+    if (cache == null) return;
+    final snapshot = await cache.restore(conversationId);
+    if (isClosed || snapshot == null || _conversation != null) return;
+    _conversation = snapshot.conversation;
+    _messages = snapshot.messages;
+    _nextCursor = snapshot.nextCursor;
+    _myUserId = snapshot.myUserId ?? _myUserId;
+    _deriveMyUserId();
+    _emit();
+  }
+
+  /// Adopts the durable outbox (text sends never acknowledged before the app
+  /// was last closed) as `FAILED` bubbles, then retries them now that the load
+  /// has settled. Deduped by id, so re-running is a no-op. No-op without a
+  /// durable cache.
+  Future<void> _adoptOutbox() async {
+    final cache = _cache;
+    if (cache == null || isClosed) return;
+    var maxSeq = BigInt.zero;
+    for (final m in _messages) {
+      if (m.seq > maxSeq) maxSeq = m.seq;
+    }
+    final pending =
+        await cache.restorePending(conversationId, afterSeq: maxSeq);
+    if (isClosed || pending.isEmpty) return;
+    final known = {for (final m in _messages) m.id};
+    final toAdd =
+        pending.where((m) => !known.contains(m.id)).toList(growable: false);
+    if (toAdd.isNotEmpty) {
+      _messages = [..._messages, ...toAdd];
+      _emit();
+    }
+    _retryFailedSends();
+  }
+
+  /// Re-dispatches every failed optimistic send (reusing its idempotency key,
+  /// so the backend dedupes). Fired after a good load and on reconnect.
+  void _retryFailedSends() {
+    for (final m in List.of(_messages)) {
+      if (_isLocal(m) && m.status == _statusFailed) {
+        unawaited(retrySend(m.id));
+      }
     }
   }
 
@@ -521,8 +582,12 @@ class ChatConversationCubit extends Cubit<ChatConversationState> {
       case ChatRealtimeConnected(:final isReconnect):
         // The connection was down for a while — messages sent in the gap were
         // never pushed. Rooms are already re-joined by the service; catch up
-        // through REST, the source of truth.
-        if (isReconnect) _reconcile();
+        // through REST, the source of truth, and flush any pending sends the
+        // outage stranded.
+        if (isReconnect) {
+          _reconcile();
+          _retryFailedSends();
+        }
       case ChatMessageReceived(:final message):
         if (message.conversationId != conversationId) return;
         if (_conversation == null) return; // initial load will fetch it

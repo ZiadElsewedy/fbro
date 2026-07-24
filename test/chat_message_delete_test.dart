@@ -37,6 +37,10 @@ ChatMessage _message(String id, int seq, String sender, String body,
     );
 
 class _FakeChatRepository implements ChatRepository {
+  @override
+  Future<List<ChatConversationSummary>> getCachedConversations() async =>
+      const [];
+
   _FakeChatRepository({
     required this.messages,
     this.onDeleteForMe,
